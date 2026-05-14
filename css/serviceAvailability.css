@@ -1,0 +1,123 @@
+/* serviceAvailability.css - Page-specific styles only */
+
+.logo {
+    margin-bottom: 80px;
+}
+
+.content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: 600px;
+}
+
+/* Address Section */
+.address-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 40px;
+}
+
+.location-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--tufts-blue);
+}
+
+.address-title {
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--rich-black);
+}
+
+.address-form {
+    position: relative;
+    width: 100%;
+    max-width: 540px;
+}
+
+.address-input {
+    width: 100%;
+    padding: 18px 20px;
+    font-size: 16px;
+    font-family: 'Heebo', sans-serif;
+    border: 1px solid var(--medium-gray);
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background-color: var(--white);
+}
+
+.address-input::placeholder {
+    color: #A0AEC0;
+}
+
+.address-input:focus {
+    border-color: var(--tufts-blue);
+    box-shadow: 0 0 0 3px rgba(62, 140, 203, 0.1);
+}
+
+/* Suggestions Dropdown */
+.suggestions-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--white);
+    border: 1px solid var(--medium-gray);
+    border-radius: 4px;
+    box-shadow: 0 4px 20px rgba(1, 17, 30, 0.08);
+    overflow: hidden;
+    z-index: 10;
+}
+
+.suggestion-item {
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    font-size: 15px;
+    color: var(--rich-black);
+    border-bottom: 1px solid var(--medium-gray);
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.suggestion-item:hover {
+    background-color: var(--light-gray);
+}
+
+/* Navigation Button */
+.nav-button {
+    position: absolute;
+    bottom: 40px;
+    right: 60px;
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 16px 32px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+    z-index: 10;
+}
+
+.nav-button:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .nav-button {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+    }
+}

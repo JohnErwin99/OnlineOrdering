@@ -1,0 +1,135 @@
+/* pickNumber.css - Page-specific styles only */
+
+/* Progress */
+.progress-container {
+    max-width: 600px;
+}
+
+.progress-fill {
+    width: 66%;
+}
+
+/* Content */
+.content {
+    flex: 1;
+    max-width: 500px;
+}
+
+/* Page Title */
+.page-title {
+    color: var(--tufts-blue);
+}
+
+/* Subtitle */
+.subtitle {
+    font-size: 15px;
+    color: var(--text-gray);
+    margin-bottom: 16px;
+}
+
+/* Phone Number Display */
+.phone-number {
+    font-size: 42px;
+    font-weight: 400;
+    color: var(--rich-black);
+    margin-bottom: 30px;
+    letter-spacing: -1px;
+}
+
+/* Pick Different Number Link */
+.pick-different {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-gray);
+    text-decoration: none;
+    margin-bottom: 24px;
+    transition: color 0.2s ease;
+}
+
+.pick-different:hover {
+    color: var(--tufts-blue);
+}
+
+.pick-different svg {
+    width: 18px;
+    height: 18px;
+    fill: var(--tufts-blue);
+}
+
+/* Divider */
+.divider {
+    height: 1px;
+    background-color: var(--medium-gray);
+    margin-bottom: 40px;
+    max-width: 500px;
+}
+
+/* Help Section */
+.help-section {
+    margin-bottom: 40px;
+}
+
+.help-title {
+    font-size: 16px;
+    color: var(--rich-black);
+    margin-bottom: 24px;
+}
+
+/* Radio Options */
+.radio-option {
+    margin-bottom: 20px;
+}
+
+/* Navigation */
+.nav-buttons {
+    justify-content: flex-start;
+}
+
+/* Gradient circle position override */
+.gradient-circle.cyan {
+    top: 20%;
+}
+
+/* Promo Content */
+.promo-content {
+    align-items: flex-start;
+    padding: 40px 60px;
+}
+
+/* Phone Image */
+.phone-image {
+    max-height: 300px;
+    object-fit: cover;
+    opacity: 0.9;
+}
+
+/* Promo Text */
+.promo-text {
+    text-align: left;
+    max-width: 500px;
+}
+
+/* Next Button on Right Panel */
+.btn-next {
+    position: absolute;
+    bottom: 40px;
+    right: 60px;
+    padding: 16px 32px;
+    font-size: 14px;
+    z-index: 10;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .phone-number {
+        font-size: 36px;
+    }
+}
+
+@media (max-width: 900px) {
+    .promo-content {
+        padding-bottom: 100px;
+    }
+}

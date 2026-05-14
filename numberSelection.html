@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Account is Almost Ready - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/numberSelection.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <!-- Header -->
+            <div class="header">
+                <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+            </div>
+
+            <!-- Progress Indicator -->
+            <div class="progress-container">
+                <div class="progress-text">4 of 6</div>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="content">
+                <!-- Page Title -->
+                <h1 class="page-title">Your account is almost ready !</h1>
+
+                <!-- Subtitle -->
+                <p class="subtitle">This is your new business main number .</p>
+
+                <!-- Phone Number -->
+                <div class="phone-number">( 438) 206-0615</div>
+
+                <!-- Pick Different Number Link -->
+                <a href="#" class="pick-different">
+                    Pick a different number
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </a>
+
+                <!-- Divider -->
+                <div class="divider"></div>
+
+                <!-- Help Section -->
+                <div class="help-section">
+                    <p class="help-title">What else can we help you with ?</p>
+
+                    <label class="radio-option">
+                        <input type="radio" name="help-option" class="radio-input"
+                                onchange="window.location.href='portNumber.html'">
+                        <span class="radio-label">Transfer an existing number</span>
+                    </label>
+
+                    <label class="radio-option">
+                        <input type="radio" name="help-option" class="radio-input">
+                        <span class="radio-label">Do you want a special number?</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="nav-buttons">
+                <button class="btn-back" onclick="window.location.href='hardwareOrders.html'">Back</button> 
+                <!-- Next Button -->
+                <button class="btn-next" onclick="window.location.href='pickNumber.html'">Next: Number Assignment</button>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <!-- Gradient Background Effects -->
+            <div class="gradient-circle magenta"></div>
+            <div class="gradient-circle cyan"></div>
+
+            <!-- Iristel Logo -->
+            <div class="right-logo">
+                <img src="Images/Iristel-logo.png" alt="Iristel" class="right-logo-img">
+            </div>
+
+            <div class="promo-content">
+                <!-- Phone Illustration -->
+                <div class="phone-illustration">
+                    <img 
+                        src="https://images.unsplash.com/photo-1587560699334-cc4ff634909a?w=800&h=400&fit=crop" 
+                        alt="VoIP Phone System" 
+                        class="phone-image"
+                    >
+                </div>
+
+                <!-- Promo Text -->
+                <div class="promo-text">
+                    <h2 class="promo-headline">From On-Premise<br>To The Cloud</h2>
+                    <p class="promo-subheadline">Learn How To <span>Upgrade Your PBX System</span> With Zero Downtime And Full Flexibility—Without Disrupting Your Business.</p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Radio option selection
+        const radioOptions = document.querySelectorAll('.radio-input');
+        
+        radioOptions.forEach(radio => {
+            radio.addEventListener('change', function() {
+                // Handle selection change
+                console.log('Selected option:', this.nextElementSibling.textContent);
+            });
+        });
+
+        // Pick different number link
+        const pickDifferent = document.querySelector('.pick-different');
+        pickDifferent.addEventListener('click', function(e) {
+            e.preventDefault();
+            // In a real app, this would navigate to number selection
+            console.log('Navigate to number selection');
+        });
+    </script>
+</body>
+</html>

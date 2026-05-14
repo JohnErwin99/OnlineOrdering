@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Service Availability - Iristel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/global.css" />
+  <link rel="stylesheet" href="css/serviceAvailability.css" />
+
+  <!-- ✅ Load Google Maps JS (use your key) -->
+  <script>
+    (g => {
+      const h = "script";
+      const a = "google";
+      const b = "maps";
+      const c = "importLibrary";
+      const d = "__ib__";
+      const e = document;
+      const f = window;
+      const k = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent("AIzaSyCPilDrU4uiB2aRpwDPAAqtVj9KXB3xpqc") + "&v=weekly";
+      const l = new URL(k);
+      const m = new Set();
+      const n = new Promise((resolve, reject) => {
+        f[a] = f[a] || {};
+        f[a][b] = f[a][b] || {};
+        const p = f[a][b];
+        if (p[c]) return resolve();
+        p[c] = (lib) => {
+          m.add(lib);
+          return new Promise((res, rej) => {
+            const q = () => res(p[c](lib));
+            if (p[d]) return q();
+            const s = e.createElement(h);
+            l.searchParams.set("libraries", Array.from(m).join(","));
+            l.searchParams.set("callback", a + "." + b + "." + d);
+            s.src = l.toString();
+            s.async = true;
+            s.onerror = () => rej(new Error("Google Maps JS failed to load."));
+            e.head.appendChild(s);
+            p[d] = () => q();
+          });
+        };
+        resolve();
+      });
+      f.__gmapsReady = () => n;
+    })();
+  </script>
+</head>
+
+<body>
+  <div class="container">
+    <!-- Left Panel -->
+    <div class="left-panel">
+      <div class="logo">
+        <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img" />
+      </div>
+
+      <div class="content">
+        <div class="address-section">
+          <svg class="location-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          <h1 class="address-title">Please enter your current address</h1>
+        </div>
+
+        <div class="address-form">
+          <input
+            type="text"
+            class="address-input"
+            placeholder="Enter address"
+            autocomplete="off"
+          />
+
+          <!-- ✅ Status UI (no more fake suggestions) -->
+          <div class="address-status" style="margin-top:10px; font-size:14px; display:none;"></div>
+
+          <!-- ✅ Optional: show corrected / formatted address to confirm -->
+          <div class="address-suggestion" style="margin-top:10px; display:none;">
+            <div style="font-size:12px; opacity:.8; margin-bottom:6px;">Suggested (standardized) address:</div>
+            <div class="suggested-text" style="padding:10px; border:1px solid #e5e7eb; border-radius:8px;"></div>
+            <div style="margin-top:10px; display:flex; gap:10px;">
+              <button type="button" class="btn-accept" style="padding:10px 12px; border-radius:10px; border:0; cursor:pointer;">Use suggested</button>
+              <button type="button" class="btn-keep" style="padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer;">Keep mine</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="right-panel">
+      <div class="gradient-circle magenta"></div>
+      <div class="gradient-circle cyan"></div>
+
+      <div class="promo-content">
+        <div class="laptop-image">
+          <div class="laptop-frame">
+            <div class="laptop-screen">
+              <div class="video-call-grid">
+                <div class="video-participant"><div class="participant-avatar"></div></div>
+                <div class="video-participant"><div class="participant-avatar"></div></div>
+                <div class="video-participant"><div class="participant-avatar"></div></div>
+              </div>
+            </div>
+            <div class="laptop-base"></div>
+          </div>
+        </div>
+
+        <div class="promo-text">
+          <div class="discount-value">40<span>%</span></div>
+          <div class="discount-label">OFF Smart Connect</div>
+          <div class="discount-sublabel">Bundles</div>
+          <p class="promo-description">Get the right business communication plan and save up to $474.</p>
+
+          <div class="promo-buttons">
+            <button class="btn-explore">EXPLORE BUNDLES NOW</button>
+            <a href="#" class="learn-more">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+              LEARN MORE
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ✅ We validate before going next -->
+      <button class="nav-button">Next: Create account</button>
+    </div>
+  </div>
+
+  <script>
+    const input = document.querySelector(".address-input");
+    const nextBtn = document.querySelector(".nav-button");
+    const statusEl = document.querySelector(".address-status");
+    const suggestionBox = document.querySelector(".address-suggestion");
+    const suggestedTextEl = document.querySelector(".suggested-text");
+    const acceptBtn = document.querySelector(".btn-accept");
+    const keepBtn = document.querySelector(".btn-keep");
+
+    let lastValidation = null; // store latest validation response
+
+    function showStatus(msg, type = "info") {
+      statusEl.style.display = "block";
+      statusEl.textContent = msg;
+      // simple styling
+      statusEl.style.padding = "10px";
+      statusEl.style.borderRadius = "10px";
+      statusEl.style.border = "1px solid #e5e7eb";
+      statusEl.style.background = type === "error" ? "rgba(239,68,68,.08)"
+                          : type === "ok" ? "rgba(34,197,94,.08)"
+                          : "rgba(59,130,246,.08)";
+    }
+
+    function hideSuggestion() {
+      suggestionBox.style.display = "none";
+      suggestedTextEl.textContent = "";
+    }
+
+    function showSuggestion(formattedAddress) {
+      suggestionBox.style.display = "block";
+      suggestedTextEl.textContent = formattedAddress;
+    }
+
+    async function initGoogle() {
+      await window.__gmapsReady();
+      // ✅ Import libraries on demand
+      const { AddressValidation } = await google.maps.importLibrary("addressValidation");
+      const { places } = await google.maps.importLibrary("places");
+
+      // ✅ Places Autocomplete (classic widget) for the single-line input
+      const autocomplete = new google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: ["ca"] } // change if needed
+      });
+
+      autocomplete.addListener("place_changed", async () => {
+        const place = autocomplete.getPlace();
+        const text = (place && place.formatted_address) ? place.formatted_address : input.value.trim();
+        if (!text) return;
+        input.value = text;
+        hideSuggestion();
+        await validateSingleLine(AddressValidation, text);
+      });
+
+      // Also validate on blur (if user types manually)
+      input.addEventListener("blur", async () => {
+        const text = input.value.trim();
+        if (!text) return;
+        hideSuggestion();
+        await validateSingleLine(AddressValidation, text);
+      });
+
+      // Validate on Next click (block if not valid)
+      nextBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text) {
+          showStatus("Please enter an address.", "error");
+          return;
+        }
+        await validateSingleLine(AddressValidation, text, { strictOnNext: true });
+        if (lastValidation && lastValidation.verdict && lastValidation.verdict.addressComplete) {
+          // ✅ proceed (replace with your real next step)
+          showStatus("Address validated. You can proceed.", "ok");
+          window.location.href = "signUp.html";
+        }
+      });
+
+      // Suggestion actions
+      acceptBtn.addEventListener("click", () => {
+        if (lastValidation?.address?.formattedAddress) {
+          input.value = lastValidation.address.formattedAddress;
+          showStatus("Using the standardized address.", "ok");
+          hideSuggestion();
+        }
+      });
+
+      keepBtn.addEventListener("click", () => {
+        showStatus("Keeping your entered address. Please ensure it’s correct.", "info");
+        hideSuggestion();
+      });
+
+      // Core validator using ONE-LINE addressLines
+      async function validateSingleLine(AddressValidationLib, singleLine, opts = {}) {
+        try {
+          showStatus("Validating address…", "info");
+
+          const result = await AddressValidationLib.fetchAddressValidation({
+            address: {
+              regionCode: "CA",            // change to "US" if US
+              languageCode: "en",
+              addressLines: [singleLine]   // ✅ single-line input goes here
+            }
+          });
+
+          lastValidation = result;
+
+          const verdict = result.verdict || {};
+          const formatted = result.address?.formattedAddress || "";
+
+          // If Google suggests a standardized format different from user input
+          if (formatted && formatted.toLowerCase() !== singleLine.toLowerCase()) {
+            showSuggestion(formatted);
+          } else {
+            hideSuggestion();
+          }
+
+          // Basic acceptance rules (you can tighten these)
+          if (!verdict.addressComplete) {
+            showStatus("Address looks incomplete. Please add missing details (unit, postal code, city, etc.).", "error");
+            return;
+          }
+
+          if (verdict.hasUnconfirmedComponents && opts.strictOnNext) {
+            showStatus("Some address parts can’t be confirmed. Please choose the suggested address or edit yours.", "error");
+            return;
+          }
+
+          showStatus("Address looks valid.", "ok");
+        } catch (err) {
+          console.error(err);
+          showStatus("Validation failed. Please try again or check your API key / enabled APIs.", "error");
+        }
+      }
+    }
+
+    initGoogle();
+  </script>
+</body>
+</html>

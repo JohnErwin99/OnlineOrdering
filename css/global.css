@@ -1,0 +1,652 @@
+/* ============================================
+   GLOBAL STYLES - Shared across all pages
+   ============================================ */
+
+/* CSS Variables (Iristel Brand) */
+:root {
+    --rich-black: #01111E;
+    --tufts-blue: #3E8CCB;
+    --white: #FFFFFF;
+    --light-gray: #F5F7FA;
+    --medium-gray: #E8ECF1;
+    --text-gray: #5A6A7A;
+    --magenta-glow: #C41E7A;
+    --cyan-glow: #3E8CCB;
+    --magenta-accent: #C41E7A;
+    --cyan-accent: #00B8D4;
+    --selected-bg: rgba(62, 140, 203, 0.08);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Heebo', sans-serif;
+    background-color: var(--light-gray);
+    min-height: 100vh;
+    color: var(--rich-black);
+}
+
+/* ============================================
+   LOGO
+   ============================================ */
+.logo-img {
+    height: 36px;
+    width: auto;
+}
+
+/* ============================================
+   HEADER
+   ============================================ */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+/* ============================================
+   PROGRESS INDICATOR
+   ============================================ */
+.progress-container {
+    margin-bottom: 40px;
+}
+
+.progress-text {
+    font-size: 13px;
+    color: var(--text-gray);
+    margin-bottom: 8px;
+}
+
+.progress-bar {
+    height: 4px;
+    background-color: var(--medium-gray);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%);
+    border-radius: 2px;
+}
+
+/* ============================================
+   PAGE TITLES
+   ============================================ */
+.page-title {
+    font-size: 28px;
+    font-weight: 500;
+    color: var(--rich-black);
+    margin-bottom: 30px;
+}
+
+.page-subtitle {
+    font-size: 15px;
+    color: var(--text-gray);
+    margin-bottom: 40px;
+}
+
+/* ============================================
+   TWO-PANEL LAYOUT
+   ============================================ */
+.container {
+    display: flex;
+    min-height: 100vh;
+}
+
+.left-panel {
+    flex: 1;
+    padding: 40px 60px;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--white);
+    position: relative;
+}
+
+.right-panel {
+    width: 50%;
+    max-width: 720px;
+    background: var(--rich-black);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ============================================
+   GRADIENT CIRCLES (Right Panel Background)
+   ============================================ */
+.gradient-circle {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    opacity: 0.6;
+}
+
+.gradient-circle.magenta {
+    width: 400px;
+    height: 400px;
+    background: var(--magenta-glow);
+    bottom: -100px;
+    right: -100px;
+}
+
+.gradient-circle.cyan {
+    width: 350px;
+    height: 350px;
+    background: var(--cyan-glow);
+    top: 50%;
+    left: -100px;
+    opacity: 0.4;
+}
+
+/* ============================================
+   PROMO CONTENT (Right Panel)
+   ============================================ */
+.promo-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px;
+    position: relative;
+    z-index: 2;
+}
+
+.promo-text {
+    text-align: center;
+    color: var(--white);
+}
+
+.promo-headline {
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 24px;
+}
+
+.promo-subheadline {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.6;
+}
+
+.promo-subheadline span {
+    color: var(--tufts-blue);
+}
+
+/* Discount promo (signUp, serviceAvailability) */
+.discount-value {
+    font-size: 140px;
+    font-weight: 300;
+    line-height: 1;
+    color: var(--tufts-blue);
+    letter-spacing: -8px;
+}
+
+.discount-value span {
+    font-size: 80px;
+    vertical-align: top;
+    letter-spacing: 0;
+}
+
+.discount-label {
+    font-size: 42px;
+    font-weight: 700;
+    margin-top: -10px;
+    letter-spacing: 1px;
+}
+
+.discount-sublabel {
+    font-size: 42px;
+    font-weight: 700;
+    color: var(--tufts-blue);
+    letter-spacing: 1px;
+}
+
+.promo-description {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.8);
+    margin-top: 20px;
+    max-width: 400px;
+}
+
+.promo-buttons {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-top: 30px;
+}
+
+/* Laptop illustration (signUp, serviceAvailability) */
+.laptop-image {
+    width: 100%;
+    max-width: 480px;
+    margin-bottom: 40px;
+    position: relative;
+}
+
+.laptop-frame {
+    background: linear-gradient(135deg, #2A3A4A 0%, #1A2A3A 100%);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.laptop-screen {
+    background: linear-gradient(180deg, #E8F0F8 0%, #D0E0F0 100%);
+    border-radius: 4px;
+    aspect-ratio: 16/10;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.video-call-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding: 20px;
+    width: 100%;
+}
+
+.video-participant {
+    aspect-ratio: 4/3;
+    background: linear-gradient(135deg, #F0F4F8 0%, #E0E8F0 100%);
+    border-radius: 6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.participant-avatar {
+    width: 60%;
+    height: 80%;
+    background: linear-gradient(180deg, #FFD5C8 0%, #F5C4B8 30%, #8BC4E0 30%, #7AB8D8 100%);
+    border-radius: 50% 50% 0 0;
+}
+
+.laptop-base {
+    height: 12px;
+    background: linear-gradient(180deg, #3A4A5A 0%, #2A3A4A 100%);
+    border-radius: 0 0 8px 8px;
+    margin-top: 4px;
+}
+
+/* Right panel logo (pickNumber, numberSelection) */
+.right-logo {
+    padding: 40px 60px;
+    position: relative;
+    z-index: 2;
+}
+
+.right-logo-img {
+    height: 28px;
+    width: auto;
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+.btn-back {
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 16px 48px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-back:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+.btn-next {
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 16px 48px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-next:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+.btn-proceed {
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 16px 48px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-proceed:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+.btn-explore {
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 14px 28px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+    text-transform: uppercase;
+}
+
+.btn-explore:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+/* ============================================
+   NAVIGATION BUTTONS CONTAINER
+   ============================================ */
+.nav-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 20px;
+}
+
+/* ============================================
+   LEARN MORE LINK
+   ============================================ */
+.learn-more {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--white);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    transition: opacity 0.2s ease;
+}
+
+.learn-more:hover {
+    opacity: 0.8;
+}
+
+.learn-more svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* ============================================
+   RADIO INPUTS
+   ============================================ */
+.radio-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+}
+
+.radio-input {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--medium-gray);
+    border-radius: 50%;
+    appearance: none;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.radio-input:hover {
+    border-color: var(--tufts-blue);
+}
+
+.radio-input:checked {
+    border-color: var(--tufts-blue);
+}
+
+.radio-input:checked::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    background: var(--tufts-blue);
+    border-radius: 50%;
+}
+
+.radio-label {
+    font-size: 15px;
+    color: var(--rich-black);
+}
+
+/* ============================================
+   FILTER / SELECT DROPDOWNS
+   ============================================ */
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.filter-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--rich-black);
+}
+
+.filter-select {
+    padding: 12px 40px 12px 16px;
+    font-size: 15px;
+    font-family: 'Heebo', sans-serif;
+    border: 1px solid var(--medium-gray);
+    border-radius: 4px;
+    background-color: var(--white);
+    color: var(--rich-black);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235A6A7A' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    min-width: 140px;
+    transition: border-color 0.2s ease;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: var(--tufts-blue);
+}
+
+.filter-select:hover {
+    border-color: var(--tufts-blue);
+}
+
+/* ============================================
+   NUMBER LIST (numberSelection, portNumber)
+   ============================================ */
+.numbers-list {
+    overflow-y: auto;
+    margin-bottom: 30px;
+}
+
+.number-item {
+    padding: 16px 20px;
+    font-size: 16px;
+    color: var(--rich-black);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+    margin-bottom: 4px;
+}
+
+.number-item:hover {
+    background-color: var(--light-gray);
+}
+
+.number-item.selected {
+    background-color: var(--selected-bg);
+}
+
+/* ============================================
+   PHONE ILLUSTRATION (pickNumber, numberSelection)
+   ============================================ */
+.phone-illustration {
+    width: 100%;
+    max-width: 500px;
+    margin-bottom: 50px;
+    position: relative;
+}
+
+.phone-image {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    opacity: 0.85;
+}
+
+/* ============================================
+   LOADING OVERLAY
+   ============================================ */
+.loading-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(1, 17, 30, 0.7);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+}
+
+.loading-overlay.active {
+    display: flex;
+}
+
+.loading-content {
+    text-align: center;
+    color: var(--white);
+}
+
+.spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--tufts-blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-content p {
+    font-size: 16px;
+    font-weight: 400;
+}
+
+/* ============================================
+   MESSAGE BOX
+   ============================================ */
+.message-box {
+    padding: 0;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+    transition: all 0.3s ease;
+}
+
+.message-box.success {
+    padding: 14px 20px;
+    background-color: #E8F5E9;
+    color: #2E7D32;
+    border: 1px solid #A5D6A7;
+}
+
+.message-box.error {
+    padding: 14px 20px;
+    background-color: #FFEBEE;
+    color: #C62828;
+    border: 1px solid #EF9A9A;
+}
+
+/* ============================================
+   RESPONSIVE - TWO-PANEL LAYOUT
+   ============================================ */
+@media (max-width: 1200px) {
+    .right-panel {
+        width: 45%;
+    }
+
+    .left-panel {
+        padding: 30px 40px;
+    }
+
+    .discount-value {
+        font-size: 100px;
+    }
+
+    .discount-label,
+    .discount-sublabel {
+        font-size: 32px;
+    }
+
+    .promo-headline {
+        font-size: 36px;
+    }
+}
+
+@media (max-width: 900px) {
+    .container {
+        flex-direction: column;
+    }
+
+    .left-panel {
+        padding: 30px;
+    }
+
+    .right-panel {
+        width: 100%;
+        max-width: none;
+        min-height: 500px;
+    }
+}

@@ -1,0 +1,305 @@
+/* portNumber.css - Page-specific styles only */
+
+/* Centered layout override */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 40px 60px;
+    flex-direction: column;
+}
+
+/* Progress */
+.progress-container {
+    margin-bottom: 30px;
+    max-width: 500px;
+}
+
+.progress-fill {
+    width: 66%;
+}
+
+/* Page Title */
+.page-title {
+    color: var(--tufts-blue);
+}
+
+/* Main Content */
+.main-content {
+    display: flex;
+    gap: 60px;
+    flex: 1;
+}
+
+/* Left Section - Number Selection */
+.number-section {
+    flex: 1;
+    max-width: 600px;
+}
+
+/* Filters Row */
+.filters-row {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 8px;
+}
+
+/* Right Section - Number Type */
+.number-type-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-left: auto;
+}
+
+.radio-option {
+    gap: 10px;
+}
+
+/* Radio - filled variant */
+.radio-input:checked {
+    background-color: var(--tufts-blue);
+}
+
+.radio-input:checked::after {
+    width: 8px;
+    height: 8px;
+    background: var(--white);
+}
+
+.radio-label {
+    font-size: 14px;
+}
+
+/* Filters and Type Container */
+.filters-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+}
+
+/* Divider */
+.divider {
+    height: 2px;
+    background: linear-gradient(90deg, #C41E7A 0%, var(--tufts-blue) 70%, var(--medium-gray) 70%);
+    margin-bottom: 16px;
+}
+
+/* Numbers List */
+.numbers-list {
+    max-height: 280px;
+    margin-bottom: 40px;
+}
+
+.number-item {
+    padding: 14px 20px;
+    font-size: 15px;
+}
+
+/* LOA Section */
+.loa-section {
+    background-color: var(--light-gray);
+    border-radius: 8px;
+    padding: 30px;
+}
+
+.loa-title {
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--tufts-blue);
+    margin-bottom: 24px;
+}
+
+.loa-subtitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--tufts-blue);
+    margin-bottom: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.loa-description {
+    font-size: 14px;
+    color: var(--text-gray);
+    margin-bottom: 20px;
+}
+
+/* LOA Form */
+.loa-form {
+    display: flex;
+    gap: 40px;
+}
+
+.loa-form-left {
+    flex: 1;
+}
+
+.loa-form-right {
+    flex: 0 0 280px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.loa-form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.loa-form-group {
+    flex: 1;
+}
+
+.loa-form-group.full-width {
+    flex: 1 1 100%;
+}
+
+.loa-label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-gray);
+    margin-bottom: 6px;
+}
+
+.loa-input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-family: 'Heebo', sans-serif;
+    border: 1px solid var(--medium-gray);
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s ease;
+    background-color: var(--white);
+}
+
+.loa-input::placeholder {
+    color: #A0AEC0;
+}
+
+.loa-input:focus {
+    border-color: var(--tufts-blue);
+}
+
+.pin-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--rich-black);
+    margin-top: 16px;
+    margin-bottom: 16px;
+}
+
+.btn-download {
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-download:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+/* File Upload */
+.file-upload {
+    border: 2px dashed var(--medium-gray);
+    border-radius: 8px;
+    padding: 30px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+    width: 100%;
+}
+
+.file-upload:hover {
+    border-color: var(--tufts-blue);
+    background-color: rgba(62, 140, 203, 0.03);
+}
+
+.upload-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 12px;
+    color: var(--tufts-blue);
+}
+
+.upload-text {
+    font-size: 14px;
+    color: var(--tufts-blue);
+}
+
+.file-input {
+    display: none;
+}
+
+/* Navigation */
+.nav-buttons {
+    margin-top: 40px;
+}
+
+.btn-next {
+    padding: 16px 32px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .container {
+        padding: 30px 40px;
+    }
+
+    .loa-form {
+        flex-direction: column;
+    }
+
+    .loa-form-right {
+        flex: none;
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 20px;
+    }
+
+    .filters-container {
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    .filters-row {
+        flex-wrap: wrap;
+    }
+
+    .number-type-section {
+        margin-left: 0;
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .loa-form-row {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .nav-buttons {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .btn-back,
+    .btn-next {
+        width: 100%;
+        text-align: center;
+    }
+}

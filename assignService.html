@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assign Cloud Calling Numbers - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #3E8CCB;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --medium-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --magenta-glow: #C41E7A;
+            --cyan-glow: #3E8CCB;
+            --success-green: #10B981;
+            --warning-amber: #F59E0B;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            min-height: 100vh;
+            color: var(--rich-black);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px 40px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 20px;
+        }
+
+        .logo-img {
+            height: 36px;
+            width: auto;
+        }
+
+        /* Page Title */
+        .page-title {
+            font-size: 28px;
+            font-weight: 500;
+            color: var(--tufts-blue);
+            margin-bottom: 20px;
+        }
+
+        /* Progress Indicator */
+        .progress-container {
+            margin-bottom: 40px;
+            max-width: 600px;
+        }
+
+        .progress-text {
+            font-size: 13px;
+            color: var(--text-gray);
+            margin-bottom: 8px;
+        }
+
+        .progress-bar {
+            height: 4px;
+            background-color: var(--medium-gray);
+            border-radius: 2px;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 83.33%;
+            background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%);
+            border-radius: 2px;
+        }
+
+        /* Content Area */
+        .content {
+            flex: 1;
+        }
+
+        /* Add User Button */
+        .add-user-container {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+        }
+
+        .btn-add-user {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 14px 28px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-add-user:hover {
+            background: #3580BC;
+            transform: translateY(-1px);
+        }
+
+        .btn-add-user svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Users Table */
+        .users-table-container {
+            background: var(--white);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .users-table th {
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 16px 12px;
+            background: var(--white);
+            border-bottom: 1px solid var(--medium-gray);
+        }
+
+        .users-table td {
+            padding: 12px;
+            vertical-align: middle;
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .users-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Form Inputs in Table */
+        .table-input {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: 'Heebo', sans-serif;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: var(--white);
+            color: var(--rich-black);
+        }
+
+        .table-input:focus {
+            border-color: var(--tufts-blue);
+        }
+
+        .table-input::placeholder {
+            color: #A0AEC0;
+        }
+
+        /* Name display (like Johnson in gold) */
+        .name-display {
+            color: #B8860B;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        /* Select Dropdowns */
+        .table-select {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            font-family: 'Heebo', sans-serif;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: var(--white);
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%235A6A7A' d='M5 7L0 2h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 32px;
+            cursor: pointer;
+            color: var(--rich-black);
+        }
+
+        .table-select:focus {
+            border-color: var(--tufts-blue);
+        }
+
+        /* Device Display */
+        .device-display {
+            padding: 10px 16px;
+            font-size: 14px;
+            color: var(--text-gray);
+            background: var(--light-gray);
+            border-radius: 4px;
+            text-align: center;
+            border: 1px solid var(--medium-gray);
+        }
+
+        /* Status Badges */
+        .status-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .status-badge.active {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-badge.pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-amber);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        /* Delete Button */
+        .btn-delete {
+            background: transparent;
+            border: none;
+            color: var(--text-gray);
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-delete:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #EF4444;
+        }
+
+        .btn-delete svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Navigation Buttons */
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 40px;
+            padding-top: 20px;
+        }
+
+        .btn-back {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 16px 48px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-back:hover {
+            background: #3580BC;
+            transform: translateY(-1px);
+        }
+
+        .btn-next {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 16px 48px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-next:hover {
+            background: #3580BC;
+            transform: translateY(-1px);
+        }
+
+        /* Column Widths */
+        .col-firstname { width: 12%; }
+        .col-lastname { width: 12%; }
+        .col-phone { width: 15%; }
+        .col-extension { width: 10%; }
+        .col-device { width: 14%; }
+        .col-package { width: 14%; }
+        .col-status { width: 12%; }
+        .col-actions { width: 5%; text-align: center; }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .users-table-container {
+                overflow-x: auto;
+            }
+            
+            .users-table {
+                min-width: 900px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .nav-buttons {
+                flex-direction: column;
+                gap: 16px;
+            }
+            
+            .btn-back, .btn-next {
+                width: 100%;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <!-- Page Title -->
+        <h1 class="page-title">Assign Cloud Calling Numbers</h1>
+
+        <!-- Progress Indicator -->
+        <div class="progress-container">
+            <div class="progress-text">5 of 6</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="content">
+            <!-- Add User Button -->
+            <div class="add-user-container">
+                <button class="btn-add-user" onclick="addUser()">
+                    <svg viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/>
+                    </svg>
+                    Add User
+                </button>
+            </div>
+
+            <!-- Users Table -->
+            <div class="users-table-container">
+                <table class="users-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th class="col-firstname">FIRST NAME</th>
+                            <th class="col-lastname">LAST NAME</th>
+                            <th class="col-phone">PHONE NUMBER</th>
+                            <th class="col-extension">EXTENSION</th>
+                            <th class="col-device">DEVICE</th>
+                            <th class="col-package">PRIMARY PACKAGE</th>
+                            <th class="col-status">STATUS</th>
+                            <th class="col-actions"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <!-- Users will be rendered here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="nav-buttons">
+            <button class="btn-back" onclick="goBack()">Back</button>
+            <button class="btn-next" onclick="saveAndContinue()">Next: Virtual Fax</button>
+        </div>
+    </div>
+
+    <script>
+        // Sample data matching the screenshot
+        let users = [
+            {
+                id: 1,
+                firstName: 'Alex',
+                lastName: 'Johnson',
+                phoneNumber: '(825) 555-101',
+                extension: '1001',
+                device: 'Yealink T31P',
+                package: 'Essentials',
+                status: 'active'
+            },
+            {
+                id: 2,
+                firstName: 'Maria',
+                lastName: 'Gonzales',
+                phoneNumber: '(825) 555-101',
+                extension: '1002',
+                device: 'None',
+                package: 'Pro',
+                status: 'pending'
+            }
+        ];
+
+        let availableNumbers = [
+            '(825) 555-101',
+            '(825) 555-102',
+            '(825) 555-103',
+            '(825) 555-104',
+            '(825) 555-105'
+        ];
+
+        let devices = ['None', 'Yealink T31P', 'Yealink T48U', 'Polycom VVX 250', 'Cisco 8841'];
+        let packages = ['Essentials', 'Pro', 'Premium'];
+
+        function setCookie(name, value, days = 7) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict';
+        }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+            return null;
+        }
+
+        function renderUsers() {
+            const tbody = document.getElementById('usersTableBody');
+            
+            tbody.innerHTML = users.map((user, index) => `
+                <tr data-id="${user.id}">
+                    <td>
+                        <input type="text" class="table-input" value="${user.firstName}" 
+                               placeholder="First name"
+                               onchange="updateUser(${user.id}, 'firstName', this.value)">
+                    </td>
+                    <td>
+                        <span class="name-display">${user.lastName}</span>
+                    </td>
+                    <td>
+                        <select class="table-select" onchange="updateUser(${user.id}, 'phoneNumber', this.value)">
+                            ${availableNumbers.map(num => `
+                                <option value="${num}" ${user.phoneNumber === num ? 'selected' : ''}>${num}</option>
+                            `).join('')}
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" class="table-input" value="${user.extension}" 
+                               placeholder="Extension"
+                               onchange="updateUser(${user.id}, 'extension', this.value)">
+                    </td>
+                    <td>
+                        <div class="device-display">${user.device}</div>
+                    </td>
+                    <td>
+                        <select class="table-select" onchange="updateUser(${user.id}, 'package', this.value)">
+                            ${packages.map(pkg => `
+                                <option value="${pkg}" ${user.package === pkg ? 'selected' : ''}>${pkg}</option>
+                            `).join('')}
+                        </select>
+                    </td>
+                    <td>
+                        <span class="status-badge ${user.status}">${user.status === 'active' ? 'Active' : '• Pending'}</span>
+                    </td>
+                    <td>
+                        <button class="btn-delete" onclick="deleteUser(${user.id})" title="Delete user">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateUser(id, field, value) {
+            const user = users.find(u => u.id === id);
+            if (user) {
+                user[field] = value;
+            }
+        }
+
+        function addUser() {
+            const newId = Math.max(...users.map(u => u.id), 0) + 1;
+            const nextExtension = 1000 + users.length + 1;
+            
+            users.push({
+                id: newId,
+                firstName: '',
+                lastName: '',
+                phoneNumber: availableNumbers[0],
+                extension: nextExtension.toString(),
+                device: 'None',
+                package: 'Essentials',
+                status: 'pending'
+            });
+            
+            renderUsers();
+            
+            // Focus on the new row's first input
+            setTimeout(() => {
+                const newRow = document.querySelector(`tr[data-id="${newId}"] input`);
+                if (newRow) newRow.focus();
+            }, 100);
+        }
+
+        function deleteUser(id) {
+            if (users.length <= 1) {
+                alert('You must have at least one user.');
+                return;
+            }
+            
+            if (confirm('Are you sure you want to remove this user?')) {
+                users = users.filter(u => u.id !== id);
+                renderUsers();
+            }
+        }
+
+        function goBack() {
+            window.history.back();
+        }
+
+        function saveAndContinue() {
+            // Validate that all users have required fields
+            const incompleteUser = users.find(u => !u.firstName || !u.lastName);
+            if (incompleteUser) {
+                alert('Please complete all user information (first name and last name required).');
+                return;
+            }
+
+            // Save to cookies
+            setCookie('cloud_calling_users', JSON.stringify(users));
+            
+            // Navigate to next page
+            window.location.href = 'assignVirtualFax.html';
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load saved users if available
+            const savedUsers = getCookie('cloud_calling_users');
+            if (savedUsers) {
+                try {
+                    users = JSON.parse(savedUsers);
+                } catch (e) {
+                    console.log('Using default users');
+                }
+            }
+            
+            renderUsers();
+        });
+    </script>
+</body>
+</html>

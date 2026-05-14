@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review & Pay - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #3E8CCB;
+            --tufts-blue-dark: #2d7ab8;
+            --magenta: #C41E7A;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --border-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --text-dark: #2C3E50;
+            --success-green: #28a745;
+            --error-red: #dc3545;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            color: var(--text-dark);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 30px 40px 100px;
+        }
+
+        .header { margin-bottom: 20px; }
+        .logo-text {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--rich-black);
+            letter-spacing: 2px;
+        }
+
+        .progress-container { margin-bottom: 30px; }
+        .progress-text { font-size: 12px; color: var(--text-gray); margin-bottom: 8px; }
+        .progress-bar {
+            height: 4px;
+            background-color: var(--border-gray);
+            border-radius: 2px;
+            overflow: hidden;
+            max-width: 500px;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 100%;
+            background: var(--magenta);
+            border-radius: 2px;
+        }
+
+        .page-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 30px;
+        }
+
+        /* Two-column layout */
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+
+        @media (max-width: 800px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+
+        /* Summary sections */
+        .summary-section {
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 10px;
+            padding: 18px 22px;
+            margin-bottom: 14px;
+        }
+
+        .summary-section:last-child { margin-bottom: 0; }
+
+        .summary-section h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .summary-section p, .summary-section .item {
+            font-size: 14px;
+            color: var(--text-dark);
+            line-height: 1.6;
+        }
+
+        .pay-now-section {
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 10px;
+            padding: 18px 22px;
+        }
+
+        .pay-now-section h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .pay-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: var(--text-dark);
+            margin-bottom: 5px;
+        }
+
+        .pay-row.total {
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-gray);
+        }
+
+        .pay-row .label { color: var(--text-gray); }
+
+        /* Payment card */
+        .payment-card {
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 10px;
+            padding: 28px;
+        }
+
+        .payment-card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 22px;
+        }
+
+        .form-group { margin-bottom: 16px; }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-gray);
+            margin-bottom: 6px;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 11px 14px;
+            border: 1px solid var(--border-gray);
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            color: var(--text-dark);
+            background: var(--white);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            border-color: var(--tufts-blue);
+        }
+
+        .form-group input::placeholder { color: #B0BEC5; }
+
+        /* Card number row */
+        .card-field-wrapper {
+            position: relative;
+        }
+
+        .card-field-wrapper input {
+            padding-right: 50px;
+        }
+
+        .card-icons {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .card-icon {
+            width: 30px;
+            height: 20px;
+            border-radius: 3px;
+            background: #E53935;
+            display: inline-block;
+        }
+
+        .card-icon.visa { background: #1A1F71; }
+
+        /* CVV row */
+        .card-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        /* Stripe-like pay button */
+        .btn-pay {
+            width: 100%;
+            padding: 15px;
+            background-color: var(--tufts-blue);
+            color: var(--white);
+            border: none;
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .btn-pay:hover { background-color: var(--tufts-blue-dark); }
+
+        .btn-pay .lock-icon { font-size: 16px; }
+
+        /* Error/success */
+        .message-box {
+            display: none;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        .message-box.error {
+            display: block;
+            background: #fef2f2;
+            border: 1px solid var(--error-red);
+            color: var(--error-red);
+        }
+        .message-box.success {
+            display: block;
+            background: #f0fdf4;
+            border: 1px solid var(--success-green);
+            color: var(--success-green);
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(255,255,255,0.88);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .loading-overlay.active { display: flex; }
+        .spinner {
+            width: 48px; height: 48px;
+            border: 4px solid var(--border-gray);
+            border-top-color: var(--tufts-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 14px; font-size: 15px; color: var(--text-gray); }
+
+        /* Nav */
+        .nav-buttons {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--white);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.08);
+        }
+
+        .btn-back {
+            padding: 14px 40px;
+            background-color: var(--tufts-blue);
+            color: var(--white);
+            border: none;
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-back:hover { background-color: var(--tufts-blue-dark); }
+    </style>
+</head>
+<body>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Processing payment...</div>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-text">6 of 6</div>
+            <div class="progress-bar"><div class="progress-fill"></div></div>
+        </div>
+
+        <h1 class="page-title">Review Your Selections</h1>
+
+        <div class="layout">
+            <!-- LEFT: Summary -->
+            <div class="summary-left">
+                <div class="summary-section">
+                    <h3>Services</h3>
+                    <p id="summaryService">—</p>
+                </div>
+
+                <div class="summary-section">
+                    <h3>Hardware</h3>
+                    <p id="summaryHardware">—</p>
+                </div>
+
+                <div class="summary-section">
+                    <h3>Numbers</h3>
+                    <p id="summaryNumbers">—</p>
+                </div>
+
+                <div class="summary-section">
+                    <h3>Activation</h3>
+                    <p id="summaryActivation">—</p>
+                </div>
+
+                <div class="pay-now-section">
+                    <h3>Pay Now</h3>
+                    <div class="pay-row">
+                        <span class="label">Before Tax:</span>
+                        <span id="beforeTax">$0.00</span>
+                    </div>
+                    <div class="pay-row">
+                        <span class="label">Tax (13%):</span>
+                        <span id="taxAmount">$0.00</span>
+                    </div>
+                    <div class="pay-row total">
+                        <span>Total due today:</span>
+                        <span id="totalDue">$0.00</span>
+                    </div>
+                    <div class="pay-row" style="margin-top: 10px;">
+                        <span class="label" style="font-size:13px;">Total monthly cost:</span>
+                        <span id="monthlyTotal" style="font-size:13px; color: var(--text-gray);">$0.00/mo</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Pay with card -->
+            <div class="summary-right">
+                <div class="payment-card">
+                    <h2>Pay with card</h2>
+
+                    <div class="message-box" id="messageBox"></div>
+
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="payEmail" placeholder="jane@stripe.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Card Information</label>
+                        <div class="card-field-wrapper" style="margin-bottom: 1px;">
+                            <input type="text" id="cardNumber" placeholder="1234 5678 9012 3456" maxlength="19" oninput="formatCardNumber(this)">
+                            <div class="card-icons">
+                                <span style="font-size:18px;">💳</span>
+                            </div>
+                        </div>
+                        <div class="card-row" style="margin-top: 8px;">
+                            <input type="text" id="cardExpiry" placeholder="MM / YY" maxlength="7" oninput="formatExpiry(this)">
+                            <input type="text" id="cardCvc" placeholder="CVC" maxlength="4">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Name on card</label>
+                        <input type="text" id="cardName" placeholder="Jane Doe">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Country or region</label>
+                        <select id="cardCountry">
+                            <option value="CA">Canada</option>
+                            <option value="US">United States</option>
+                            <option value="GB">United Kingdom</option>
+                            <option value="AU">Australia</option>
+                        </select>
+                    </div>
+
+                    <button class="btn-pay" onclick="processPayment()">
+                        <span class="lock-icon">🔒</span>
+                        Pay <span id="payButtonAmount">$0.00</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-buttons">
+        <button class="btn-back" onclick="window.history.back()">Back</button>
+    </div>
+
+    <script>
+        // ============================================
+        // LOAD SUMMARY FROM COOKIES
+        // ============================================
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const cookies = document.cookie.split(';');
+            for (let c of cookies) {
+                c = c.trim();
+                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length));
+            }
+            return null;
+        }
+
+        function populateSummary() {
+            const service  = getCookie('iristel_selected_plan_name') || 'Cloud Basic License';
+            const hardware = getCookie('iristel_hardware') || 'Yealink Premium Smartphone';
+            const numbers  = getCookie('iristel_number') || '+1 234 567 8901';
+            const activation = getCookie('iristel_activation_date') || 'As soon as possible';
+            const email    = getCookie('iristel_user_email') || '';
+            const monthly  = parseFloat(getCookie('iristel_monthly_charge') || '45');
+
+            document.getElementById('summaryService').textContent    = service;
+            document.getElementById('summaryHardware').textContent   = hardware;
+            document.getElementById('summaryNumbers').textContent    = numbers;
+            document.getElementById('summaryActivation').textContent = activation;
+            document.getElementById('payEmail').value = email;
+
+            // Calculate
+            const tax   = +(monthly * 0.13).toFixed(2);
+            const total = +(monthly + tax).toFixed(2);
+
+            document.getElementById('beforeTax').textContent    = `$${monthly.toFixed(2)}`;
+            document.getElementById('taxAmount').textContent    = `$${tax.toFixed(2)}`;
+            document.getElementById('totalDue').textContent     = `$${total.toFixed(2)}`;
+            document.getElementById('monthlyTotal').textContent = `$${monthly.toFixed(2)}/mo`;
+            document.getElementById('payButtonAmount').textContent = `$${total.toFixed(2)}`;
+        }
+
+        // ============================================
+        // INPUT FORMATTERS
+        // ============================================
+        function formatCardNumber(input) {
+            let val = input.value.replace(/\D/g, '').substring(0, 16);
+            input.value = val.replace(/(.{4})/g, '$1 ').trim();
+        }
+
+        function formatExpiry(input) {
+            let val = input.value.replace(/\D/g, '').substring(0, 4);
+            if (val.length >= 3) val = val.substring(0,2) + ' / ' + val.substring(2);
+            input.value = val;
+        }
+
+        // ============================================
+        // PROCESS PAYMENT
+        // ============================================
+        function showMessage(type, msg) {
+            const box = document.getElementById('messageBox');
+            box.className = 'message-box ' + type;
+            box.textContent = msg;
+        }
+
+        function hideMessage() {
+            document.getElementById('messageBox').className = 'message-box';
+        }
+
+        function validateForm() {
+            const email  = document.getElementById('payEmail').value.trim();
+            const card   = document.getElementById('cardNumber').value.replace(/\s/g,'');
+            const expiry = document.getElementById('cardExpiry').value.trim();
+            const cvc    = document.getElementById('cardCvc').value.trim();
+            const name   = document.getElementById('cardName').value.trim();
+
+            if (!email || !email.includes('@')) { showMessage('error', 'Please enter a valid email address.'); return false; }
+            if (card.length < 15) { showMessage('error', 'Please enter a valid card number.'); return false; }
+            if (expiry.length < 7) { showMessage('error', 'Please enter a valid expiry date.'); return false; }
+            if (cvc.length < 3)   { showMessage('error', 'Please enter a valid CVC.'); return false; }
+            if (!name)            { showMessage('error', 'Please enter the name on card.'); return false; }
+            return true;
+        }
+
+        async function processPayment() {
+            hideMessage();
+            if (!validateForm()) return;
+
+            document.getElementById('loadingOverlay').classList.add('active');
+
+            // Simulate payment processing
+            await new Promise(r => setTimeout(r, 2000));
+
+            document.getElementById('loadingOverlay').classList.remove('active');
+            window.location.href = 'paymentConfirmation.html';
+        }
+
+        // Init
+        populateSummary();
+    </script>
+</body>
+</html>

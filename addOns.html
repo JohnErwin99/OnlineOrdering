@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Ons - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/addOns.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loadingText">Loading...</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <!-- Header -->
+            <div class="header">
+                <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+            </div>
+
+            <!-- User Info (populated from cookies) -->
+            <div class="user-info" id="userInfo" style="display: none;">
+                Logged in as: <strong id="userEmail"></strong> | Account ID: <strong id="accountIdDisplay"></strong>
+            </div>
+
+            <!-- Page Title -->
+            <h1 class="page-title">Add Ons</h1>
+            <p class="page-subtitle">Add optional services as needed (more additions and changes can be made later).<br>Click the icon to view the detailed description of an option.</p>
+
+            <!-- International Long Distance Section -->
+            <div class="section">
+                <h2 class="section-title">International Long Distance</h2>
+
+                <div class="addon-item" id="addon-international">
+                    <div class="addon-info">
+                        <div class="addon-name">International</div>
+                        <div class="addon-price">$13 <span>/mo</span></div>
+                        <div class="addon-description">Cost per minute or unlimited flat-rate bundle</div>
+                    </div>
+                    <div class="toggle-container">
+                        <label class="toggle">
+                            <input type="checkbox" data-service="INTERNATIONAL" data-service-name="International Long Distance">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="addon-item" id="addon-tollfree">
+                    <div class="addon-info">
+                        <div class="addon-name">Toll-Free</div>
+                        <div class="addon-price">$5 <span>/mo</span></div>
+                        <div class="addon-description">plus 3c/min</div>
+                    </div>
+                    <div class="toggle-container">
+                        <label class="toggle">
+                            <input type="checkbox" data-service="TOLL_FREE" data-service-name="Toll-Free">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="addon-item" id="addon-virtualnumber">
+                    <div class="addon-info">
+                        <div class="addon-name">Virtual Number</div>
+                        <div class="addon-price">$10 <span>/mo</span></div>
+                        <div class="addon-description">Cost per minute or unlimited flat-rate bundle</div>
+                    </div>
+                    <div class="toggle-container">
+                        <label class="toggle">
+                            <input type="checkbox" data-service="VIRTUAL_NUMBER" data-service-name="Virtual Number">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Iristel EDGE Section -->
+            <div class="section">
+                <h2 class="section-title">Iristel EDGE - Enhanced Support</h2>
+
+                <div class="addon-item" id="addon-priority">
+                    <div class="addon-info">
+                        <div class="addon-name">Priority Customer</div>
+                        <div class="addon-description">offers fast-tracked, dedicated assistance for our most valued customers. Enjoy shorter wait times, access to experienced support agents, and quicker resolution of your issues—because your time and satisfaction matter most.</div>
+                        <div class="addon-price" style="margin-top: 8px;">$10 <span>/mo</span></div>
+                    </div>
+                    <div class="toggle-container">
+                        <label class="toggle">
+                            <input type="checkbox" data-service="PRIORITY" data-service-name="Priority Customer">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="addon-item" id="addon-voicemail">
+                    <div class="addon-info">
+                        <div class="addon-name">Voicemail-to-Email Transcription</div>
+                        <div class="addon-description">automatically converts your voice messages into text and delivers them straight to your email inbox. This feature lets you quickly read your messages without having to dial in—ideal for staying connected on the go or in noisy environments.</div>
+                        <div class="addon-price" style="margin-top: 8px;">$5 <span>/mo</span></div>
+                    </div>
+                    <div class="toggle-container">
+                        <label class="toggle">
+                            <input type="checkbox" data-service="VOICEMAIL_TRANSCRIPTION" data-service-name="Voicemail-to-Email Transcription">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Message Box -->
+            <div class="message-box" id="messageBox"></div>
+
+            <!-- Navigation Buttons -->
+            <div class="nav-buttons">
+                <button class="btn-back" onclick="window.location.href='serviceSelection.html'">Back</button>
+                <button class="btn-next" id="btnNext" onclick="saveAndContinue()">Next: Hardware</button>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <!-- Gradient Background Effects -->
+            <div class="gradient-circle magenta"></div>
+            <div class="gradient-circle cyan"></div>
+
+            <div class="promo-content">
+                <!-- Keypad Illustration -->
+                <div class="keypad-illustration">
+                    <div class="keypad-grid">
+                        <div class="keypad-button">
+                            1
+                        </div>
+                        <div class="keypad-button">
+                            2
+                            <span class="letters">ABC</span>
+                        </div>
+                        <div class="keypad-button">
+                            3
+                            <span class="letters">DEF</span>
+                        </div>
+                        <div class="keypad-button">
+                            4
+                            <span class="letters">GHI</span>
+                        </div>
+                        <div class="keypad-button">
+                            5
+                            <span class="letters">JKL</span>
+                        </div>
+                        <div class="keypad-button">
+                            6
+                            <span class="letters">MNO</span>
+                        </div>
+                        <div class="keypad-button">
+                            7
+                            <span class="letters">PQRS</span>
+                        </div>
+                        <div class="keypad-button">
+                            8
+                            <span class="letters">TUV</span>
+                        </div>
+                        <div class="keypad-button highlight">
+                            9
+                            <span class="letters">WXYZ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Promo Text -->
+                <div class="promo-text">
+                    <h2 class="promo-headline">Rethinking How<br>Your Business<br><span>Connects?</span></h2>
+                    <p class="promo-subheadline">Stay Flexible, Professional, And Connected—From<br>Anywhere With <span>Virtual Phone Numbers</span>.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+<script>
+    // ============================================
+    // API CONFIGURATION
+    // ============================================
+    const API_BASE_URL = 'https://api.iristelx.com';
+    const API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
+
+    // ============================================
+    // ADD-ON PLAN CODE MAPPING
+    // Mirrors the PLAN_CODES pattern in serviceSelection.html.
+    // These are the actual plan codes expected by the Iristel API
+    // when creating a new "add service" for an add-on.
+    // ============================================
+    const ADDON_CODES = {
+        'INTERNATIONAL':           'EXLNP_SBINTADD',
+        'TOLL_FREE':               'EXLNP_SBTOLLADD',
+        'VIRTUAL_NUMBER':          'EXLNP_SBVRTNADD',
+        'PRIORITY':                'EXLNP_SBPRIOADD',
+        'VOICEMAIL_TRANSCRIPTION': 'EXLNP_SBVMMAIL'
+    };
+
+    // Track which services have been added to avoid duplicates
+    const addedServices = new Set();
+
+    // ============================================
+    // COOKIE FUNCTIONS
+    // ============================================
+    function getCookie(name) {
+        const nameEQ = name + "=";
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            let cookie = cookies[i].trim();
+            if (cookie.indexOf(nameEQ) === 0) {
+                return decodeURIComponent(cookie.substring(nameEQ.length));
+            }
+        }
+        return null;
+    }
+
+    function setCookie(name, value, days = 7) {
+        const expires = new Date();
+        expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+        document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Strict`;
+    }
+
+    function getContactDataFromCookies() {
+        return {
+            fname: getCookie('iristel_user_fname') || '',
+            lname: getCookie('iristel_user_lname') || '',
+            emailAddress: getCookie('iristel_user_email') || '',
+            phone: getCookie('iristel_user_phone') || '',
+            address1: getCookie('iristel_user_address1') || '',
+            city: getCookie('iristel_user_city') || '',
+            province: getCookie('iristel_user_province') || '',
+            country: getCookie('iristel_user_country') || '',
+            postalCode: getCookie('iristel_user_postalCode') || ''
+        };
+    }
+
+    function getAccountIdFromCookie() {
+        return getCookie('iristel_account_id') || null;
+    }
+
+    // ============================================
+    // UI FUNCTIONS
+    // ============================================
+    function showLoading(message = 'Loading...') {
+        document.getElementById('loadingText').textContent = message;
+        document.getElementById('loadingOverlay').classList.add('active');
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').classList.remove('active');
+    }
+
+    function showMessage(type, message) {
+        const messageBox = document.getElementById('messageBox');
+        messageBox.className = 'message-box ' + type;
+        messageBox.textContent = message;
+    }
+
+    function hideMessage() {
+        const messageBox = document.getElementById('messageBox');
+        messageBox.className = 'message-box';
+        messageBox.textContent = '';
+    }
+
+    // ============================================
+    // API: ADD SERVICE TO ACCOUNT
+    // Creates a new add service using the add-on plan code and the
+    // account/contact information previously saved in cookies.
+    // The accountId in the URL and the body MUST match the
+    // account ID saved in the cookie at signup.
+    // ============================================
+    async function addServiceToAccount(accountId, serviceCode, serviceName, contactData) {
+        console.log('Adding add-on service:', serviceName, '| Code:', serviceCode);
+
+        const actualCode = ADDON_CODES[serviceCode] || serviceCode;
+
+        const requestBody = {
+            accountId: accountId,
+            planCode: actualCode,
+            contact: {
+                fname: contactData.fname,
+                lname: contactData.lname,
+                address1: contactData.address1,
+                city: contactData.city,
+                province: contactData.province,
+                country: contactData.country,
+                postalCode: contactData.postalCode,
+                emailAddress: contactData.emailAddress,
+                phone: contactData.phone || ''
+            }
+        };
+
+        console.log('Add-on Request Body:', JSON.stringify(requestBody, null, 2));
+
+        const response = await fetch(`${API_BASE_URL}/accounts/${accountId}/services`, {
+            method: 'POST',
+            headers: {
+                'iristelx-api-key': API_KEY,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        const responseData = await response.json();
+        console.log('Add-on API Response:', responseData);
+
+        if (!response.ok) {
+            throw new Error(responseData.message || `Failed to add service: ${response.status}`);
+        }
+
+        return responseData;
+    }
+
+    // ============================================
+    // TOGGLE HANDLER
+    // ============================================
+    async function handleToggle(toggle) {
+        const serviceCode = toggle.dataset.service;
+        const serviceName = toggle.dataset.serviceName;
+        const container = toggle.closest('.toggle-container');
+        const isEnabled = toggle.checked;
+
+        // Update visual state
+        if (isEnabled) {
+            container.classList.add('active');
+        } else {
+            container.classList.remove('active');
+            addedServices.delete(serviceCode);
+            updateAddonsCookie();
+            console.log(`${serviceName} removed from selection.`);
+            return;
+        }
+
+        // Validate account
+        const accountId = getAccountIdFromCookie();
+        if (!accountId) {
+            showMessage('error', 'No account ID found. Please complete signup first.');
+            toggle.checked = false;
+            container.classList.remove('active');
+            return;
+        }
+
+        const contactData = getContactDataFromCookies();
+        if (!contactData.fname || !contactData.emailAddress) {
+            showMessage('error', 'Missing contact information. Please complete signup first.');
+            toggle.checked = false;
+            container.classList.remove('active');
+            return;
+        }
+
+        // Call API to add the service
+        try {
+            showLoading(`Adding ${serviceName} to your account...`);
+            hideMessage();
+
+            // Create a new add service using the plan code and
+            // the account info from cookies.
+            const result = await addServiceToAccount(accountId, serviceCode, serviceName, contactData);
+
+            hideLoading();
+            addedServices.add(serviceCode);
+            updateAddonsCookie();
+            showMessage('success', `${serviceName} has been added to your account!`);
+
+            console.log(`${serviceName} added successfully:`, result);
+
+        } catch (error) {
+            console.error(`Error adding ${serviceName}:`, error);
+            hideLoading();
+            showMessage('error', `Failed to add ${serviceName}: ${error.message}`);
+
+            // Revert the toggle on failure
+            toggle.checked = false;
+            container.classList.remove('active');
+        }
+    }
+
+    // ============================================
+    // COOKIE: SAVE SELECTED ADD-ONS
+    // ============================================
+    function updateAddonsCookie() {
+        const selectedAddons = [];
+        document.querySelectorAll('.toggle input:checked').forEach(toggle => {
+            if (toggle.dataset.service) {
+                selectedAddons.push({
+                    code: toggle.dataset.service,
+                    name: toggle.dataset.serviceName
+                });
+            }
+        });
+        setCookie('iristel_selected_addons', JSON.stringify(selectedAddons), 7);
+    }
+
+    // ============================================
+    // SAVE & CONTINUE
+    // ============================================
+    function saveAndContinue() {
+        updateAddonsCookie();
+        window.location.href = 'hardwareOrders.html';
+    }
+
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+    document.addEventListener('DOMContentLoaded', function() {
+        // Display account info from cookies
+        const accountId = getAccountIdFromCookie();
+        const contactData = getContactDataFromCookies();
+        const selectedPlan = getCookie('iristel_selected_plan_name');
+        console.log('=== ADD-ONS PAGE ===');
+        console.log('Account ID:', accountId);
+        console.log('Selected Plan:', selectedPlan);
+
+        if (!accountId) {
+            showMessage('error', 'No account found. Please complete signup and service selection first.');
+        }
+
+        // Populate "Logged in as" banner from cookies
+        if (contactData.emailAddress) {
+            document.getElementById('userEmail').textContent = contactData.emailAddress;
+        }
+        if (accountId) {
+            document.getElementById('accountIdDisplay').textContent = accountId;
+        }
+        if (contactData.emailAddress || accountId) {
+            document.getElementById('userInfo').style.display = 'block';
+        }
+
+        // Restore previously selected add-ons from cookie
+        const savedAddons = getCookie('iristel_selected_addons');
+        if (savedAddons) {
+            try {
+                const addons = JSON.parse(savedAddons);
+                addons.forEach(addon => {
+                    const toggle = document.querySelector(`input[data-service="${addon.code}"]`);
+                    if (toggle) {
+                        toggle.checked = true;
+                        addedServices.add(addon.code);
+                    }
+                });
+            } catch (e) {
+                console.error('Error parsing saved add-ons:', e);
+            }
+        }
+
+        // Set initial visual state for all toggles
+        const toggles = document.querySelectorAll('.toggle input');
+        toggles.forEach(toggle => {
+            const container = toggle.closest('.toggle-container');
+            if (toggle.checked) {
+                container.classList.add('active');
+            }
+        });
+
+        // Attach change handlers
+        toggles.forEach(toggle => {
+            toggle.addEventListener('change', function() {
+                handleToggle(this);
+            });
+        });
+    });
+</script>
+</html>

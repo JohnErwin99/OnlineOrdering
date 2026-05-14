@@ -1,0 +1,70 @@
+/* numberSelection.css - Page-specific styles only */
+
+/* Progress */
+.progress-container {
+    max-width: 600px;
+}
+
+.progress-fill {
+    width: 66%;
+}
+
+/* Page Title */
+.page-title {
+    color: var(--tufts-blue);
+}
+
+/* Filters */
+.filters {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 8px;
+}
+
+/* Divider */
+.divider {
+    height: 2px;
+    background: linear-gradient(90deg, #C41E7A 0%, var(--tufts-blue) 50%, var(--medium-gray) 50%);
+    margin-bottom: 20px;
+}
+
+/* Numbers List */
+.numbers-list {
+    flex: 1;
+}
+
+/* Gradient circle position override */
+.gradient-circle.cyan {
+    top: 20%;
+}
+
+/* Promo Content */
+.promo-content {
+    padding: 40px 60px;
+}
+
+/* Phone image */
+.phone-image {
+    filter: brightness(0.9);
+}
+
+/* Promo Text */
+.promo-text {
+    max-width: 500px;
+}
+
+.promo-subheadline {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .filters {
+        flex-wrap: wrap;
+    }
+
+    .filter-group {
+        flex: 1;
+        min-width: 120px;
+    }
+}

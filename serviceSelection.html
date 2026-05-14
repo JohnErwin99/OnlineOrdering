@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Choose Your Primary Service - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/serviceSelection.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Loading...</div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="progress-container">
+            <div class="progress-text">2 of 5</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+
+        <!-- Message Box -->
+        <div class="message-box" id="messageBox"></div>
+
+        <!-- User Info (populated from API) -->
+        <div class="user-info" id="userInfo" style="display: none;">
+            Logged in as: <strong id="userEmail"></strong> | Account ID: <strong id="accountIdDisplay"></strong>
+        </div>
+
+        <!-- Page Title -->
+        <h1 class="page-title">Choose your primary service</h1>
+
+        <!-- Smart Connect Bundles Section -->
+        <h2 class="section-title">Smart Connect Bundles</h2>
+
+        <div class="plans-grid">
+            <!-- Essentials Plan -->
+            <div class="plan-card" id="plan-essentials" data-plan-code="ESSENTIALS" data-plan-name="Essentials">
+                <h3 class="plan-name magenta">Essentials</h3>
+                <div class="plan-price">
+                    <span class="price-value">$25</span>
+                    <span class="price-period">/mo</span>
+                </div>
+                <ul class="plan-features">
+                    <li>Cloud Calling</li>
+                    <li>Standard Webex or Teams Calling</li>
+                    <li>Standard Call Recording</li>
+                    <li>Eset cybersecurity training (1 year)</li>
+                    <li>Virtual Fax Number Unlimited</li>
+                    <li>Smarter Messaging</li>
+                </ul>
+                <button class="btn-configure" onclick="selectPlan('ESSENTIALS', 'Essentials')">Configure Plan</button>
+            </div>
+
+            <!-- Pro Plan -->
+            <div class="plan-card" id="plan-pro" data-plan-code="PRO" data-plan-name="Pro">
+                <h3 class="plan-name">Pro</h3>
+                <div class="plan-price">
+                    <span class="price-value">$45</span>
+                    <span class="price-period">/mo</span>
+                </div>
+                <ul class="plan-features">
+                    <li>Cloud Calling</li>
+                    <li>Standard Webex or Teams Calling</li>
+                    <li>Unified Capture Call recording</li>
+                    <li>Eset Cybersecurity Protect Advanced (1 year)</li>
+                    <li>Virtual Fax Number Unlimited</li>
+                    <li>Smarter Messaging Growth</li>
+                </ul>
+                <button class="btn-configure" onclick="selectPlan('PRO', 'Pro')">Configure Plan</button>
+            </div>
+
+            <!-- Premium Plan -->
+            <div class="plan-card" id="plan-premium" data-plan-code="PREMIUM" data-plan-name="Premium">
+                <h3 class="plan-name magenta">Premium</h3>
+                <div class="plan-price">
+                    <span class="price-value">$75</span>
+                    <span class="price-period">/mo</span>
+                </div>
+                <ul class="plan-features">
+                    <li>Cloud Calling</li>
+                    <li>Standard Webex or Teams Calling</li>
+                    <li>Insights + AI Call recording</li>
+                    <li>Eset Cybersecurity Training + Protect Advanced (1 year)</li>
+                    <li>Virtual Fax Number Unlimited</li>
+                    <li>Smart Messaging Ultimate</li>
+                </ul>
+                <button class="btn-configure" onclick="selectPlan('PREMIUM', 'Premium')">Configure Plan</button>
+            </div>
+        </div>
+
+        <!-- Additional Services -->
+        <div class="additional-services">
+            <!-- Cloud Calling Basic License -->
+            <div class="service-card" id="plan-cloud-basic" data-plan-code="CLOUD_BASIC" data-plan-name="Cloud Calling Basic License">
+                <h3 class="service-name">Cloud Calling Basic License</h3>
+                <div class="service-price">
+                    <span class="price-value">$20</span>
+                    <span class="price-period">/mo</span>
+                </div>
+                <ul class="service-features">
+                    <li>Music on Hold</li>
+                    <li>Auto Attendant</li>
+                    <li>Mobile Integration</li>
+                    <li>Busy Lamp Field</li>
+                    <li>Voicemail to Email</li>
+                    <li>Personalized greeting</li>
+                    <li>Call display</li>
+                </ul>
+                <button class="btn-configure" onclick="selectPlan('CLOUD_BASIC', 'Cloud Calling Basic License')">Configure Plan</button>
+            </div>
+
+            <!-- Sip Trunk -->
+            <div class="service-card" id="plan-sip-trunk" data-plan-code="SIP_TRUNK" data-plan-name="Sip Trunk">
+                <h3 class="service-name">Sip Trunk</h3>
+                <div class="service-price">
+                    <span class="price-value">$25</span>
+                    <span class="price-period">/mo</span>
+                </div>
+                <ul class="service-features">
+                    <li>Enterprise-grade SIP connectivity</li>
+                    <li>Custom pricing based on usage</li>
+                    <li>Contact sales for details</li>
+                </ul>
+                <button class="btn-configure" onclick="selectPlan('SIP_TRUNK', 'Sip Trunk')">Configure Plan</button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="nav-buttons">
+            <button class="btn-back" onclick="goBack()">Back</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // API CONFIGURATION
+        // ============================================
+        const API_BASE_URL = 'https://api.iristelx.com';
+        const PLANS_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
+        const ACCOUNTS_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz'; // used for /accounts
+
+        // ============================================
+        // PLAN CODE MAPPING
+        // Update these with actual plan codes from Iristel
+        // ============================================
+        const PLAN_CODES = {
+            'ESSENTIALS': 'EXLNP_ESSENTIALS',
+            'PRO': 'EXLNP_PRO',
+            'PREMIUM': 'EXLNP_PREMIUM',
+            'CLOUD_BASIC': 'EXLNP_SBCLDBASIC',
+            'SIP_TRUNK': 'EXLNP_SBSIPTRNK'
+        };
+
+        // ============================================
+        // HARDCODED ACCOUNT ID
+        // ============================================
+        const HARDCODED_ACCOUNT_ID = '2945136';
+
+        // ============================================
+        // GLOBAL STATE
+        // ============================================
+        let currentAccount = null;
+
+        // ============================================
+        // COOKIE FUNCTIONS
+        // ============================================
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                let cookie = cookies[i].trim();
+                if (cookie.indexOf(nameEQ) === 0) {
+                    return decodeURIComponent(cookie.substring(nameEQ.length));
+                }
+            }
+            return null;
+        }
+
+        function setCookie(name, value, days = 7) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+            document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Strict`;
+        }
+
+        // ============================================
+        // GET ALL CONTACT DATA FROM COOKIES
+        // ============================================
+        function getContactDataFromCookies() {
+            return {
+                fname: getCookie('iristel_user_fname') || '',
+                lname: getCookie('iristel_user_lname') || '',
+                emailAddress: getCookie('iristel_user_email') || '',
+                phone: getCookie('iristel_user_phone') || '',
+                address1: getCookie('iristel_user_address1') || '',
+                city: getCookie('iristel_user_city') || '',
+                province: getCookie('iristel_user_province') || '',
+                country: getCookie('iristel_user_country') || '',
+                postalCode: getCookie('iristel_user_postalCode') || ''
+            };
+        }
+
+        function getAccountIdFromCookie() {
+            return getCookie('iristel_account_id') || null;
+        }
+
+        // ============================================
+        // UI FUNCTIONS
+        // ============================================
+        function showLoading(message = 'Loading...') {
+            document.getElementById('loadingText').textContent = message;
+            document.getElementById('loadingOverlay').classList.add('active');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('active');
+        }
+
+        function showMessage(type, message) {
+            const messageBox = document.getElementById('messageBox');
+            messageBox.className = 'message-box ' + type;
+            messageBox.textContent = message;
+        }
+
+        function hideMessage() {
+            document.getElementById('messageBox').className = 'message-box';
+            document.getElementById('messageBox').textContent = '';
+        }
+
+        function disableAllPlans() {
+            document.querySelectorAll('.plan-card, .service-card').forEach(card => {
+                card.classList.add('disabled');
+                const btn = card.querySelector('.btn-configure');
+                if (btn) btn.disabled = true;
+            });
+        }
+
+        function enableAllPlans() {
+            document.querySelectorAll('.plan-card, .service-card').forEach(card => {
+                card.classList.remove('disabled');
+                const btn = card.querySelector('.btn-configure');
+                if (btn) btn.disabled = false;
+            });
+        }
+
+        // ============================================
+        // API: ADD SERVICE TO ACCOUNT
+        // Creates a new add service using the plan code and the
+        // account/contact information previously saved in cookies.
+        // The accountId in the URL and the body MUST match the
+        // account ID saved in the cookie at signup.
+        // ============================================
+        async function addServiceToAccount(accountId, planCode, planName, contactData) {
+            console.log('Adding service to account:', accountId);
+            console.log('Plan Code:', planCode);
+            console.log('Plan Name:', planName);
+
+            // Get the actual plan code from mapping
+            const actualPlanCode = PLAN_CODES[planCode] || planCode;
+
+            const requestBody = {
+                accountId: accountId,
+                planCode: actualPlanCode,
+                contact: {
+                    fname: contactData.fname,
+                    lname: contactData.lname,
+                    address1: contactData.address1,
+                    city: contactData.city,
+                    province: contactData.province,
+                    country: contactData.country,
+                    postalCode: contactData.postalCode,
+                    emailAddress: contactData.emailAddress,
+                    phone: contactData.phone || ''
+                }
+            };
+
+            console.log('Service Request Body:', JSON.stringify(requestBody, null, 2));
+
+            // Use accountId from cookie (passed in) in the URL so it matches the body
+            const response = await fetch(`${API_BASE_URL}/accounts/${accountId}/services`, {
+                method: 'POST',
+                headers: {
+                    'iristelx-api-key': ACCOUNTS_API_KEY,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const responseData = await response.json();
+            console.log('Service API Response:', responseData);
+
+            if (!response.ok) {
+                throw new Error(responseData.message || `Failed to add service: ${response.status}`);
+            }
+
+            return responseData;
+        }
+
+        // ============================================
+        // SELECT PLAN HANDLER
+        // Runs for ALL plans (Essentials, Pro, Premium, Cloud Basic, Sip Trunk).
+        // Pulls account ID + contact info from cookies saved during signup,
+        // then creates a new add service with the mapped plan code. The
+        // account ID used in the URL and body must match the cookie.
+        // ============================================
+        async function selectPlan(planCode, planName) {
+            console.log('=== SELECT PLAN ===');
+            console.log('Plan:', planName, '| Code:', planCode);
+
+            // Account ID must come from the cookie saved at signup so the
+            // service is added to the correct account.
+            const accountId = getAccountIdFromCookie() || HARDCODED_ACCOUNT_ID;
+            if (!accountId) {
+                showMessage('error', 'No account ID found. Please complete signup first.');
+                return;
+            }
+            console.log('Using account ID from cookie:', accountId);
+
+            const contactData = getContactDataFromCookies();
+            if (!contactData.fname || !contactData.emailAddress) {
+                showMessage('error', 'Missing contact information. Please complete signup first.');
+                return;
+            }
+
+            // Confirm selection
+            const confirmed = confirm(`You are about to configure the "${planName}" plan. Continue?`);
+            if (!confirmed) return;
+
+            try {
+                showLoading(`Adding ${planName} to your account...`);
+                hideMessage();
+
+                // Create a new add service using the plan code and
+                // the account info from cookies. Runs for every plan.
+                const result = await addServiceToAccount(accountId, planCode, planName, contactData);
+
+                hideLoading();
+                showMessage('success', `${planName} has been added to your account successfully!`);
+
+                // Store selected plan in cookie
+                setCookie('iristel_selected_plan', planCode, 7);
+                setCookie('iristel_selected_plan_name', planName, 7);
+
+                // Redirect to next step after delay
+                setTimeout(() => {
+                    if (planCode === 'SIP_TRUNK') {
+                        window.location.href = 'Sip Trunk/businessSetup.html';
+                    } else {
+                        //o window.location.href = '/add-ons.html';
+                        console.log('Redirect to next step (add-ons)');
+                        alert('Service added! Redirecting to next step...');
+                    }
+                }, 1500);
+
+            } catch (error) {
+                console.error('Error adding service:', error);
+                hideLoading();
+                showMessage('error', `Failed to add service: ${error.message}`);
+            }
+        }
+
+        // ============================================
+        // NAVIGATION
+        // ============================================
+        function goBack() {
+            window.history.back();
+            // Or: window.location.href = '/signup.html';
+        }
+
+        // ============================================
+        // INITIALIZE PAGE
+        // ============================================
+        async function initializePage() {
+            console.log('=== INITIALIZING SERVICE SELECTION PAGE ===');
+
+            try {
+                showLoading('Loading your account...');
+                disableAllPlans();
+
+                const contactData = getContactDataFromCookies();
+
+                console.log('Contact data from cookies:', contactData);
+                console.log('Using hardcoded account ID:', HARDCODED_ACCOUNT_ID);
+
+                // Validate required data
+                if (!contactData.emailAddress) {
+                    hideLoading();
+                    showMessage('error', 'No email found. Please complete the signup process first.');
+                    return;
+                }
+
+                // Store hardcoded account ID in cookie
+                setCookie('iristel_account_id', HARDCODED_ACCOUNT_ID, 7);
+
+                // Display user info with hardcoded account ID
+                document.getElementById('userEmail').textContent = contactData.emailAddress;
+                document.getElementById('accountIdDisplay').textContent = HARDCODED_ACCOUNT_ID;
+                document.getElementById('userInfo').style.display = 'block';
+
+                hideLoading();
+                enableAllPlans();
+                showMessage('info', 'Select a service plan to continue with your account setup.');
+
+            } catch (error) {
+                console.error('Initialization error:', error);
+                hideLoading();
+                showMessage('error', `Failed to load account: ${error.message}`);
+            }
+        }
+
+        // ============================================
+        // START
+        // ============================================
+        document.addEventListener('DOMContentLoaded', initializePage);
+    </script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+/* hardwareOrders.css - Page-specific styles only */
+
+/* Centered layout override */
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 60px;
+    flex-direction: column;
+}
+
+/* Progress */
+.progress-container {
+    margin-bottom: 50px;
+    max-width: 600px;
+}
+
+.progress-fill {
+    width: 60%;
+}
+
+/* Hardware Grid */
+.hardware-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 40px;
+    max-width: 1000px;
+    margin: 0 auto 50px;
+}
+
+/* Hardware Card */
+.hardware-card {
+    background: var(--white);
+    border-radius: 8px;
+    padding: 40px 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.hardware-card:hover {
+    box-shadow: 0 8px 30px rgba(1, 17, 30, 0.1);
+    transform: translateY(-2px);
+}
+
+.card-title {
+    font-size: 28px;
+    font-weight: 500;
+    color: var(--tufts-blue);
+    margin-bottom: 8px;
+}
+
+.card-model {
+    font-size: 16px;
+    color: var(--text-gray);
+    margin-bottom: 16px;
+}
+
+.card-price {
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--rich-black);
+    margin-bottom: 24px;
+}
+
+.phone-image {
+    width: 100%;
+    max-width: 280px;
+    height: 220px;
+    object-fit: contain;
+    margin-bottom: 24px;
+}
+
+.card-specs {
+    font-size: 13px;
+    color: var(--text-gray);
+    line-height: 1.6;
+    margin-bottom: 24px;
+    min-height: 80px;
+}
+
+.specs-link {
+    font-size: 14px;
+    color: var(--text-gray);
+    text-decoration: none;
+    margin-bottom: 24px;
+    display: block;
+    transition: color 0.2s ease;
+}
+
+.specs-link:hover {
+    color: var(--tufts-blue);
+}
+
+.btn-select {
+    width: 100%;
+    max-width: 280px;
+    background: var(--tufts-blue);
+    color: var(--white);
+    padding: 16px 32px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'Heebo', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-select:hover {
+    background: #3580BC;
+    transform: translateY(-1px);
+}
+
+/* Other Devices Option */
+.other-devices {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 1000px;
+    margin: 0 auto 50px;
+}
+
+.radio-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .container {
+        padding: 30px;
+    }
+
+    .hardware-grid {
+        grid-template-columns: 1fr;
+        gap: 30px;
+    }
+
+    .card-title {
+        font-size: 24px;
+    }
+
+    .card-price {
+        font-size: 28px;
+    }
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 20px;
+    }
+
+    .nav-buttons {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .btn-back,
+    .btn-next {
+        width: 100%;
+        text-align: center;
+    }
+}

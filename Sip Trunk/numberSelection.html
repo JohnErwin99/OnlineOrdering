@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIP Trunk - Number Selection - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #3E8CCB;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --medium-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --magenta-glow: #C41E7A;
+            --cyan-glow: #3E8CCB;
+            --success-green: #10B981;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            min-height: 100vh;
+            color: var(--rich-black);
+        }
+
+        .container { display: flex; min-height: 100vh; }
+
+        .left-panel {
+            flex: 1;
+            padding: 40px 60px;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--white);
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .logo-img { height: 36px; width: auto; }
+        .support-link { font-size: 14px; color: var(--rich-black); }
+        .support-link a { color: var(--tufts-blue); text-decoration: underline; }
+
+        .progress-container { margin-bottom: 30px; max-width: 600px; }
+        .progress-text { font-size: 13px; color: var(--text-gray); margin-bottom: 8px; }
+        .progress-bar { height: 4px; background-color: var(--medium-gray); border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 50%; background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%); border-radius: 2px; }
+
+        .content { flex: 1; max-width: 800px; }
+        .page-title { font-size: 28px; font-weight: 500; color: var(--tufts-blue); margin-bottom: 8px; }
+        .page-subtitle { font-size: 15px; color: var(--text-gray); margin-bottom: 30px; }
+
+        .info-box {
+            background-color: rgba(62, 140, 203, 0.08);
+            border-left: 4px solid var(--tufts-blue);
+            padding: 16px 20px;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 30px;
+        }
+        .info-box p { font-size: 14px; color: var(--rich-black); line-height: 1.5; }
+        .info-box strong { color: var(--tufts-blue); }
+
+        .temp-numbers-notice {
+            background-color: rgba(245, 158, 11, 0.08);
+            border-left: 4px solid #F59E0B;
+            padding: 16px 20px;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 30px;
+        }
+        .temp-numbers-notice p { font-size: 14px; color: var(--rich-black); line-height: 1.5; }
+        .temp-numbers-notice strong { color: #F59E0B; }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--rich-black);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--medium-gray);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--medium-gray);
+        }
+
+        .tab {
+            padding: 14px 28px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-gray);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            transition: color 0.2s;
+        }
+
+        .tab:hover { color: var(--tufts-blue); }
+
+        .tab.active {
+            color: var(--tufts-blue);
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--tufts-blue);
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .filter-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .filter-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-gray);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .filter-select, .filter-input {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-family: 'Heebo', sans-serif;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            outline: none;
+            transition: border-color 0.2s;
+            background: var(--white);
+        }
+
+        .filter-select:focus, .filter-input:focus {
+            border-color: var(--tufts-blue);
+        }
+
+        .filter-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235A6A7A' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+            cursor: pointer;
+        }
+
+        .btn-search {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            align-self: flex-end;
+        }
+
+        .btn-search:hover { background: #3580BC; }
+        .btn-search svg { width: 18px; height: 18px; }
+
+        .numbers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 4px;
+        }
+
+        .number-card {
+            background: var(--light-gray);
+            border: 2px solid transparent;
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .number-card:hover {
+            border-color: var(--tufts-blue);
+            transform: translateY(-2px);
+        }
+
+        .number-card.selected {
+            background: rgba(62, 140, 203, 0.1);
+            border-color: var(--tufts-blue);
+        }
+
+        .number-card.selected::before {
+            content: '✓';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 20px;
+            height: 20px;
+            background: var(--tufts-blue);
+            color: white;
+            border-radius: 50%;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .number-card {
+            position: relative;
+        }
+
+        .number-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--rich-black);
+            font-family: 'Courier New', monospace;
+            margin-bottom: 4px;
+        }
+
+        .number-location {
+            font-size: 12px;
+            color: var(--text-gray);
+        }
+
+        .vanity-input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .vanity-input {
+            flex: 1;
+            padding: 14px 16px;
+            font-size: 16px;
+            font-family: 'Heebo', sans-serif;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            outline: none;
+            text-transform: uppercase;
+        }
+
+        .vanity-input:focus {
+            border-color: var(--tufts-blue);
+        }
+
+        .vanity-hint {
+            font-size: 13px;
+            color: var(--text-gray);
+            margin-bottom: 20px;
+        }
+
+        .selected-numbers {
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .selected-numbers-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--rich-black);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .selected-count {
+            background: var(--tufts-blue);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .selected-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .selected-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--white);
+            border: 1px solid var(--medium-gray);
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .selected-chip button {
+            background: transparent;
+            border: none;
+            color: var(--magenta-glow);
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+        }
+
+        .selected-chip button svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .no-selection {
+            color: var(--text-gray);
+            font-size: 14px;
+        }
+
+        .selected-chip.primary {
+            background: rgba(62, 140, 203, 0.1);
+            border-color: var(--tufts-blue);
+        }
+
+        .primary-label {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--tufts-blue);
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            font-family: 'Heebo', sans-serif;
+        }
+
+        .btn-set-primary {
+            background: transparent;
+            border: none;
+            color: var(--text-gray);
+            cursor: pointer;
+            padding: 0;
+            font-size: 11px;
+            font-family: 'Heebo', sans-serif;
+            text-decoration: underline;
+            transition: color 0.2s;
+        }
+
+        .btn-set-primary:hover { color: var(--tufts-blue); }
+
+        .primary-hint {
+            font-size: 13px;
+            color: var(--text-gray);
+            margin-top: 12px;
+            line-height: 1.5;
+        }
+
+        .primary-hint strong { color: var(--tufts-blue); }
+
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+            padding-top: 20px;
+        }
+
+        .btn-back, .btn-next {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 16px 48px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        .btn-back:hover, .btn-next:hover { background: #3580BC; transform: translateY(-1px); }
+        .btn-next:disabled { background: var(--medium-gray); cursor: not-allowed; transform: none; }
+
+        .right-panel {
+            width: 45%;
+            max-width: 600px;
+            background: var(--rich-black);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .gradient-circle { position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.6; }
+        .gradient-circle.magenta { width: 400px; height: 400px; background: var(--magenta-glow); bottom: -100px; right: -100px; }
+        .gradient-circle.cyan { width: 350px; height: 350px; background: var(--cyan-glow); top: 30%; left: -100px; opacity: 0.4; }
+
+        .promo-content { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 60px; position: relative; z-index: 2; }
+        .promo-text { color: var(--white); }
+        .promo-headline { font-size: 36px; font-weight: 700; line-height: 1.2; margin-bottom: 20px; }
+        .promo-headline span { color: var(--tufts-blue); }
+        .promo-description { font-size: 16px; color: rgba(255, 255, 255, 0.8); line-height: 1.6; margin-bottom: 30px; }
+
+        .feature-list { list-style: none; }
+        .feature-list li { display: flex; align-items: center; gap: 12px; font-size: 15px; color: rgba(255, 255, 255, 0.9); margin-bottom: 16px; }
+        .feature-list li svg { width: 20px; height: 20px; color: var(--tufts-blue); flex-shrink: 0; }
+
+        @media (max-width: 1200px) {
+            .right-panel { width: 40%; }
+            .promo-headline { font-size: 28px; }
+            .left-panel { padding: 30px 40px; }
+        }
+
+        @media (max-width: 900px) {
+            .container { flex-direction: column; }
+            .left-panel { padding: 30px; }
+            .right-panel { width: 100%; max-width: none; min-height: 400px; }
+            .filter-row { flex-direction: column; }
+            .filter-group { min-width: 100%; }
+        }
+        .user-info {
+            background: var(--white);
+            border: 1px solid var(--medium-gray);
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: var(--text-gray);
+        }
+
+        .user-info strong {
+            color: var(--rich-black);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <div class="header">
+                <img src="../Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+                <span class="support-link">Need help? <a href="tel:18334747835">1 833 IRISTEL</a></span>
+            </div>
+
+            <!-- User Info Bar -->
+            <div class="user-info" id="userInfo" style="display: none;">
+                Logged in as: <strong id="userEmail"></strong> | Account ID: <strong id="accountIdDisplay"></strong>
+            </div>
+
+            <div class="progress-container">
+                <div class="progress-text" id="stepText">Step 4 of 6 — Number Selection</div>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="content">
+                <h1 class="page-title" id="pageTitle">Select Your Phone Numbers</h1>
+                <p class="page-subtitle" id="pageSubtitle">Choose phone numbers from our available inventory for your SIP trunk.</p>
+
+                <div class="temp-numbers-notice" id="tempNotice" style="display: none;">
+                    <p><strong>Temporary Numbers:</strong> Since you're porting your existing numbers, select temporary numbers below to test your service while the port is processing. These will be replaced once your port completes.</p>
+                </div>
+
+                <div class="info-box" id="newNumbersInfo">
+                    <p>Select numbers from your preferred area code. You can choose multiple numbers and even search for vanity numbers that spell words.</p>
+                </div>
+
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('standard')">Standard Numbers</button>
+                    <button class="tab" onclick="switchTab('vanity')">Vanity Numbers</button>
+                </div>
+
+                <!-- Standard Numbers Tab -->
+                <div class="tab-content active" id="standardTab">
+                    <div class="filter-row">
+                        <div class="filter-group">
+                            <label class="filter-label">Province/State</label>
+                            <select class="filter-select" id="provinceFilter" onchange="updateRateCenters()">
+                                <option value="">All Provinces</option>
+                                <option value="ON">Ontario</option>
+                                <option value="QC">Quebec</option>
+                                <option value="BC">British Columbia</option>
+                                <option value="AB">Alberta</option>
+                                <option value="MB">Manitoba</option>
+                                <option value="SK">Saskatchewan</option>
+                                <option value="NS">Nova Scotia</option>
+                                <option value="NB">New Brunswick</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Rate Center</label>
+                            <select class="filter-select" id="rateCenterFilter" onchange="updateNpaNxx()">
+                                <option value="">Select Rate Center</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label class="filter-label">Area Code (NPA)</label>
+                            <select class="filter-select" id="npaFilter">
+                                <option value="">All Area Codes</option>
+                            </select>
+                        </div>
+                        <button class="btn-search" onclick="searchNumbers()">
+                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+                            Search
+                        </button>
+                    </div>
+
+                    <div class="numbers-grid" id="numbersGrid">
+                        <!-- Numbers will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Vanity Numbers Tab -->
+                <div class="tab-content" id="vanityTab">
+                    <p class="vanity-hint">Enter a word or pattern to search for vanity numbers. For example, "BRAND" or "00" for easy-to-remember numbers.</p>
+                    
+                    <div class="vanity-input-group">
+                        <input type="text" class="vanity-input" id="vanitySpelling" placeholder="Enter word (e.g., BRAND)" maxlength="7">
+                        <input type="text" class="vanity-input" id="vanityPattern" placeholder="Numeric pattern (e.g., 00)" maxlength="4">
+                        <button class="btn-search" onclick="searchVanityNumbers()">
+                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+                            Search
+                        </button>
+                    </div>
+
+                    <div class="numbers-grid" id="vanityNumbersGrid">
+                        <!-- Vanity numbers will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Selected Numbers -->
+                <div class="selected-numbers">
+                    <div class="selected-numbers-title">
+                        Selected Numbers
+                        <span class="selected-count" id="selectedCount">0</span>
+                    </div>
+                    <div class="selected-list" id="selectedList">
+                        <span class="no-selection">No numbers selected yet</span>
+                    </div>
+                </div>
+
+                <div class="nav-buttons">
+                    <button class="btn-back" onclick="goBack()">Back</button>
+                    <button class="btn-next" id="nextBtn" onclick="saveAndContinue()" disabled>Next: Assign Users</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="gradient-circle magenta"></div>
+            <div class="gradient-circle cyan"></div>
+            <div class="promo-content">
+                <div class="promo-text">
+                    <h2 class="promo-headline">Choose Your <span>Numbers</span></h2>
+                    <p class="promo-description">Select from thousands of available numbers across Canada. Find the perfect numbers for your business.</p>
+                    <ul class="feature-list">
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Local numbers in any area code</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Vanity numbers available</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Toll-free options</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Instant activation</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedNumbers = [];
+        let primaryNumber = '';
+        let isPorting = false;
+
+        function setCookie(name, value, days = 7) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict';
+        }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+            return null;
+        }
+
+        // Rate centers data (simplified)
+        const rateCenters = {
+            'ON': ['Toronto', 'Ottawa', 'Mississauga', 'Hamilton', 'London', 'Markham', 'Vaughan', 'Kitchener', 'Windsor', 'Burlington'],
+            'QC': ['Montreal', 'Quebec City', 'Laval', 'Gatineau', 'Longueuil', 'Sherbrooke', 'Trois-Rivières'],
+            'BC': ['Vancouver', 'Victoria', 'Burnaby', 'Surrey', 'Richmond', 'Kelowna'],
+            'AB': ['Calgary', 'Edmonton', 'Red Deer', 'Lethbridge', 'Medicine Hat'],
+            'MB': ['Winnipeg', 'Brandon', 'Steinbach'],
+            'SK': ['Saskatoon', 'Regina', 'Moose Jaw'],
+            'NS': ['Halifax', 'Dartmouth', 'Sydney'],
+            'NB': ['Moncton', 'Saint John', 'Fredericton']
+        };
+
+        const npaCodes = {
+            'Toronto': ['416', '647', '437'],
+            'Ottawa': ['613', '343'],
+            'Montreal': ['514', '438'],
+            'Vancouver': ['604', '778', '236'],
+            'Calgary': ['403', '587'],
+            'Edmonton': ['780', '587'],
+            'default': ['825', '306', '204', '902']
+        };
+
+        // Sample available numbers
+        const sampleNumbers = [
+            { number: '(416) 555-1001', location: 'Toronto, ON' },
+            { number: '(416) 555-1002', location: 'Toronto, ON' },
+            { number: '(416) 555-1003', location: 'Toronto, ON' },
+            { number: '(647) 555-2001', location: 'Toronto, ON' },
+            { number: '(647) 555-2002', location: 'Toronto, ON' },
+            { number: '(905) 555-3001', location: 'Mississauga, ON' },
+            { number: '(514) 555-4001', location: 'Montreal, QC' },
+            { number: '(514) 555-4002', location: 'Montreal, QC' },
+            { number: '(604) 555-5001', location: 'Vancouver, BC' },
+            { number: '(604) 555-5002', location: 'Vancouver, BC' },
+            { number: '(403) 555-6001', location: 'Calgary, AB' },
+            { number: '(780) 555-7001', location: 'Edmonton, AB' }
+        ];
+
+        const vanityNumbers = [
+            { number: '1-800-MY-BRAND', location: 'Toll-Free' },
+            { number: '(416) 00Y-BRAND', location: 'Toronto, ON' },
+            { number: '(800) 555-0000', location: 'Toll-Free' },
+            { number: '(416) 200-2000', location: 'Toronto, ON' },
+            { number: '(647) 600-6000', location: 'Toronto, ON' },
+            { number: '(514) 888-8888', location: 'Montreal, QC' }
+        ];
+
+        function updateRateCenters() {
+            const province = document.getElementById('provinceFilter').value;
+            const rateCenterSelect = document.getElementById('rateCenterFilter');
+            rateCenterSelect.innerHTML = '<option value="">Select Rate Center</option>';
+            
+            if (province && rateCenters[province]) {
+                rateCenters[province].forEach(rc => {
+                    rateCenterSelect.innerHTML += `<option value="${rc}">${rc}</option>`;
+                });
+            }
+        }
+
+        function updateNpaNxx() {
+            const rateCenter = document.getElementById('rateCenterFilter').value;
+            const npaSelect = document.getElementById('npaFilter');
+            npaSelect.innerHTML = '<option value="">All Area Codes</option>';
+            
+            const codes = npaCodes[rateCenter] || npaCodes['default'];
+            codes.forEach(npa => {
+                npaSelect.innerHTML += `<option value="${npa}">${npa}</option>`;
+            });
+        }
+
+        function searchNumbers() {
+            const grid = document.getElementById('numbersGrid');
+            grid.innerHTML = '';
+            
+            sampleNumbers.forEach(num => {
+                const isSelected = selectedNumbers.includes(num.number);
+                grid.innerHTML += `
+                    <div class="number-card ${isSelected ? 'selected' : ''}" onclick="toggleNumber('${num.number}', '${num.location}')">
+                        <div class="number-value">${num.number}</div>
+                        <div class="number-location">${num.location}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function searchVanityNumbers() {
+            const grid = document.getElementById('vanityNumbersGrid');
+            grid.innerHTML = '';
+            
+            vanityNumbers.forEach(num => {
+                const isSelected = selectedNumbers.includes(num.number);
+                grid.innerHTML += `
+                    <div class="number-card ${isSelected ? 'selected' : ''}" onclick="toggleNumber('${num.number}', '${num.location}')">
+                        <div class="number-value">${num.number}</div>
+                        <div class="number-location">${num.location}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function toggleNumber(number, location) {
+            const index = selectedNumbers.indexOf(number);
+            if (index > -1) {
+                selectedNumbers.splice(index, 1);
+                if (primaryNumber === number) {
+                    primaryNumber = selectedNumbers.length > 0 ? selectedNumbers[0] : '';
+                }
+            } else {
+                selectedNumbers.push(number);
+                // Auto-set first selected number as primary
+                if (!primaryNumber) {
+                    primaryNumber = number;
+                }
+            }
+            updateSelectedDisplay();
+            searchNumbers();
+            searchVanityNumbers();
+        }
+
+        function removeNumber(number) {
+            const index = selectedNumbers.indexOf(number);
+            if (index > -1) {
+                selectedNumbers.splice(index, 1);
+            }
+            // If we removed the primary, auto-assign to first remaining
+            if (primaryNumber === number) {
+                primaryNumber = selectedNumbers.length > 0 ? selectedNumbers[0] : '';
+            }
+            updateSelectedDisplay();
+            searchNumbers();
+            searchVanityNumbers();
+        }
+
+        function setPrimary(number) {
+            primaryNumber = number;
+            updateSelectedDisplay();
+        }
+
+        function updateSelectedDisplay() {
+            const list = document.getElementById('selectedList');
+            const count = document.getElementById('selectedCount');
+            const nextBtn = document.getElementById('nextBtn');
+
+            count.textContent = selectedNumbers.length;
+            nextBtn.disabled = selectedNumbers.length === 0;
+
+            if (selectedNumbers.length === 0) {
+                list.innerHTML = '<span class="no-selection">No numbers selected yet</span>';
+            } else {
+                list.innerHTML = selectedNumbers.map(num => {
+                    const isPrimary = num === primaryNumber;
+                    return `
+                    <div class="selected-chip ${isPrimary ? 'primary' : ''}">
+                        <div>
+                            ${num}
+                            ${isPrimary
+                                ? '<span class="primary-label">Main Number</span>'
+                                : '<button class="btn-set-primary" onclick="setPrimary(\'' + num + '\')">Set as main</button>'
+                            }
+                        </div>
+                        <button onclick="removeNumber('${num}')">
+                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+                        </button>
+                    </div>`;
+                }).join('');
+
+                list.innerHTML += '<p class="primary-hint">The <strong>Main Number</strong> is used as the primary trunk number (<code>primaryNumber</code>). All numbers are included in the trunk.</p>';
+            }
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            if (tab === 'standard') {
+                document.querySelector('.tab:first-child').classList.add('active');
+                document.getElementById('standardTab').classList.add('active');
+            } else {
+                document.querySelector('.tab:last-child').classList.add('active');
+                document.getElementById('vanityTab').classList.add('active');
+            }
+        }
+
+        function goBack() {
+            if (isPorting) {
+                window.location.href = 'siptrunkLOA.html';
+            } else {
+                window.location.href = 'numberSource.html';
+            }
+        }
+
+        function saveAndContinue() {
+            if (selectedNumbers.length === 0) {
+                alert('Please select at least one phone number.');
+                return;
+            }
+
+            if (!primaryNumber) {
+                primaryNumber = selectedNumbers[0];
+            }
+
+            setCookie('sip_selectedNumbers', JSON.stringify(selectedNumbers));
+            setCookie('sip_primaryNumber', primaryNumber);
+            window.location.href = 'userAssignment.html';
+        }
+
+        function loadUserInfoBar() {
+            const email = getCookie('iristel_user_email');
+            const accountId = getCookie('iristel_account_id');
+            if (email || accountId) {
+                document.getElementById('userEmail').textContent = email || '—';
+                document.getElementById('accountIdDisplay').textContent = accountId || '—';
+                document.getElementById('userInfo').style.display = 'block';
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfoBar();
+            isPorting = getCookie('sip_isPorting') === 'true' || getCookie('sip_numberSource') === 'port';
+            
+            if (isPorting) {
+                document.getElementById('tempNotice').style.display = 'block';
+                document.getElementById('newNumbersInfo').style.display = 'none';
+                document.getElementById('pageTitle').textContent = 'Select Temporary Numbers';
+                document.getElementById('pageSubtitle').textContent = 'Choose temporary numbers to test your service while your existing numbers are being ported.';
+            }
+
+            // Load saved numbers
+            const saved = getCookie('sip_selectedNumbers');
+            if (saved) {
+                try {
+                    selectedNumbers = JSON.parse(saved);
+                } catch (e) {}
+            }
+
+            // Load saved primary number
+            const savedPrimary = getCookie('sip_primaryNumber');
+            if (savedPrimary && selectedNumbers.includes(savedPrimary)) {
+                primaryNumber = savedPrimary;
+            } else if (selectedNumbers.length > 0) {
+                primaryNumber = selectedNumbers[0];
+            }
+
+            updateSelectedDisplay();
+
+            // Initial search
+            searchNumbers();
+        });
+    </script>
+</body>
+</html>

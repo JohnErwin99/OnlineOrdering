@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmation - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #3E8CCB;
+            --tufts-blue-dark: #2d7ab8;
+            --magenta: #C41E7A;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --border-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --text-dark: #2C3E50;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            color: var(--text-dark);
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* ===== LEFT PANEL ===== */
+        .left-panel {
+            flex: 1;
+            padding: 40px 50px;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--white);
+            overflow-y: auto;
+        }
+
+        .logo-img {
+            height: 32px;
+            margin-bottom: 40px;
+        }
+
+        .logo-text {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--rich-black);
+            letter-spacing: 2px;
+            margin-bottom: 40px;
+        }
+
+        /* Info Cards */
+        .info-card {
+            background: var(--light-gray);
+            border: 1px solid var(--border-gray);
+            border-radius: 10px;
+            padding: 24px 28px;
+            margin-bottom: 20px;
+        }
+
+        .info-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--tufts-blue);
+            margin-bottom: 14px;
+        }
+
+        .info-card ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-card ul li {
+            font-size: 14px;
+            color: var(--text-dark);
+            padding: 4px 0;
+            padding-left: 16px;
+            position: relative;
+            line-height: 1.6;
+        }
+
+        .info-card p {
+            font-size: 14px;
+            color: var(--text-dark);
+            line-height: 1.6;
+            margin-bottom: 6px;
+        }
+
+        .info-card p.sub-item {
+            padding-left: 16px;
+            color: var(--text-gray);
+            font-size: 13px;
+        }
+
+        .track-link {
+            display: inline-block;
+            margin-top: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--tufts-blue);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .track-link:hover {
+            color: var(--tufts-blue-dark);
+            text-decoration: underline;
+        }
+
+        /* Invoice Section */
+        .invoice-section {
+            margin-top: 10px;
+        }
+
+        .invoice-section h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--tufts-blue);
+            margin-bottom: 16px;
+        }
+
+        .btn-download {
+            display: block;
+            width: 100%;
+            max-width: 240px;
+            padding: 14px 24px;
+            background-color: var(--tufts-blue);
+            color: var(--white);
+            border: none;
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.2s;
+        }
+
+        .btn-download:hover {
+            background-color: var(--tufts-blue-dark);
+        }
+
+        /* ===== RIGHT PANEL ===== */
+        .right-panel {
+            flex: 1;
+            background: var(--rich-black);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            padding: 40px;
+        }
+
+        .right-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 30% 20%, rgba(62, 140, 203, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 70% 80%, rgba(196, 30, 122, 0.12) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(62, 140, 203, 0.08) 0%, transparent 70%);
+        }
+
+        .right-logo {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--white);
+            letter-spacing: 3px;
+            margin-bottom: 60px;
+            z-index: 1;
+        }
+
+        .right-logo img {
+            height: 32px;
+            filter: brightness(0) invert(1);
+        }
+
+        /* Decorative circles */
+        .circles-container {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            margin-bottom: 50px;
+            z-index: 1;
+        }
+
+        .circle-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .circle-ring.outer {
+            width: 320px;
+            height: 320px;
+            top: 0; left: 0;
+        }
+
+        .circle-ring.middle {
+            width: 220px;
+            height: 220px;
+            top: 50px; left: 50px;
+        }
+
+        .circle-ring.inner {
+            width: 120px;
+            height: 120px;
+            top: 100px; left: 100px;
+        }
+
+        /* Floating icon bubbles */
+        .icon-bubble {
+            position: absolute;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            z-index: 2;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .icon-bubble.b1 { top: -10px; left: 50%; transform: translateX(-50%); background: #C41E7A; }
+        .icon-bubble.b2 { top: 30px; right: -5px; background: #3E8CCB; }
+        .icon-bubble.b3 { bottom: 30px; right: -5px; background: #8B5CF6; }
+        .icon-bubble.b4 { bottom: -10px; left: 50%; transform: translateX(-50%); background: #F59E0B; }
+        .icon-bubble.b5 { bottom: 30px; left: -5px; background: #10B981; }
+        .icon-bubble.b6 { top: 30px; left: -5px; background: #EF4444; }
+
+        /* Dialpad center */
+        .dialpad-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 6px;
+        }
+
+        /* Hero text */
+        .hero-text {
+            text-align: center;
+            z-index: 1;
+        }
+
+        .hero-text h1 {
+            font-size: 34px;
+            font-weight: 800;
+            color: var(--white);
+            line-height: 1.25;
+            margin-bottom: 18px;
+        }
+
+        .hero-text p {
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.7);
+            line-height: 1.6;
+            max-width: 420px;
+        }
+
+        .hero-text p .highlight {
+            color: var(--tufts-blue);
+            font-weight: 600;
+        }
+
+        /* Track Payment Button */
+        .btn-track-payment {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            padding: 12px 28px;
+            background-color: var(--tufts-blue);
+            color: var(--white);
+            border: none;
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            z-index: 2;
+        }
+
+        .btn-track-payment:hover {
+            background-color: var(--tufts-blue-dark);
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .container {
+                flex-direction: column;
+            }
+            .right-panel {
+                min-height: 500px;
+            }
+            .circles-container {
+                width: 240px;
+                height: 240px;
+            }
+            .circle-ring.outer { width: 240px; height: 240px; }
+            .circle-ring.middle { width: 170px; height: 170px; top: 35px; left: 35px; }
+            .circle-ring.inner { width: 100px; height: 100px; top: 70px; left: 70px; }
+            .hero-text h1 { font-size: 26px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- LEFT PANEL -->
+        <div class="left-panel">
+            <div class="logo-text">
+                <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+            </div>
+
+            <!-- Services Summary -->
+            <div class="info-card">
+                <h3>Services Summary</h3>
+                <ul>
+                    <li id="confService1">Phone Number Configuration</li>
+                    <li id="confService2">Hardware Selection</li>
+                    <li id="confService3">Cloud Solutions</li>
+                    <li id="confService4">Communication Services</li>
+                </ul>
+            </div>
+
+            <!-- Activation Timeline -->
+            <div class="info-card">
+                <h3>Activation Timeline</h3>
+                <p>Your services will be activated in the following phases:</p>
+                <p class="sub-item">Phase 1: Initial Setup · 2 days</p>
+                <p class="sub-item">Phase 2: Configuration · 3 days</p>
+                <p class="sub-item">Phase 3: Testing and Go Live · 1 day</p>
+                <a href="#" class="track-link">Track Your Order →</a>
+            </div>
+
+            <!-- Invoice / Receipt -->
+            <div class="invoice-section">
+                <h3>Invoice/Receipt</h3>
+                <button class="btn-download" onclick="window.print()">Download PDF</button>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="right-panel">
+            <div class="right-logo">
+                <img src="Images/Iristel-logo.png" alt="Iristel">
+            </div>
+
+            <!-- Decorative Circles & Icons -->
+            <div class="circles-container">
+                <div class="circle-ring outer"></div>
+                <div class="circle-ring middle"></div>
+                <div class="circle-ring inner"></div>
+
+                <div class="icon-bubble b1">📞</div>
+                <div class="icon-bubble b2">👤</div>
+                <div class="icon-bubble b3">💬</div>
+                <div class="icon-bubble b4">📱</div>
+                <div class="icon-bubble b5">🌐</div>
+                <div class="icon-bubble b6">📧</div>
+
+                <div class="dialpad-center">W X Y Z</div>
+            </div>
+
+            <!-- Hero Text -->
+            <div class="hero-text">
+                <h1>Rethinking How<br>Your Business<br>Connects?</h1>
+                <p>Stay Flexible, Professional, And Connected—From Anywhere With <span class="highlight">Virtual Phone Numbers</span>.</p>
+            </div>
+
+            <!-- Track Payment Button -->
+            <button class="btn-track-payment" onclick="window.location.href='paymentConfirmation.html'">Track Payment</button>
+        </div>
+    </div>
+
+    <script>
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const cookies = document.cookie.split(';');
+            for (let c of cookies) {
+                c = c.trim();
+                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length));
+            }
+            return null;
+        }
+
+        function populateConfirmation() {
+            const service = getCookie('iristel_selected_plan_name');
+            if (service) {
+                document.getElementById('confService3').textContent = service;
+            }
+
+            const hardware = getCookie('iristel_hardware');
+            if (hardware) {
+                document.getElementById('confService2').textContent = hardware;
+            }
+
+            const number = getCookie('iristel_number');
+            if (number) {
+                document.getElementById('confService1').textContent = 'Phone Number: ' + number;
+            }
+        }
+
+        populateConfirmation();
+    </script>
+</body>
+</html>

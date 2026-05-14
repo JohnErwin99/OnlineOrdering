@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pick a Number - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/pickNumber.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel -->
+        <div class="left-panel">
+            <!-- Header -->
+            <div class="header">
+                <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+            </div>
+
+            <!-- Progress Indicator -->
+            <div class="progress-container">
+                <div class="progress-text">4 of 6</div>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+            </div>
+
+            <!-- Page Title -->
+            <h1 class="page-title">Pick a number</h1>
+
+            <!-- Filters -->
+            <div class="filters">
+                <div class="filter-group">
+                    <label class="filter-label">Area code</label>
+                    <select class="filter-select">
+                        <option value="825">825</option>
+                        <option value="403">403</option>
+                        <option value="587">587</option>
+                        <option value="780">780</option>
+                        <option value="236">236</option>
+                        <option value="250">250</option>
+                        <option value="604">604</option>
+                        <option value="778">778</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Digits</label>
+                    <select class="filter-select">
+                        <option value="602 ">602 </option>
+                        <option value="462">462</option>
+                        <option value="806">806</option>
+                        <option value="499">499</option>
+                        <option value="907">907</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Rate Center</label>
+                    <select class="filter-select">
+                        <option value="AIRDRIE">AIRDRIE</option>
+                        <option value="BANFF">BANFF</option>
+                        <option value="BLACKFALDS">BLACKFALDS</option>
+                        <option value="BONNYVILLE">BONNYVILLE</option>
+                        <option value="BOYLE">BOYLE</option>
+                        <option value="BROOKS">BROOKS</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="divider"></div>
+
+            <!-- Numbers List -->
+            <div class="numbers-list">
+                <div class="number-item">(825) 206-2392</div>
+                <div class="number-item selected">(825) 651-2862</div>
+                <div class="number-item">(825) 651-2864</div>
+                <div class="number-item">(825) 206-2390</div>
+                <div class="number-item selected">(825) 651-2861</div>
+                <div class="number-item">(825) 651-2851</div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="nav-buttons">
+                <button class="btn-back">Back</button>
+                <button class="btn-next"  onclick="window.location.href='assignService.html'">Next: Number Assignment</button>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+            <!-- Gradient Background Effects -->
+            <div class="gradient-circle magenta"></div>
+            <div class="gradient-circle cyan"></div>
+
+            <!-- Iristel Logo -->
+            <div class="right-logo">
+                <img src="Images/Iristel-logo.png" alt="Iristel" class="right-logo-img">
+            </div>
+
+            <div class="promo-content">
+                <!-- Phone Illustration -->
+                <div class="phone-illustration">
+                    <img 
+                        src="https://images.unsplash.com/photo-1587560699334-cc4ff634909a?w=800&h=500&fit=crop" 
+                        alt="VoIP Phone System" 
+                        class="phone-image"
+                    >
+                </div>
+
+                <!-- Promo Text -->
+                <div class="promo-text">
+                    <h2 class="promo-headline">From On-Premise<br>To The Cloud</h2>
+                    <p class="promo-subheadline">Learn How To <span>Upgrade Your PBX System</span> With Zero Downtime And Full Flexibility—Without Disrupting Your Business.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Number selection functionality
+        const numberItems = document.querySelectorAll('.number-item');
+        
+        numberItems.forEach(item => {
+            item.addEventListener('click', function() {
+                // Toggle selected state
+                this.classList.toggle('selected');
+            });
+        });
+
+        // Filter functionality (demo)
+        const filterSelects = document.querySelectorAll('.filter-select');
+        
+        filterSelects.forEach(select => {
+            select.addEventListener('change', function() {
+                // In a real app, this would filter the numbers list
+                console.log('Filter changed:', this.value);
+            });
+        });
+    </script>
+</body>
+</html>

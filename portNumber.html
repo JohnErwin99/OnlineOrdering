@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transfer a Number - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/portNumber.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="progress-container">
+            <div class="progress-text">4 of 6</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+
+        <!-- Page Title -->
+        <h1 class="page-title">Transfer a number</h1>
+
+        <!-- Filters and Number Type -->
+        <div class="filters-container">
+            <!-- Filters -->
+            <div class="filters-row">
+                <div class="filter-group">
+                    <label class="filter-label">Area code</label>
+                    <select class="filter-select">
+                        <option value="825">825</option>
+                        <option value="403">403</option>
+                        <option value="587">587</option>
+                        <option value="780">780</option>
+                        <option value="236">236</option>
+                        <option value="250">250</option>
+                        <option value="604">604</option>
+                        <option value="778">778</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Digits</label>
+                    <select class="filter-select">
+                        <option value="602 ">602 </option>
+                        <option value="462">462</option>
+                        <option value="806">806</option>
+                        <option value="499">499</option>
+                        <option value="907">907</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label class="filter-label">Rate Center</label>
+                    <select class="filter-select">
+                        <option value="AIRDRIE">AIRDRIE</option>
+                        <option value="BANFF">BANFF</option>
+                        <option value="BLACKFALDS">BLACKFALDS</option>
+                        <option value="BONNYVILLE">BONNYVILLE</option>
+                        <option value="BOYLE">BOYLE</option>
+                        <option value="BROOKS">BROOKS</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Number Type -->
+            <div class="number-type-section">
+                <label class="radio-option">
+                    <input type="radio" name="number-type" class="radio-input" checked>
+                    <span class="radio-label">CAD Number</span>
+                </label>
+                <!--<label class="radio-option">
+                    <input type="radio" name="number-type" class="radio-input">
+                    <span class="radio-label">US Number</span>
+                </label>
+                <label class="radio-option">
+                    <input type="radio" name="number-type" class="radio-input">
+                    <span class="radio-label">Toll-Free</span>
+                </label>-->
+            </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="divider"></div>
+
+        <!-- Numbers List -->
+        <div class="numbers-list">
+            <div class="number-item">(825) 206-2392</div>
+            <div class="number-item selected">(825) 651-2862</div>
+            <div class="number-item">(825) 651-2864</div>
+            <div class="number-item">(825) 206-2390</div>
+            <div class="number-item selected">(825) 651-2861</div>
+            <div class="number-item">(825) 651-2851</div>
+        </div>
+
+        <!-- Letter of Authorization Section -->
+        <div class="loa-section">
+            <h2 class="loa-title">Letter Of Authorization</h2>
+            
+            <p class="loa-subtitle">LETTER OF AUTHORIZATION FOR US NUMBERS SERVICE PORTABILITY</p>
+
+            <div class="loa-form">
+                <div class="loa-form-left">
+                    <p class="loa-description">This letter is to authorize Iristel to act on behalf of:</p>
+
+                    <div class="loa-form-row">
+                        <div class="loa-form-group">
+                            <label class="loa-label">Company name</label>
+                            <input type="text" class="loa-input" placeholder="Company name" disabled>
+                        </div>
+                        <div class="loa-form-group">
+                            <label class="loa-label">Account Number</label>
+                            <input type="text" class="loa-input" placeholder="Current a Account Number" disabled>
+                        </div>
+                    </div>
+
+                    <div class="loa-form-row">
+                        <div class="loa-form-group full-width">
+                            <label class="loa-label">Service Address of Customer as shown on Telephone Company Equipment Record</label>
+                            <input type="text" class="loa-input" placeholder="Address" disabled>
+                        </div>
+                    </div>
+
+                    <p class="pin-label">PIN:</p>
+
+                    <button class="btn-download">Download LOA template</button>
+                </div>
+
+                <div class="loa-form-right">
+                    <label class="file-upload">
+                        <input type="file" class="file-input" accept=".pdf,.doc,.docx">
+                        <div class="upload-icon">
+                            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M24 32V12M24 12L16 20M24 12L32 20" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M8 32V38C8 39.1046 8.89543 40 10 40H38C39.1046 40 40 39.1046 40 38V32" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        <span class="upload-text">Browse file to upload</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="nav-buttons">
+            <button class="btn-back">Back</button>
+            <button class="btn-next"  onclick="window.location.href='assignService.html'">Next: Number Assignment</button>
+            
+        </div>
+    </div>
+
+    <script>
+        // Number selection functionality
+        const numberItems = document.querySelectorAll('.number-item');
+        
+        numberItems.forEach(item => {
+            item.addEventListener('click', function() {
+                this.classList.toggle('selected');
+            });
+        });
+
+        // File upload functionality
+        const fileUpload = document.querySelector('.file-upload');
+        const fileInput = document.querySelector('.file-input');
+        const uploadText = document.querySelector('.upload-text');
+
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                uploadText.textContent = this.files[0].name;
+                fileUpload.style.borderColor = 'var(--tufts-blue)';
+                fileUpload.style.backgroundColor = 'rgba(62, 140, 203, 0.05)';
+            }
+        });
+
+        // Drag and drop functionality
+        fileUpload.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.style.borderColor = 'var(--tufts-blue)';
+            this.style.backgroundColor = 'rgba(62, 140, 203, 0.05)';
+        });
+
+        fileUpload.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+        });
+
+        fileUpload.addEventListener('drop', function(e) {
+            e.preventDefault();
+            this.style.borderColor = 'var(--tufts-blue)';
+            this.style.backgroundColor = 'rgba(62, 140, 203, 0.05)';
+            
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                uploadText.textContent = e.dataTransfer.files[0].name;
+            }
+        });
+
+        // Filter functionality (demo)
+        const filterSelects = document.querySelectorAll('.filter-select');
+        
+        filterSelects.forEach(select => {
+            select.addEventListener('change', function() {
+                console.log('Filter changed:', this.value);
+            });
+        });
+    </script>
+</body>
+</html>

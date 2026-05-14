@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardware - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/global.css">
+    <link rel="stylesheet" href="css/hardwareOrders.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="progress-container">
+            <div class="progress-text">3 of 5</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+
+        <!-- Hardware Grid -->
+        <div class="hardware-grid">
+            <!-- Basic Entry Card -->
+            <div class="hardware-card">
+                <h2 class="card-title">Basic entry</h2>
+                <p class="card-model">Yealink T31P</p>
+                <p class="card-price">$75</p>
+                <img 
+                    src="https://lirp.cdn-website.com/f37dfe57/dms3rep/multi/opt/Image+13-1x-1920w.png" 
+                    alt="Yealink T31P" 
+                    class="phone-image"
+                >
+                <p class="card-specs">T31P VoIP SIP Telephone, 2 × Fast Ethernet, 2 × Line Keys, PoE Required, AC Optional, 2.3 inch Backlit LCD, HD Audio, RJ9 Headset Jack</p>
+                <a href="https://irp.cdn-website.com/f37dfe57/files/uploaded/Yealink-SIP-T31P-Datasheet%20en.pdf" class="specs-link">Specs file</a>
+                <button class="btn-select">Select</button>
+            </div>
+
+            <!-- Premium Card -->
+            <div class="hardware-card">
+                <h2 class="card-title">Premium phones</h2>
+                <p class="card-model">Yealink T48U</p>
+                <p class="card-price">$360</p>
+                <img 
+                    src="https://www.yealink.com/website-service/attachment/product/image/20220411/2022041109232523070dc59aa4888bc83cad8cffcc343.png" 
+                    alt="Yealink T48U" 
+                    class="phone-image"
+                >
+                <p class="card-specs">SIP Telephone, 2 × Gigabit Ethernet, PoE Required, AC Optional, 7-inch Touch Colour Backlit TFT LCD, HD Audio, RJ Headset Jack, 2 × USB.</p>
+                <a href="https://www.yealink.com/website-service/attachment/product/documents/20220526/20220526095555699c587dbb644d7a3e80ea75153f35b.pdf" class="specs-link">Specs file</a>
+                <button class="btn-select">Select</button>
+            </div>
+        </div>
+
+        <!-- Other Devices Option -->
+        <div class="other-devices">
+            <label class="radio-container">
+                <input type="radio" name="other-devices" class="radio-input">
+                <span class="radio-label">Are you looking for other devices?</span>
+            </label>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="nav-buttons">
+            <button class="btn-back" onclick="window.location.href='addOns.html'">Back</button>
+            <button class="btn-next" onclick="window.location.href='numberSelection.html'"></button>>Next: Number Setup</button>
+        </div>
+    </div>
+
+    <script>
+        // Add selection functionality to cards
+        const selectButtons = document.querySelectorAll('.btn-select');
+        
+        selectButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                // Remove selected state from all cards
+                document.querySelectorAll('.hardware-card').forEach(card => {
+                    card.style.boxShadow = '';
+                    card.style.borderColor = '';
+                    card.querySelector('.btn-select').textContent = 'Select';
+                });
+                
+                // Add selected state to clicked card
+                const card = this.closest('.hardware-card');
+                card.style.boxShadow = '0 0 0 2px var(--tufts-blue), 0 8px 30px rgba(62, 140, 203, 0.2)';
+                this.textContent = 'Selected';
+            });
+        });
+    </script>
+</body>
+</html>

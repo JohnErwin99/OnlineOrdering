@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIP Trunk - Review & Confirm - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #3E8CCB;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --medium-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --magenta-glow: #C41E7A;
+            --cyan-glow: #3E8CCB;
+            --success-green: #10B981;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            min-height: 100vh;
+            color: var(--rich-black);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 60px;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .logo-img { height: 36px; width: auto; }
+        .support-link { font-size: 14px; color: var(--rich-black); }
+        .support-link a { color: var(--tufts-blue); text-decoration: underline; }
+
+        .progress-container { margin-bottom: 30px; max-width: 600px; }
+        .progress-text { font-size: 13px; color: var(--text-gray); margin-bottom: 8px; }
+        .progress-bar { height: 4px; background-color: var(--medium-gray); border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%); border-radius: 2px; }
+
+        .page-title { font-size: 28px; font-weight: 500; color: var(--tufts-blue); margin-bottom: 8px; }
+        .page-subtitle { font-size: 15px; color: var(--text-gray); margin-bottom: 30px; max-width: 700px; }
+
+        .info-box {
+            background-color: rgba(62, 140, 203, 0.08);
+            border-left: 4px solid var(--tufts-blue);
+            padding: 16px 20px;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 30px;
+            max-width: 800px;
+        }
+        .info-box p { font-size: 14px; color: var(--rich-black); line-height: 1.5; }
+        .info-box strong { color: var(--tufts-blue); }
+
+        .review-card {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            margin-bottom: 24px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--medium-gray);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--rich-black);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-title svg { width: 22px; height: 22px; color: var(--tufts-blue); }
+
+        .btn-edit {
+            background: transparent;
+            border: 1px solid var(--tufts-blue);
+            color: var(--tufts-blue);
+            padding: 6px 16px;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-edit:hover {
+            background: var(--tufts-blue);
+            color: var(--white);
+        }
+
+        .review-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px 32px;
+        }
+
+        .review-item {
+            padding: 8px 0;
+        }
+
+        .review-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .review-value {
+            font-size: 15px;
+            color: var(--rich-black);
+            font-weight: 400;
+        }
+
+        .review-value.empty {
+            color: var(--text-gray);
+            font-style: italic;
+        }
+
+        .contact-block {
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .contact-block:last-child { margin-bottom: 0; }
+
+        .contact-block-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--tufts-blue);
+            margin-bottom: 12px;
+        }
+
+        .numbers-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .number-chip {
+            background: var(--light-gray);
+            border: 1px solid var(--medium-gray);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            color: var(--rich-black);
+        }
+
+        .number-chip.pilot {
+            background: rgba(62, 140, 203, 0.1);
+            border-color: var(--tufts-blue);
+            color: var(--tufts-blue);
+            font-family: 'Heebo', sans-serif;
+            font-weight: 500;
+        }
+
+        .users-review-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .users-review-table th {
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 10px 16px;
+            background: var(--light-gray);
+            border-radius: 4px;
+        }
+
+        .users-review-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--medium-gray);
+            font-size: 14px;
+            color: var(--rich-black);
+        }
+
+        .users-review-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .pilot-badge {
+            display: inline-block;
+            background: rgba(62, 140, 203, 0.1);
+            color: var(--tufts-blue);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .port-section {
+            background: rgba(245, 158, 11, 0.05);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 16px;
+        }
+
+        .port-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #F59E0B;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .port-section-title svg { width: 18px; height: 18px; }
+
+        .terms-section {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            margin-bottom: 24px;
+        }
+
+        .terms-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--rich-black);
+            margin-bottom: 16px;
+        }
+
+        .terms-text {
+            font-size: 13px;
+            color: var(--text-gray);
+            line-height: 1.6;
+            margin-bottom: 20px;
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 16px;
+            background: var(--light-gray);
+            border-radius: 8px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .checkbox-container input {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .checkbox-container span {
+            font-size: 14px;
+            color: var(--rich-black);
+            line-height: 1.4;
+        }
+
+        .nav-buttons {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+        }
+
+        .btn-back {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 16px 48px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .btn-back:hover { background: #3580BC; transform: translateY(-1px); }
+
+        .btn-submit {
+            background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
+            color: var(--white);
+            padding: 16px 48px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-submit:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+        .btn-submit:disabled { background: var(--medium-gray); cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-submit svg { width: 20px; height: 20px; }
+
+        .user-info {
+            background: var(--white);
+            border: 1px solid var(--medium-gray);
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: var(--text-gray);
+        }
+
+        .user-info strong {
+            color: var(--rich-black);
+        }
+
+        /* Success Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(1, 17, 30, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 50px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .modal-icon {
+            width: 72px;
+            height: 72px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+
+        .modal-icon svg {
+            width: 36px;
+            height: 36px;
+            color: var(--success-green);
+        }
+
+        .modal h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--rich-black);
+            margin-bottom: 12px;
+        }
+
+        .modal p {
+            font-size: 15px;
+            color: var(--text-gray);
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .modal .btn-done {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 14px 40px;
+            border: none;
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .modal .btn-done:hover { background: #3580BC; }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 900px) {
+            .container { padding: 20px; }
+            .review-grid { grid-template-columns: 1fr; }
+            .nav-buttons { flex-direction: column; gap: 16px; }
+            .btn-back, .btn-submit { width: 100%; text-align: center; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="..\Images\Iristel-logo.png" alt="Iristel" class="logo-img">
+            <span class="support-link">Need help? <a href="tel:18334747835">1 833 IRISTEL</a></span>
+        </div>
+
+        <!-- User Info Bar -->
+        <div class="user-info" id="userInfo" style="display: none;">
+            Logged in as: <strong id="userEmail"></strong> | Account ID: <strong id="accountIdDisplay"></strong>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-text">Step 6 of 6 — Review & Confirm</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+
+        <h1 class="page-title">Review & Confirm</h1>
+        <p class="page-subtitle">Please review your SIP trunk configuration below. Make sure all information is correct before submitting your order.</p>
+
+        <div class="info-box">
+            <p><strong>Almost done!</strong> Review the details below and click "Submit Order" to complete your SIP trunk setup. You can click "Edit" on any section to make changes.</p>
+        </div>
+
+        <!-- Business Information -->
+        <div class="review-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" clip-rule="evenodd"/></svg>
+                    Business Information
+                </h2>
+                <button class="btn-edit" onclick="window.location.href='businessSetup.html'">Edit</button>
+            </div>
+            <div class="review-grid">
+                <div class="review-item">
+                    <div class="review-label">Business Name</div>
+                    <div class="review-value" id="revBusinessName">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Site Name</div>
+                    <div class="review-value" id="revSiteName">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Address</div>
+                    <div class="review-value" id="revAddress">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">City / Province</div>
+                    <div class="review-value" id="revCityProvince">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Postal Code</div>
+                    <div class="review-value" id="revPostalCode">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Country</div>
+                    <div class="review-value" id="revCountry">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contact Information -->
+        <div class="review-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+                    Contact Information
+                </h2>
+                <button class="btn-edit" onclick="window.location.href='businessSetup.html'">Edit</button>
+            </div>
+            <div class="contact-block">
+                <div class="contact-block-title">Billing Contact</div>
+                <div class="review-grid">
+                    <div class="review-item">
+                        <div class="review-label">Name</div>
+                        <div class="review-value" id="revBillingName">--</div>
+                    </div>
+                    <div class="review-item">
+                        <div class="review-label">Email</div>
+                        <div class="review-value" id="revBillingEmail">--</div>
+                    </div>
+                    <div class="review-item">
+                        <div class="review-label">Phone</div>
+                        <div class="review-value" id="revBillingPhone">--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="contact-block">
+                <div class="contact-block-title">Technical Contact</div>
+                <div class="review-grid">
+                    <div class="review-item">
+                        <div class="review-label">Name</div>
+                        <div class="review-value" id="revTechName">--</div>
+                    </div>
+                    <div class="review-item">
+                        <div class="review-label">Email</div>
+                        <div class="review-value" id="revTechEmail">--</div>
+                    </div>
+                    <div class="review-item">
+                        <div class="review-label">Phone</div>
+                        <div class="review-value" id="revTechPhone">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Port Information (conditional) -->
+        <div class="review-card" id="portCard" style="display: none;">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M8 5a1 1 0 100 2h5.586l-1.293 1.293a1 1 0 001.414 1.414l3-3a1 1 0 000-1.414l-3-3a1 1 0 10-1.414 1.414L13.586 5H8zM12 15a1 1 0 100-2H6.414l1.293-1.293a1 1 0 10-1.414-1.414l-3 3a1 1 0 000 1.414l3 3a1 1 0 001.414-1.414L6.414 15H12z"/></svg>
+                    Number Porting
+                </h2>
+                <button class="btn-edit" onclick="window.location.href='siptrunkLOA.html'">Edit</button>
+            </div>
+            <div class="port-section">
+                <div class="port-section-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                    Numbers Being Ported (5+ business days)
+                </div>
+                <div class="numbers-list" id="revPortNumbers"></div>
+            </div>
+            <div class="review-grid" style="margin-top: 16px;">
+                <div class="review-item">
+                    <div class="review-label">Current Provider</div>
+                    <div class="review-value" id="revProvider">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Account Number</div>
+                    <div class="review-value" id="revAccountNum">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Service Address</div>
+                    <div class="review-value" id="revServiceAddr">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">LOA Document</div>
+                    <div class="review-value" id="revLoaFile">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selected Numbers -->
+        <div class="review-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+                    <span id="numbersTitle">Selected Numbers</span>
+                </h2>
+                <button class="btn-edit" onclick="window.location.href='numberSelection.html'">Edit</button>
+            </div>
+            <div class="numbers-list" id="revSelectedNumbers">
+                <span class="review-value empty">No numbers selected</span>
+            </div>
+        </div>
+
+        <!-- Users & Pilot -->
+        <div class="review-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+                    Trunk Users
+                </h2>
+                <button class="btn-edit" onclick="window.location.href='userAssignment.html'">Edit</button>
+            </div>
+            <table class="users-review-table" id="usersReviewTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Phone Number</th>
+                        <th>Package</th>
+                    </tr>
+                </thead>
+                <tbody id="usersReviewBody">
+                    <tr><td colspan="3" class="review-value empty" style="text-align: center;">No users configured</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Terms & Conditions -->
+        <div class="terms-section">
+            <h3 class="terms-title">Terms & Conditions</h3>
+            <div class="terms-text">
+                By submitting this order, you agree to Iristel's Terms of Service and Acceptable Use Policy for SIP Trunking services. You acknowledge that:
+
+                1. Service activation is subject to successful verification of your business information and identity.
+                2. Number porting, if applicable, requires a minimum of 5 business days and is subject to approval by the losing carrier.
+                3. Monthly service charges begin upon activation of your trunk, including any temporary numbers assigned during the porting process.
+                4. You are authorized to make changes to the telephone service associated with the numbers listed in this order.
+                5. All information provided in this order is accurate and complete to the best of your knowledge.
+                6. Iristel reserves the right to modify service terms with 30 days notice.
+                7. Emergency (911) services are available but may have limitations compared to traditional phone service. Please review our E911 disclosure.
+            </div>
+            <label class="checkbox-container">
+                <input type="checkbox" id="agreeTerms" onchange="updateSubmitButton()">
+                <span>I have reviewed the information above and agree to the Terms of Service and Acceptable Use Policy for Iristel SIP Trunking services.</span>
+            </label>
+        </div>
+
+        <div class="nav-buttons">
+            <button class="btn-back" onclick="window.location.href='userAssignment.html'">Back</button>
+            <button class="btn-submit" id="submitBtn" onclick="submitOrder()" disabled>
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                Submit Order
+            </button>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div class="modal-overlay" id="successModal">
+        <div class="modal">
+            <div class="modal-icon">
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+            </div>
+            <h2>Trunk Provisioned!</h2>
+            <p>Your SIP trunk has been provisioned successfully on Broadworks. Your enterprise, users, and trunk group have been configured.</p>
+            <div id="trunkPasswordDisplay" style="display: none; background: #F5F7FA; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left;">
+                <div style="font-size: 12px; font-weight: 600; color: #5A6A7A; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Trunk Group Password</div>
+                <div id="trunkPasswordValue" style="font-size: 16px; font-family: 'Courier New', monospace; color: #01111E; word-break: break-all;"></div>
+                <div style="font-size: 12px; color: #5A6A7A; margin-top: 8px;">Use this password to configure your PBX registration.</div>
+            </div>
+            <button class="btn-done" onclick="window.location.href='../index.html'">Done</button>
+        </div>
+    </div>
+
+    <script>
+        function setCookie(name, value, days = 7) {
+            const expires = new Date(Date.now() + days * 864e5).toUTCString();
+            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict';
+        }
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+            return null;
+        }
+
+        const provinceNames = {
+            'AB': 'Alberta', 'BC': 'British Columbia', 'MB': 'Manitoba',
+            'NB': 'New Brunswick', 'NL': 'Newfoundland and Labrador',
+            'NS': 'Nova Scotia', 'ON': 'Ontario', 'PE': 'Prince Edward Island',
+            'QC': 'Quebec', 'SK': 'Saskatchewan'
+        };
+
+        const packageNames = {
+            'business-trunk': 'Business Trunk',
+            'standard': 'Standard',
+            'premium': 'Premium'
+        };
+
+        function setText(id, value) {
+            const el = document.getElementById(id);
+            if (value && value.trim()) {
+                el.textContent = value;
+                el.classList.remove('empty');
+            } else {
+                el.textContent = '--';
+                el.classList.add('empty');
+            }
+        }
+
+        function loadReviewData() {
+            // Business Information
+            setText('revBusinessName', getCookie('sip_businessName'));
+            setText('revSiteName', getCookie('sip_siteName'));
+
+            const addr1 = getCookie('sip_address1') || '';
+            const addr2 = getCookie('sip_address2') || '';
+            setText('revAddress', addr2 ? `${addr1}, ${addr2}` : addr1);
+
+            const city = getCookie('sip_city') || '';
+            const province = getCookie('sip_province') || '';
+            setText('revCityProvince', `${city}${province ? ', ' + (provinceNames[province] || province) : ''}`);
+            setText('revPostalCode', getCookie('sip_postalCode'));
+
+            const country = getCookie('sip_country');
+            setText('revCountry', country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : country);
+
+            // Contacts
+            const billingFirst = getCookie('sip_billingFirstName') || '';
+            const billingLast = getCookie('sip_billingLastName') || '';
+            setText('revBillingName', `${billingFirst} ${billingLast}`.trim());
+            setText('revBillingEmail', getCookie('sip_billingEmail'));
+            setText('revBillingPhone', getCookie('sip_billingPhone'));
+
+            const techFirst = getCookie('sip_techFirstName') || '';
+            const techLast = getCookie('sip_techLastName') || '';
+            setText('revTechName', `${techFirst} ${techLast}`.trim());
+            setText('revTechEmail', getCookie('sip_techEmail'));
+            setText('revTechPhone', getCookie('sip_techPhone'));
+
+            // Port Information
+            const isPorting = getCookie('sip_isPorting') === 'true' || getCookie('sip_isPoriting') === 'true' || getCookie('sip_numberSource') === 'port';
+            if (isPorting) {
+                document.getElementById('portCard').style.display = 'block';
+                document.getElementById('numbersTitle').textContent = 'Temporary Numbers';
+
+                const portNumbers = getCookie('sip_portNumbers');
+                if (portNumbers) {
+                    try {
+                        const nums = JSON.parse(portNumbers);
+                        document.getElementById('revPortNumbers').innerHTML = nums.map(n =>
+                            `<span class="number-chip">${n}</span>`
+                        ).join('');
+                    } catch (e) {}
+                }
+
+                setText('revProvider', getCookie('sip_currentProvider'));
+                setText('revAccountNum', getCookie('sip_accountNumber'));
+                setText('revServiceAddr', getCookie('sip_serviceAddress'));
+                setText('revLoaFile', getCookie('sip_loaFileName'));
+            }
+
+            // Selected Numbers
+            const selectedNumbers = getCookie('sip_selectedNumbers');
+            const revPrimary = getCookie('sip_primaryNumber') || '';
+            if (selectedNumbers) {
+                try {
+                    const nums = JSON.parse(selectedNumbers);
+                    if (nums.length > 0) {
+                        document.getElementById('revSelectedNumbers').innerHTML = nums.map(n =>
+                            n === revPrimary
+                                ? `<span class="number-chip pilot">${n} (Main)</span>`
+                                : `<span class="number-chip">${n}</span>`
+                        ).join('');
+                    }
+                } catch (e) {}
+            }
+
+            // Users
+            const usersData = getCookie('sip_users');
+            const pilotUserId = getCookie('sip_pilotUser');
+            if (usersData) {
+                try {
+                    const users = JSON.parse(usersData);
+                    if (users.length > 0) {
+                        document.getElementById('usersReviewBody').innerHTML = users.map(user => {
+                            const isPilot = String(user.id) === String(pilotUserId);
+                            return `<tr>
+                                <td>${user.firstName} ${user.lastName}${isPilot ? '<span class="pilot-badge">Pilot User</span>' : ''}</td>
+                                <td style="font-family: 'Courier New', monospace;">${user.number || '--'}</td>
+                                <td>${packageNames[user.package] || user.package}</td>
+                            </tr>`;
+                        }).join('');
+                    }
+                } catch (e) {}
+            }
+        }
+
+        function updateSubmitButton() {
+            document.getElementById('submitBtn').disabled = !document.getElementById('agreeTerms').checked;
+        }
+
+        function formatToE164(number) {
+            // Strip all non-digit characters
+            let digits = number.replace(/\D/g, '');
+            // If it starts with 1 and has 11 digits, it's already correct
+            if (digits.length === 11 && digits.startsWith('1')) {
+                return '+' + digits;
+            }
+            // If 10 digits, prepend +1
+            if (digits.length === 10) {
+                return '+1' + digits;
+            }
+            // Fallback: return with + prefix
+            return '+' + digits;
+        }
+
+        function sanitizeEnterpriseId(name) {
+            // Remove special chars, replace spaces with underscores, lowercase
+            return name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
+        }
+
+        // ============================================
+        // TEST MODE — set to false to call real APIs
+        // ============================================
+        const TEST_MODE = true;
+
+        // ============================================
+        // MIND / Iristel-X API Configuration
+        // ============================================
+        const MIND_API_URL = 'https://api.iristelx.com';
+        const MIND_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
+        const SIP_TRUNK_PLAN_CODE = 'EXLNP_EXTRUNK';
+
+        // ============================================
+        // TRUNK (Broadworks) API Configuration
+        // ============================================
+        const TRUNK_API_URL = 'http://100.67.14.26:8099/api/trunk/provision';
+        const TRUNK_API_KEY = '3c901f55e7864d2aae31b08c9746f9132d8847f1acb94c65b0897e3624f1edc6';
+
+        function getContactDataFromCookies() {
+            return {
+                fname: getCookie('sip_billingFirstName') || getCookie('iristel_user_fname') || '',
+                lname: getCookie('sip_billingLastName') || getCookie('iristel_user_lname') || '',
+                emailAddress: getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '',
+                phone: getCookie('sip_billingPhone') || getCookie('iristel_user_phone') || '',
+                address1: getCookie('sip_address1') || getCookie('iristel_user_address1') || '',
+                city: getCookie('sip_city') || getCookie('iristel_user_city') || '',
+                province: getCookie('sip_province') || getCookie('iristel_user_province') || '',
+                country: getCookie('sip_country') || getCookie('iristel_user_country') || '',
+                postalCode: (getCookie('sip_postalCode') || getCookie('iristel_user_postalCode') || '').replace(/\s/g, '')
+            };
+        }
+
+        function updateStatusMessage(message) {
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.innerHTML = `
+                <svg viewBox="0 0 20 20" fill="currentColor" style="animation: spin 1s linear infinite;">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                </svg>
+                ${message}
+            `;
+        }
+
+        function resetSubmitButton() {
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = `
+                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                Submit Order
+            `;
+        }
+
+        // ============================================
+        // STEP 1: Create business account in MIND
+        // ============================================
+        async function createMindAccount(contactData) {
+            const requestBody = {
+                contact: {
+                    fname: contactData.fname,
+                    lname: contactData.lname,
+                    address1: contactData.address1,
+                    city: contactData.city,
+                    province: contactData.province,
+                    country: contactData.country,
+                    postalCode: contactData.postalCode,
+                    emailAddress: contactData.emailAddress,
+                    phone: {
+                        mobile: contactData.phone
+                    }
+                },
+                language: getCookie('iristel_user_language') || 'en',
+                businessUnit: '1'
+            };
+
+            console.log('[STEP 1] MIND Create Account — POST', MIND_API_URL + '/accounts');
+            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+
+            if (TEST_MODE) {
+                await new Promise(r => setTimeout(r, 800));
+                const mockId = 'TEST-' + Date.now();
+                console.log('[TEST] Mock account created:', mockId);
+                return mockId;
+            }
+
+            const response = await fetch(`${MIND_API_URL}/accounts`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'iristelx-api-key': MIND_API_KEY
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const data = await response.json();
+            console.log('MIND Create Account Response:', data);
+
+            if (!response.ok) {
+                throw new Error(data.message || `MIND account creation failed (HTTP ${response.status})`);
+            }
+
+            return data.accountId || data.id || data.accountcode;
+        }
+
+        // ============================================
+        // STEP 2: Assign SIP Trunk service in MIND
+        // ============================================
+        async function assignSipTrunkService(accountId, contactData) {
+            const requestBody = {
+                accountId: accountId,
+                planCode: SIP_TRUNK_PLAN_CODE,
+                contact: {
+                    fname: contactData.fname,
+                    lname: contactData.lname,
+                    address1: contactData.address1,
+                    city: contactData.city,
+                    province: contactData.province,
+                    country: contactData.country,
+                    postalCode: contactData.postalCode,
+                    emailAddress: contactData.emailAddress,
+                    phone: contactData.phone
+                }
+            };
+
+            console.log('[STEP 2] MIND Assign Service — POST', `${MIND_API_URL}/accounts/${accountId}/services`);
+            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+
+            if (TEST_MODE) {
+                await new Promise(r => setTimeout(r, 800));
+                const mockResult = { serviceId: 'SVC-' + Date.now(), planCode: SIP_TRUNK_PLAN_CODE, status: 'active' };
+                console.log('[TEST] Mock service assigned:', mockResult);
+                return mockResult;
+            }
+
+            const response = await fetch(`${MIND_API_URL}/accounts/${accountId}/services`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'iristelx-api-key': MIND_API_KEY
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const data = await response.json();
+            console.log('MIND Assign Service Response:', data);
+
+            if (!response.ok) {
+                throw new Error(data.message || `Service assignment failed (HTTP ${response.status})`);
+            }
+
+            return data;
+        }
+
+        // ============================================
+        // STEP 3: Provision trunk in Broadworks
+        // ============================================
+        async function provisionBroadworksTrunk(enterpriseId, phoneNumbers, primaryNumber) {
+            const provisionPayload = {
+                enterpriseId: enterpriseId,
+                phoneNumbers: phoneNumbers,
+                actualMaxCalls: phoneNumbers.length,
+                primaryNumber: primaryNumber
+            };
+
+            console.log('[STEP 3] Broadworks Provision — POST', TRUNK_API_URL);
+            console.log('Request Body:', JSON.stringify(provisionPayload, null, 2));
+
+            if (TEST_MODE) {
+                await new Promise(r => setTimeout(r, 1000));
+                const mockResult = {
+                    success: true,
+                    enterpriseId: enterpriseId,
+                    trunkGroupPassword: 'TkGrp!' + Math.random().toString(36).slice(2, 10),
+                    steps: [
+                        { step: 'createEnterprise', status: 'ok' },
+                        { step: 'addDnList', status: 'ok' },
+                        { step: 'createGroup', status: 'ok' },
+                        { step: 'assignDns', status: 'ok' },
+                        { step: 'activateDns', status: 'ok' },
+                        { step: 'createUsers', status: 'ok' },
+                        { step: 'authorizeServices', status: 'ok' },
+                        { step: 'assignServices', status: 'ok' },
+                        { step: 'setCallCapacity', status: 'ok' },
+                        { step: 'createTrunkGroup', status: 'ok' },
+                        { step: 'updateUsersTrunkAddressing', status: 'ok' },
+                        { step: 'setPilotUser', status: 'ok' }
+                    ]
+                };
+                console.log('[TEST] Mock trunk provisioned:', mockResult);
+                return mockResult;
+            }
+
+            const response = await fetch(TRUNK_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Api-Key': TRUNK_API_KEY,
+                    'accept': '*/*'
+                },
+                body: JSON.stringify(provisionPayload)
+            });
+
+            const data = await response.json().catch(() => null);
+            console.log('Broadworks Provision Response:', data);
+
+            if (!response.ok) {
+                const errorMsg = data && data.message ? data.message
+                               : data && data.title ? data.title
+                               : `Broadworks provisioning failed (HTTP ${response.status})`;
+                throw new Error(errorMsg);
+            }
+
+            return data;
+        }
+
+        // ============================================
+        // SUBMIT ORDER — Full 3-step flow
+        // 1. Create business account in MIND
+        // 2. Assign EXLNP_EXTRUNK service to account
+        // 3. Provision trunk in Broadworks
+        // ============================================
+        async function submitOrder() {
+            if (!document.getElementById('agreeTerms').checked) {
+                alert('Please agree to the Terms of Service before submitting.');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+
+            const contactData = getContactDataFromCookies();
+            const businessName = getCookie('sip_businessName') || 'enterprise';
+            const enterpriseId = sanitizeEnterpriseId(businessName);
+
+            // Get selected phone numbers and convert to E.164
+            let phoneNumbers = [];
+            const selectedNumbersRaw = getCookie('sip_selectedNumbers');
+            if (selectedNumbersRaw) {
+                try {
+                    phoneNumbers = JSON.parse(selectedNumbersRaw).map(n => formatToE164(n));
+                } catch (e) {
+                    phoneNumbers = [];
+                }
+            }
+
+            // Get primary number from number selection step
+            const savedPrimary = getCookie('sip_primaryNumber');
+            let primaryNumber = savedPrimary ? formatToE164(savedPrimary) : (phoneNumbers.length > 0 ? phoneNumbers[0] : '');
+
+            try {
+                // ---- STEP 1: Create MIND Account ----
+                let accountId = getCookie('iristel_account_id');
+
+                if (!accountId) {
+                    updateStatusMessage('Creating account...');
+                    accountId = await createMindAccount(contactData);
+                    setCookie('iristel_account_id', accountId);
+                    console.log('MIND Account created:', accountId);
+                } else {
+                    console.log('Using existing MIND account:', accountId);
+                }
+
+                // ---- STEP 2: Assign SIP Trunk Service ----
+                updateStatusMessage('Assigning SIP Trunk service...');
+                const serviceResult = await assignSipTrunkService(accountId, contactData);
+                console.log('Service assigned:', serviceResult);
+
+                // Store service ID if returned
+                if (serviceResult && (serviceResult.serviceId || serviceResult.id)) {
+                    setCookie('sip_serviceId', serviceResult.serviceId || serviceResult.id);
+                }
+
+                // ---- STEP 3: Provision Broadworks Trunk ----
+                updateStatusMessage('Provisioning trunk...');
+                const provisionResult = await provisionBroadworksTrunk(enterpriseId, phoneNumbers, primaryNumber);
+
+                // Store trunk password if returned
+                if (provisionResult && provisionResult.trunkGroupPassword) {
+                    setCookie('sip_trunkPassword', provisionResult.trunkGroupPassword);
+                }
+                if (provisionResult) {
+                    setCookie('sip_provisionResult', JSON.stringify(provisionResult));
+                }
+
+                // Show trunk password in the modal if available
+                if (provisionResult && provisionResult.trunkGroupPassword) {
+                    document.getElementById('trunkPasswordValue').textContent = provisionResult.trunkGroupPassword;
+                    document.getElementById('trunkPasswordDisplay').style.display = 'block';
+                }
+
+                // ---- SUCCESS ----
+                document.getElementById('successModal').classList.add('active');
+
+            } catch (err) {
+                console.error('Order submission failed:', err);
+                alert('Order submission failed:\n\n' + err.message);
+                resetSubmitButton();
+            }
+        }
+
+        function loadUserInfoBar() {
+            const email = getCookie('iristel_user_email');
+            const accountId = getCookie('iristel_account_id');
+            if (email || accountId) {
+                document.getElementById('userEmail').textContent = email || '--';
+                document.getElementById('accountIdDisplay').textContent = accountId || '--';
+                document.getElementById('userInfo').style.display = 'block';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfoBar();
+            loadReviewData();
+        });
+    </script>
+</body>
+</html>

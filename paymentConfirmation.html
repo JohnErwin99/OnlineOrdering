@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Confirmed - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #3E8CCB;
+            --tufts-blue-dark: #2d7ab8;
+            --magenta: #C41E7A;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --border-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --text-dark: #2C3E50;
+            --success-green: #22c55e;
+            --success-light: #f0fdf4;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 30px 40px 60px;
+            flex: 1;
+        }
+
+        .header { margin-bottom: 40px; }
+        .logo-text {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--rich-black);
+            letter-spacing: 2px;
+        }
+
+        /* Success hero */
+        .success-hero {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        .checkmark-circle {
+            width: 80px;
+            height: 80px;
+            background: var(--success-green);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            animation: popIn 0.4s ease;
+        }
+
+        @keyframes popIn {
+            0%   { transform: scale(0.5); opacity: 0; }
+            80%  { transform: scale(1.1); }
+            100% { transform: scale(1);   opacity: 1; }
+        }
+
+        .checkmark-circle svg {
+            width: 40px;
+            height: 40px;
+            stroke: white;
+            fill: none;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .checkmark-path {
+            stroke-dasharray: 60;
+            stroke-dashoffset: 60;
+            animation: drawCheck 0.4s ease 0.3s forwards;
+        }
+
+        @keyframes drawCheck {
+            to { stroke-dashoffset: 0; }
+        }
+
+        .success-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-dark);
+            margin-bottom: 8px;
+        }
+
+        .success-subtitle {
+            font-size: 15px;
+            color: var(--text-gray);
+            line-height: 1.6;
+        }
+
+        /* Order card */
+        .order-card {
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .order-card-header {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 16px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .order-id {
+            font-size: 12px;
+            opacity: 0.85;
+            font-weight: 400;
+        }
+
+        .order-rows { padding: 0 24px; }
+
+        .order-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--border-gray);
+            font-size: 14px;
+        }
+
+        .order-row:last-child { border-bottom: none; }
+
+        .order-row .row-label {
+            color: var(--text-gray);
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .order-row .row-value {
+            color: var(--text-dark);
+            font-weight: 500;
+            text-align: right;
+        }
+
+        .order-row .row-value.green { color: var(--success-green); font-weight: 700; }
+        .order-row .row-value.total { font-size: 16px; font-weight: 700; }
+
+        /* Next steps */
+        .next-steps {
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .next-steps h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-dark);
+            margin-bottom: 16px;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .step-item:last-child { margin-bottom: 0; }
+
+        .step-number {
+            width: 28px;
+            height: 28px;
+            background: var(--tufts-blue);
+            color: var(--white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .step-text { font-size: 14px; color: var(--text-gray); line-height: 1.5; }
+        .step-text strong { color: var(--text-dark); }
+
+        /* Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 14px;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 14px;
+            background-color: var(--tufts-blue);
+            color: var(--white);
+            border: none;
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.2s;
+        }
+
+        .btn-primary:hover { background-color: var(--tufts-blue-dark); }
+
+        .btn-outline {
+            flex: 1;
+            padding: 14px;
+            background-color: var(--white);
+            color: var(--tufts-blue);
+            border: 1.5px solid var(--tufts-blue);
+            border-radius: 6px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .btn-outline:hover {
+            background-color: var(--tufts-blue);
+            color: var(--white);
+        }
+
+        /* Email notice */
+        .email-notice {
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-gray);
+            margin-top: 18px;
+        }
+
+        .email-notice span { color: var(--tufts-blue); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <!-- Success Hero -->
+        <div class="success-hero">
+            <div class="checkmark-circle">
+                <svg viewBox="0 0 52 52">
+                    <polyline class="checkmark-path" points="14,27 22,36 38,18"/>
+                </svg>
+            </div>
+            <h1 class="success-title">Payment Confirmed!</h1>
+            <p class="success-subtitle">Your Iristel service has been activated.<br>A confirmation email has been sent to you.</p>
+        </div>
+
+        <!-- Order Summary -->
+        <div class="order-card">
+            <div class="order-card-header">
+                <span>Order Summary</span>
+                <span class="order-id" id="orderId">Order #—</span>
+            </div>
+            <div class="order-rows">
+                <div class="order-row">
+                    <span class="row-label">Service</span>
+                    <span class="row-value" id="confService">—</span>
+                </div>
+                <div class="order-row">
+                    <span class="row-label">Hardware</span>
+                    <span class="row-value" id="confHardware">—</span>
+                </div>
+                <div class="order-row">
+                    <span class="row-label">Phone Number</span>
+                    <span class="row-value" id="confNumber">—</span>
+                </div>
+                <div class="order-row">
+                    <span class="row-label">Activation</span>
+                    <span class="row-value" id="confActivation">—</span>
+                </div>
+                <div class="order-row">
+                    <span class="row-label">Monthly Cost</span>
+                    <span class="row-value" id="confMonthly">—</span>
+                </div>
+                <div class="order-row">
+                    <span class="row-label">Charged Today</span>
+                    <span class="row-value green" id="confTotal">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Next Steps -->
+        <div class="next-steps">
+            <h3>What happens next?</h3>
+            <div class="step-item">
+                <div class="step-number">1</div>
+                <p class="step-text"><strong>Confirmation email</strong> — Check your inbox for your order details and receipt.</p>
+            </div>
+            <div class="step-item">
+                <div class="step-number">2</div>
+                <p class="step-text"><strong>Number provisioning</strong> — Your phone number will be provisioned within 1 business day.</p>
+            </div>
+            <div class="step-item">
+                <div class="step-number">3</div>
+                <p class="step-text"><strong>Hardware shipping</strong> — Your hardware will be shipped to your address within 3–5 business days.</p>
+            </div>
+            <div class="step-item">
+                <div class="step-number">4</div>
+                <p class="step-text"><strong>Activation</strong> — Your service will be activated on your selected date.</p>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="action-buttons">
+            <button class="btn-outline" onclick="window.print()">Download Receipt</button>
+            <button class="btn-primary" onclick="window.location.href='index.html'">Go to Dashboard</button>
+        </div>
+
+        <p class="email-notice">A receipt has been sent to <span id="confEmail">your email</span></p>
+    </div>
+
+    <script>
+        function getCookie(name) {
+            const nameEQ = name + "=";
+            const cookies = document.cookie.split(';');
+            for (let c of cookies) {
+                c = c.trim();
+                if (c.indexOf(nameEQ) === 0) return decodeURIComponent(c.substring(nameEQ.length));
+            }
+            return null;
+        }
+
+        function populateConfirmation() {
+            const service    = getCookie('iristel_selected_plan_name') || 'Cloud Basic License';
+            const hardware   = getCookie('iristel_hardware') || 'Yealink Premium Smartphone';
+            const number     = getCookie('iristel_number') || '+1 234 567 8901';
+            const activation = getCookie('iristel_activation_date') || 'As soon as possible';
+            const email      = getCookie('iristel_user_email') || 'your email';
+            const monthly    = parseFloat(getCookie('iristel_monthly_charge') || '45');
+
+            const tax   = +(monthly * 0.13).toFixed(2);
+            const total = +(monthly + tax).toFixed(2);
+
+            // Generate a simple order ID
+            const orderId = 'IRS-' + Date.now().toString(36).toUpperCase().slice(-8);
+
+            document.getElementById('orderId').textContent        = `Order #${orderId}`;
+            document.getElementById('confService').textContent    = service;
+            document.getElementById('confHardware').textContent   = hardware;
+            document.getElementById('confNumber').textContent     = number;
+            document.getElementById('confActivation').textContent = activation;
+            document.getElementById('confMonthly').textContent    = `$${monthly.toFixed(2)}/mo`;
+            document.getElementById('confTotal').textContent      = `$${total.toFixed(2)}`;
+            document.getElementById('confEmail').textContent      = email;
+        }
+
+        populateConfirmation();
+    </script>
+</body>
+</html>
