@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIP Trunk Service - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/global.css">
+    <link rel="stylesheet" href="../css/serviceSelection.css">
+    <style>
+        /* Center the single card */
+        .sip-trunk-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+
+        .sip-trunk-container .service-card {
+            max-width: 420px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">Loading...</div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <img src="../Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="progress-container">
+            <div class="progress-text">2 of 6</div>
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+        </div>
+
+        <!-- Message Box -->
+        <div class="message-box" id="messageBox"></div>
+
+        <!-- User Info (populated from cookies) -->
+        <div class="user-info" id="userInfo" style="display: none;">
+            Logged in as: <strong id="userEmail"></strong> | Account ID: <strong id="accountIdDisplay"></strong>
+        </div>
+
+        <!-- Page Title -->
+        <h1 class="page-title">Configure your SIP Trunk service</h1>
+
+        <!-- SIP Trunk Card -->
+        <div class="sip-trunk-container">
+            <div class="service-card" id="plan-sip-trunk" data-plan-code="SIP_TRUNK" data-plan-name="Sip Trunk">
+                <h3 class="service-name">Sip Trunk</h3>
+                <div class="service-price">
+                    <span class="price-value">$25</span>
+                    <span class="price-period">/mo</span>
+                </div>
+                <ul class="service-features">
+                    <li>Enterprise-grade SIP connectivity</li>
+                    <li>Custom pricing based on usage</li>
+                    <li>Contact sales for details</li>
+                </ul>
+                <button class="btn-configure" onclick="selectPlan('SIP_TRUNK', 'Sip Trunk')">Configure Plan</button>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="nav-buttons">
+            <button class="btn-back" onclick="goBack()">Back</button>
+        </div>
+    </div>
+
+    <script src="../js/common.js"></script>
+    <script src="../js/sipTrunkSelection.js"></script>
+</body>
+</html>

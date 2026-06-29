@@ -431,6 +431,34 @@
             to { transform: rotate(360deg); }
         }
 
+        .payment-confirmed {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            color: #166534;
+        }
+
+        .payment-confirmed .check-icon {
+            width: 32px;
+            height: 32px;
+            background: #22c55e;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .payment-confirmed .check-icon svg { width: 18px; height: 18px; color: #fff; }
+
+        .payment-confirmed .pay-details { flex: 1; }
+        .payment-confirmed .pay-ref { font-size: 12px; color: #5A6A7A; margin-top: 2px; }
+
         @media (max-width: 900px) {
             .container { padding: 20px; }
             .review-grid { grid-template-columns: 1fr; }
@@ -620,6 +648,25 @@
             </table>
         </div>
 
+        <!-- Payment Status -->
+        <div class="review-card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/></svg>
+                    Payment
+                </h2>
+            </div>
+            <div class="payment-confirmed" id="paymentStatus">
+                <div class="check-icon">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                </div>
+                <div class="pay-details">
+                    <strong>Payment confirmed</strong> — <span id="payAmountDisplay"></span>
+                    <div class="pay-ref">Reference: <span id="payRefDisplay">--</span></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Terms & Conditions -->
         <div class="terms-section">
             <h3 class="terms-title">Terms & Conditions</h3>
@@ -666,467 +713,7 @@
         </div>
     </div>
 
-    <script>
-        function setCookie(name, value, days = 7) {
-            const expires = new Date(Date.now() + days * 864e5).toUTCString();
-            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict';
-        }
-
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
-            return null;
-        }
-
-        const provinceNames = {
-            'AB': 'Alberta', 'BC': 'British Columbia', 'MB': 'Manitoba',
-            'NB': 'New Brunswick', 'NL': 'Newfoundland and Labrador',
-            'NS': 'Nova Scotia', 'ON': 'Ontario', 'PE': 'Prince Edward Island',
-            'QC': 'Quebec', 'SK': 'Saskatchewan'
-        };
-
-        const packageNames = {
-            'business-trunk': 'Business Trunk',
-            'standard': 'Standard',
-            'premium': 'Premium'
-        };
-
-        function setText(id, value) {
-            const el = document.getElementById(id);
-            if (value && value.trim()) {
-                el.textContent = value;
-                el.classList.remove('empty');
-            } else {
-                el.textContent = '--';
-                el.classList.add('empty');
-            }
-        }
-
-        function loadReviewData() {
-            // Business Information
-            setText('revBusinessName', getCookie('sip_businessName'));
-            setText('revSiteName', getCookie('sip_siteName'));
-
-            const addr1 = getCookie('sip_address1') || '';
-            const addr2 = getCookie('sip_address2') || '';
-            setText('revAddress', addr2 ? `${addr1}, ${addr2}` : addr1);
-
-            const city = getCookie('sip_city') || '';
-            const province = getCookie('sip_province') || '';
-            setText('revCityProvince', `${city}${province ? ', ' + (provinceNames[province] || province) : ''}`);
-            setText('revPostalCode', getCookie('sip_postalCode'));
-
-            const country = getCookie('sip_country');
-            setText('revCountry', country === 'CA' ? 'Canada' : country === 'US' ? 'United States' : country);
-
-            // Contacts
-            const billingFirst = getCookie('sip_billingFirstName') || '';
-            const billingLast = getCookie('sip_billingLastName') || '';
-            setText('revBillingName', `${billingFirst} ${billingLast}`.trim());
-            setText('revBillingEmail', getCookie('sip_billingEmail'));
-            setText('revBillingPhone', getCookie('sip_billingPhone'));
-
-            const techFirst = getCookie('sip_techFirstName') || '';
-            const techLast = getCookie('sip_techLastName') || '';
-            setText('revTechName', `${techFirst} ${techLast}`.trim());
-            setText('revTechEmail', getCookie('sip_techEmail'));
-            setText('revTechPhone', getCookie('sip_techPhone'));
-
-            // Port Information
-            const isPorting = getCookie('sip_isPorting') === 'true' || getCookie('sip_isPoriting') === 'true' || getCookie('sip_numberSource') === 'port';
-            if (isPorting) {
-                document.getElementById('portCard').style.display = 'block';
-                document.getElementById('numbersTitle').textContent = 'Temporary Numbers';
-
-                const portNumbers = getCookie('sip_portNumbers');
-                if (portNumbers) {
-                    try {
-                        const nums = JSON.parse(portNumbers);
-                        document.getElementById('revPortNumbers').innerHTML = nums.map(n =>
-                            `<span class="number-chip">${n}</span>`
-                        ).join('');
-                    } catch (e) {}
-                }
-
-                setText('revProvider', getCookie('sip_currentProvider'));
-                setText('revAccountNum', getCookie('sip_accountNumber'));
-                setText('revServiceAddr', getCookie('sip_serviceAddress'));
-                setText('revLoaFile', getCookie('sip_loaFileName'));
-            }
-
-            // Selected Numbers
-            const selectedNumbers = getCookie('sip_selectedNumbers');
-            const revPrimary = getCookie('sip_primaryNumber') || '';
-            if (selectedNumbers) {
-                try {
-                    const nums = JSON.parse(selectedNumbers);
-                    if (nums.length > 0) {
-                        document.getElementById('revSelectedNumbers').innerHTML = nums.map(n =>
-                            n === revPrimary
-                                ? `<span class="number-chip pilot">${n} (Main)</span>`
-                                : `<span class="number-chip">${n}</span>`
-                        ).join('');
-                    }
-                } catch (e) {}
-            }
-
-            // Users
-            const usersData = getCookie('sip_users');
-            const pilotUserId = getCookie('sip_pilotUser');
-            if (usersData) {
-                try {
-                    const users = JSON.parse(usersData);
-                    if (users.length > 0) {
-                        document.getElementById('usersReviewBody').innerHTML = users.map(user => {
-                            const isPilot = String(user.id) === String(pilotUserId);
-                            return `<tr>
-                                <td>${user.firstName} ${user.lastName}${isPilot ? '<span class="pilot-badge">Pilot User</span>' : ''}</td>
-                                <td style="font-family: 'Courier New', monospace;">${user.number || '--'}</td>
-                                <td>${packageNames[user.package] || user.package}</td>
-                            </tr>`;
-                        }).join('');
-                    }
-                } catch (e) {}
-            }
-        }
-
-        function updateSubmitButton() {
-            document.getElementById('submitBtn').disabled = !document.getElementById('agreeTerms').checked;
-        }
-
-        function formatToE164(number) {
-            // Strip all non-digit characters
-            let digits = number.replace(/\D/g, '');
-            // If it starts with 1 and has 11 digits, it's already correct
-            if (digits.length === 11 && digits.startsWith('1')) {
-                return '+' + digits;
-            }
-            // If 10 digits, prepend +1
-            if (digits.length === 10) {
-                return '+1' + digits;
-            }
-            // Fallback: return with + prefix
-            return '+' + digits;
-        }
-
-        function sanitizeEnterpriseId(name) {
-            // Remove special chars, replace spaces with underscores, lowercase
-            return name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
-        }
-
-        // ============================================
-        // TEST MODE — set to false to call real APIs
-        // ============================================
-        const TEST_MODE = true;
-
-        // ============================================
-        // MIND / Iristel-X API Configuration
-        // ============================================
-        const MIND_API_URL = 'https://api.iristelx.com';
-        const MIND_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
-        const SIP_TRUNK_PLAN_CODE = 'EXLNP_EXTRUNK';
-
-        // ============================================
-        // TRUNK (Broadworks) API Configuration
-        // ============================================
-        const TRUNK_API_URL = 'http://100.67.14.26:8099/api/trunk/provision';
-        const TRUNK_API_KEY = '3c901f55e7864d2aae31b08c9746f9132d8847f1acb94c65b0897e3624f1edc6';
-
-        function getContactDataFromCookies() {
-            return {
-                fname: getCookie('sip_billingFirstName') || getCookie('iristel_user_fname') || '',
-                lname: getCookie('sip_billingLastName') || getCookie('iristel_user_lname') || '',
-                emailAddress: getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '',
-                phone: getCookie('sip_billingPhone') || getCookie('iristel_user_phone') || '',
-                address1: getCookie('sip_address1') || getCookie('iristel_user_address1') || '',
-                city: getCookie('sip_city') || getCookie('iristel_user_city') || '',
-                province: getCookie('sip_province') || getCookie('iristel_user_province') || '',
-                country: getCookie('sip_country') || getCookie('iristel_user_country') || '',
-                postalCode: (getCookie('sip_postalCode') || getCookie('iristel_user_postalCode') || '').replace(/\s/g, '')
-            };
-        }
-
-        function updateStatusMessage(message) {
-            const submitBtn = document.getElementById('submitBtn');
-            submitBtn.innerHTML = `
-                <svg viewBox="0 0 20 20" fill="currentColor" style="animation: spin 1s linear infinite;">
-                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
-                </svg>
-                ${message}
-            `;
-        }
-
-        function resetSubmitButton() {
-            const submitBtn = document.getElementById('submitBtn');
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = `
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-                Submit Order
-            `;
-        }
-
-        // ============================================
-        // STEP 1: Create business account in MIND
-        // ============================================
-        async function createMindAccount(contactData) {
-            const requestBody = {
-                contact: {
-                    fname: contactData.fname,
-                    lname: contactData.lname,
-                    address1: contactData.address1,
-                    city: contactData.city,
-                    province: contactData.province,
-                    country: contactData.country,
-                    postalCode: contactData.postalCode,
-                    emailAddress: contactData.emailAddress,
-                    phone: {
-                        mobile: contactData.phone
-                    }
-                },
-                language: getCookie('iristel_user_language') || 'en',
-                businessUnit: '1'
-            };
-
-            console.log('[STEP 1] MIND Create Account — POST', MIND_API_URL + '/accounts');
-            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 800));
-                const mockId = 'TEST-' + Date.now();
-                console.log('[TEST] Mock account created:', mockId);
-                return mockId;
-            }
-
-            const response = await fetch(`${MIND_API_URL}/accounts`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'iristelx-api-key': MIND_API_KEY
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const data = await response.json();
-            console.log('MIND Create Account Response:', data);
-
-            if (!response.ok) {
-                throw new Error(data.message || `MIND account creation failed (HTTP ${response.status})`);
-            }
-
-            return data.accountId || data.id || data.accountcode;
-        }
-
-        // ============================================
-        // STEP 2: Assign SIP Trunk service in MIND
-        // ============================================
-        async function assignSipTrunkService(accountId, contactData) {
-            const requestBody = {
-                accountId: accountId,
-                planCode: SIP_TRUNK_PLAN_CODE,
-                contact: {
-                    fname: contactData.fname,
-                    lname: contactData.lname,
-                    address1: contactData.address1,
-                    city: contactData.city,
-                    province: contactData.province,
-                    country: contactData.country,
-                    postalCode: contactData.postalCode,
-                    emailAddress: contactData.emailAddress,
-                    phone: contactData.phone
-                }
-            };
-
-            console.log('[STEP 2] MIND Assign Service — POST', `${MIND_API_URL}/accounts/${accountId}/services`);
-            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 800));
-                const mockResult = { serviceId: 'SVC-' + Date.now(), planCode: SIP_TRUNK_PLAN_CODE, status: 'active' };
-                console.log('[TEST] Mock service assigned:', mockResult);
-                return mockResult;
-            }
-
-            const response = await fetch(`${MIND_API_URL}/accounts/${accountId}/services`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'iristelx-api-key': MIND_API_KEY
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const data = await response.json();
-            console.log('MIND Assign Service Response:', data);
-
-            if (!response.ok) {
-                throw new Error(data.message || `Service assignment failed (HTTP ${response.status})`);
-            }
-
-            return data;
-        }
-
-        // ============================================
-        // STEP 3: Provision trunk in Broadworks
-        // ============================================
-        async function provisionBroadworksTrunk(enterpriseId, phoneNumbers, primaryNumber) {
-            const provisionPayload = {
-                enterpriseId: enterpriseId,
-                phoneNumbers: phoneNumbers,
-                actualMaxCalls: phoneNumbers.length,
-                primaryNumber: primaryNumber
-            };
-
-            console.log('[STEP 3] Broadworks Provision — POST', TRUNK_API_URL);
-            console.log('Request Body:', JSON.stringify(provisionPayload, null, 2));
-
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 1000));
-                const mockResult = {
-                    success: true,
-                    enterpriseId: enterpriseId,
-                    trunkGroupPassword: 'TkGrp!' + Math.random().toString(36).slice(2, 10),
-                    steps: [
-                        { step: 'createEnterprise', status: 'ok' },
-                        { step: 'addDnList', status: 'ok' },
-                        { step: 'createGroup', status: 'ok' },
-                        { step: 'assignDns', status: 'ok' },
-                        { step: 'activateDns', status: 'ok' },
-                        { step: 'createUsers', status: 'ok' },
-                        { step: 'authorizeServices', status: 'ok' },
-                        { step: 'assignServices', status: 'ok' },
-                        { step: 'setCallCapacity', status: 'ok' },
-                        { step: 'createTrunkGroup', status: 'ok' },
-                        { step: 'updateUsersTrunkAddressing', status: 'ok' },
-                        { step: 'setPilotUser', status: 'ok' }
-                    ]
-                };
-                console.log('[TEST] Mock trunk provisioned:', mockResult);
-                return mockResult;
-            }
-
-            const response = await fetch(TRUNK_API_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Api-Key': TRUNK_API_KEY,
-                    'accept': '*/*'
-                },
-                body: JSON.stringify(provisionPayload)
-            });
-
-            const data = await response.json().catch(() => null);
-            console.log('Broadworks Provision Response:', data);
-
-            if (!response.ok) {
-                const errorMsg = data && data.message ? data.message
-                               : data && data.title ? data.title
-                               : `Broadworks provisioning failed (HTTP ${response.status})`;
-                throw new Error(errorMsg);
-            }
-
-            return data;
-        }
-
-        // ============================================
-        // SUBMIT ORDER — Full 3-step flow
-        // 1. Create business account in MIND
-        // 2. Assign EXLNP_EXTRUNK service to account
-        // 3. Provision trunk in Broadworks
-        // ============================================
-        async function submitOrder() {
-            if (!document.getElementById('agreeTerms').checked) {
-                alert('Please agree to the Terms of Service before submitting.');
-                return;
-            }
-
-            const submitBtn = document.getElementById('submitBtn');
-            submitBtn.disabled = true;
-
-            const contactData = getContactDataFromCookies();
-            const businessName = getCookie('sip_businessName') || 'enterprise';
-            const enterpriseId = sanitizeEnterpriseId(businessName);
-
-            // Get selected phone numbers and convert to E.164
-            let phoneNumbers = [];
-            const selectedNumbersRaw = getCookie('sip_selectedNumbers');
-            if (selectedNumbersRaw) {
-                try {
-                    phoneNumbers = JSON.parse(selectedNumbersRaw).map(n => formatToE164(n));
-                } catch (e) {
-                    phoneNumbers = [];
-                }
-            }
-
-            // Get primary number from number selection step
-            const savedPrimary = getCookie('sip_primaryNumber');
-            let primaryNumber = savedPrimary ? formatToE164(savedPrimary) : (phoneNumbers.length > 0 ? phoneNumbers[0] : '');
-
-            try {
-                // ---- STEP 1: Create MIND Account ----
-                let accountId = getCookie('iristel_account_id');
-
-                if (!accountId) {
-                    updateStatusMessage('Creating account...');
-                    accountId = await createMindAccount(contactData);
-                    setCookie('iristel_account_id', accountId);
-                    console.log('MIND Account created:', accountId);
-                } else {
-                    console.log('Using existing MIND account:', accountId);
-                }
-
-                // ---- STEP 2: Assign SIP Trunk Service ----
-                updateStatusMessage('Assigning SIP Trunk service...');
-                const serviceResult = await assignSipTrunkService(accountId, contactData);
-                console.log('Service assigned:', serviceResult);
-
-                // Store service ID if returned
-                if (serviceResult && (serviceResult.serviceId || serviceResult.id)) {
-                    setCookie('sip_serviceId', serviceResult.serviceId || serviceResult.id);
-                }
-
-                // ---- STEP 3: Provision Broadworks Trunk ----
-                updateStatusMessage('Provisioning trunk...');
-                const provisionResult = await provisionBroadworksTrunk(enterpriseId, phoneNumbers, primaryNumber);
-
-                // Store trunk password if returned
-                if (provisionResult && provisionResult.trunkGroupPassword) {
-                    setCookie('sip_trunkPassword', provisionResult.trunkGroupPassword);
-                }
-                if (provisionResult) {
-                    setCookie('sip_provisionResult', JSON.stringify(provisionResult));
-                }
-
-                // Show trunk password in the modal if available
-                if (provisionResult && provisionResult.trunkGroupPassword) {
-                    document.getElementById('trunkPasswordValue').textContent = provisionResult.trunkGroupPassword;
-                    document.getElementById('trunkPasswordDisplay').style.display = 'block';
-                }
-
-                // ---- SUCCESS ----
-                document.getElementById('successModal').classList.add('active');
-
-            } catch (err) {
-                console.error('Order submission failed:', err);
-                alert('Order submission failed:\n\n' + err.message);
-                resetSubmitButton();
-            }
-        }
-
-        function loadUserInfoBar() {
-            const email = getCookie('iristel_user_email');
-            const accountId = getCookie('iristel_account_id');
-            if (email || accountId) {
-                document.getElementById('userEmail').textContent = email || '--';
-                document.getElementById('accountIdDisplay').textContent = accountId || '--';
-                document.getElementById('userInfo').style.display = 'block';
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            loadUserInfoBar();
-            loadReviewData();
-        });
-    </script>
+    <script src="../js/common.js"></script>
+    <script src="../js/sip-sipReview.js"></script>
 </body>
 </html>

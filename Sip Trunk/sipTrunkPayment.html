@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review & Pay - Iristel</title>
+    <title>Payment - SIP Trunk - Iristel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -38,12 +38,7 @@
         }
 
         .header { margin-bottom: 20px; }
-        .logo-text {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--rich-black);
-            letter-spacing: 2px;
-        }
+        .logo-img { height: 36px; width: auto; }
 
         .progress-container { margin-bottom: 30px; }
         .progress-text { font-size: 12px; color: var(--text-gray); margin-bottom: 8px; }
@@ -56,8 +51,8 @@
         }
         .progress-fill {
             height: 100%;
-            width: 100%;
-            background: var(--magenta);
+            width: 50%;
+            background: linear-gradient(90deg, var(--magenta) 0%, #E84393 100%);
             border-radius: 2px;
         }
 
@@ -65,6 +60,12 @@
             font-size: 24px;
             font-weight: 600;
             color: var(--text-dark);
+            margin-bottom: 8px;
+        }
+
+        .page-subtitle {
+            font-size: 15px;
+            color: var(--text-gray);
             margin-bottom: 30px;
         }
 
@@ -80,46 +81,53 @@
             .layout { grid-template-columns: 1fr; }
         }
 
-        /* Summary sections */
-        .summary-section {
+        /* Billing summary */
+        .billing-card {
             background: var(--white);
             border: 1px solid var(--border-gray);
             border-radius: 10px;
-            padding: 18px 22px;
-            margin-bottom: 14px;
+            padding: 24px 28px;
         }
 
-        .summary-section:last-child { margin-bottom: 0; }
-
-        .summary-section h3 {
-            font-size: 13px;
+        .billing-card h3 {
+            font-size: 16px;
             font-weight: 600;
-            color: var(--text-gray);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
-
-        .summary-section p, .summary-section .item {
-            font-size: 14px;
             color: var(--text-dark);
-            line-height: 1.6;
+            margin-bottom: 20px;
         }
 
-        .pay-now-section {
-            background: var(--white);
-            border: 1px solid var(--border-gray);
+        .plan-highlight {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .plan-icon {
+            width: 44px;
+            height: 44px;
+            background: rgba(62, 140, 203, 0.1);
             border-radius: 10px;
-            padding: 18px 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
         }
 
-        .pay-now-section h3 {
-            font-size: 13px;
+        .plan-icon svg { width: 22px; height: 22px; color: var(--tufts-blue); }
+
+        .plan-details .plan-name {
+            font-size: 15px;
             font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .plan-details .plan-desc {
+            font-size: 13px;
             color: var(--text-gray);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 10px;
         }
 
         .pay-row {
@@ -127,20 +135,29 @@
             justify-content: space-between;
             font-size: 14px;
             color: var(--text-dark);
-            margin-bottom: 5px;
-        }
-
-        .pay-row.total {
-            font-size: 16px;
-            font-weight: 700;
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid var(--border-gray);
+            margin-bottom: 6px;
         }
 
         .pay-row .label { color: var(--text-gray); }
 
-        /* Payment card */
+        .pay-row.total {
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-gray);
+        }
+
+        .secure-notice {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-gray);
+        }
+
+        /* Payment card form */
         .payment-card {
             background: var(--white);
             border: 1px solid var(--border-gray);
@@ -165,7 +182,7 @@
             margin-bottom: 6px;
         }
 
-        .form-group input, .form-group select {
+        .form-group input {
             width: 100%;
             padding: 11px 14px;
             border: 1px solid var(--border-gray);
@@ -178,49 +195,15 @@
             transition: border-color 0.2s;
         }
 
-        .form-group input:focus, .form-group select:focus {
-            border-color: var(--tufts-blue);
-        }
-
+        .form-group input:focus { border-color: var(--tufts-blue); }
         .form-group input::placeholder { color: #B0BEC5; }
 
-        /* Card number row */
-        .card-field-wrapper {
-            position: relative;
-        }
-
-        .card-field-wrapper input {
-            padding-right: 50px;
-        }
-
-        .card-icons {
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
-
-        .card-icon {
-            width: 30px;
-            height: 20px;
-            border-radius: 3px;
-            background: #E53935;
-            display: inline-block;
-        }
-
-        .card-icon.visa { background: #1A1F71; }
-
-        /* CVV row */
         .card-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
         }
 
-        /* Stripe-like pay button */
         .btn-pay {
             width: 100%;
             padding: 15px;
@@ -241,10 +224,9 @@
         }
 
         .btn-pay:hover { background-color: var(--tufts-blue-dark); }
+        .btn-pay:disabled { background-color: var(--border-gray); cursor: not-allowed; }
 
-        .btn-pay .lock-icon { font-size: 16px; }
-
-        /* Error/success */
+        /* Error/success messages */
         .message-box {
             display: none;
             padding: 12px 16px;
@@ -322,104 +304,84 @@
 
     <div class="container">
         <div class="header">
-            <img src="Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+            <img src="../Images/Iristel-logo.png" alt="Iristel" class="logo-img">
         </div>
 
         <div class="progress-container">
-            <div class="progress-text">6 of 6</div>
+            <div class="progress-text">3 of 6</div>
             <div class="progress-bar"><div class="progress-fill"></div></div>
         </div>
 
-        <h1 class="page-title">Review Your Selections</h1>
+        <h1 class="page-title">Secure Payment</h1>
+        <p class="page-subtitle">Payment is required before configuring your SIP trunk. Your card will be charged the amount shown below.</p>
 
         <div class="layout">
-            <!-- LEFT: Summary -->
-            <div class="summary-left">
-                <div class="summary-section">
-                    <h3>Services</h3>
-                    <p id="summaryService">—</p>
-                </div>
+            <!-- LEFT: Billing Summary -->
+            <div>
+                <div class="billing-card">
+                    <h3>Order Summary</h3>
 
-                <div class="summary-section">
-                    <h3>Hardware</h3>
-                    <p id="summaryHardware">—</p>
-                </div>
+                    <div class="plan-highlight">
+                        <div class="plan-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"/></svg>
+                        </div>
+                        <div class="plan-details">
+                            <div class="plan-name">SIP Trunk Service</div>
+                            <div class="plan-desc">Enterprise-grade SIP connectivity</div>
+                        </div>
+                    </div>
 
-                <div class="summary-section">
-                    <h3>Numbers</h3>
-                    <p id="summaryNumbers">—</p>
-                </div>
-
-                <div class="summary-section">
-                    <h3>Activation</h3>
-                    <p id="summaryActivation">—</p>
-                </div>
-
-                <div class="pay-now-section">
-                    <h3>Pay Now</h3>
                     <div class="pay-row">
-                        <span class="label">Before Tax:</span>
-                        <span id="beforeTax">$0.00</span>
+                        <span class="label">SIP Trunk (monthly):</span>
+                        <span id="billMonthly">$25.00</span>
                     </div>
                     <div class="pay-row">
-                        <span class="label">Tax (13%):</span>
-                        <span id="taxAmount">$0.00</span>
+                        <span class="label">Tax (13% HST):</span>
+                        <span id="billTax">$3.25</span>
                     </div>
                     <div class="pay-row total">
                         <span>Total due today:</span>
-                        <span id="totalDue">$0.00</span>
+                        <span id="billTotal">$28.25</span>
                     </div>
-                    <div class="pay-row" style="margin-top: 10px;">
-                        <span class="label" style="font-size:13px;">Total monthly cost:</span>
-                        <span id="monthlyTotal" style="font-size:13px; color: var(--text-gray);">$0.00/mo</span>
+
+                    <div class="secure-notice">
+                        <span>🔒</span>
+                        <span>Your payment information is encrypted and secure.</span>
                     </div>
                 </div>
             </div>
 
-            <!-- RIGHT: Pay with card -->
-            <div class="summary-right">
+            <!-- RIGHT: Card Form -->
+            <div>
                 <div class="payment-card">
                     <h2>Pay with card</h2>
 
                     <div class="message-box" id="messageBox"></div>
 
                     <div class="form-group">
-                        <label>Email</label>
-                        <input type="email" id="payEmail" placeholder="jane@stripe.com">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Card Information</label>
-                        <div class="card-field-wrapper" style="margin-bottom: 1px;">
-                            <input type="text" id="cardNumber" placeholder="1234 5678 9012 3456" maxlength="19" oninput="formatCardNumber(this)">
-                            <div class="card-icons">
-                                <span style="font-size:18px;">💳</span>
-                            </div>
-                        </div>
-                        <div class="card-row" style="margin-top: 8px;">
-                            <input type="text" id="cardExpiry" placeholder="MM / YY" maxlength="7" oninput="formatExpiry(this)">
-                            <input type="text" id="cardCvc" placeholder="CVC" maxlength="4">
-                        </div>
-                    </div>
-
-                    <div class="form-group">
                         <label>Name on card</label>
-                        <input type="text" id="cardName" placeholder="Jane Doe">
+                        <input type="text" id="cardName" placeholder="John Doe">
                     </div>
 
                     <div class="form-group">
-                        <label>Country or region</label>
-                        <select id="cardCountry">
-                            <option value="CA">Canada</option>
-                            <option value="US">United States</option>
-                            <option value="GB">United Kingdom</option>
-                            <option value="AU">Australia</option>
-                        </select>
+                        <label>Card number</label>
+                        <input type="text" id="cardNumber" placeholder="1234 5678 9012 3456" maxlength="19" oninput="formatCardNumber(this)">
                     </div>
 
-                    <button class="btn-pay" onclick="processPayment()">
-                        <span class="lock-icon">🔒</span>
-                        Pay <span id="payButtonAmount">$0.00</span>
+                    <div class="card-row">
+                        <div class="form-group">
+                            <label>Expiry</label>
+                            <input type="text" id="cardExpiry" placeholder="MM / YY" maxlength="7" oninput="formatExpiry(this)">
+                        </div>
+                        <div class="form-group">
+                            <label>CVV</label>
+                            <input type="text" id="cardCvc" placeholder="123" maxlength="4">
+                        </div>
+                    </div>
+
+                    <button class="btn-pay" id="payBtn" onclick="processPayment()">
+                        <span>🔒</span>
+                        Pay <span id="payButtonAmount">$28.25</span>
                     </button>
                 </div>
             </div>
@@ -430,7 +392,7 @@
         <button class="btn-back" onclick="window.history.back()">Back</button>
     </div>
 
-    <script src="js/common.js"></script>
-    <script src="js/summary.js"></script>
+    <script src="../js/common.js"></script>
+    <script src="../js/sipTrunkPayment.js"></script>
 </body>
 </html>

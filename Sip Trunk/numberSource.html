@@ -300,56 +300,7 @@
         </div>
     </div>
 
-    <script>
-        let selectedSource = null;
-
-        function setCookie(name, value, days = 7) {
-            const expires = new Date(Date.now() + days * 864e5).toUTCString();
-            document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Strict';
-        }
-
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
-            return null;
-        }
-
-        function selectSource(source) {
-            selectedSource = source;
-            document.getElementById('cardNew').classList.toggle('selected', source === 'new');
-            document.getElementById('cardPort').classList.toggle('selected', source === 'port');
-            document.getElementById('nextBtn').disabled = false;
-        }
-
-        function goNext() {
-            if (!selectedSource) return;
-
-            setCookie('sip_numberSource', selectedSource);
-            setCookie('sip_isPorting', selectedSource === 'port' ? 'true' : 'false');
-
-            if (selectedSource === 'port') {
-                window.location.href = 'siptrunkLOA.html';
-            } else {
-                window.location.href = 'numberSelection.html';
-            }
-        }
-
-        function loadUserInfoBar() {
-            const email = getCookie('iristel_user_email');
-            const accountId = getCookie('iristel_account_id');
-            if (email || accountId) {
-                document.getElementById('userEmail').textContent = email || '-';
-                document.getElementById('accountIdDisplay').textContent = accountId || '-';
-                document.getElementById('userInfo').style.display = 'block';
-            }
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            loadUserInfoBar();
-            const saved = getCookie('sip_numberSource');
-            if (saved) selectSource(saved);
-        });
-    </script>
+    <script src="../js/common.js"></script>
+    <script src="../js/sip-numberSource.js"></script>
 </body>
 </html>
