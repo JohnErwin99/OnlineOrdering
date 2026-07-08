@@ -132,7 +132,7 @@ async function processPayment() {
     document.getElementById('loadingOverlay').classList.add('active');
 
     try {
-        const accountCode = '75738171';
+        const accountCode = getCookie('iristel_account_id') || '9615007';
 
         // Extract card data from form
         const cardNumber = document.getElementById('cardNumber').value.replace(/\s/g, '');
