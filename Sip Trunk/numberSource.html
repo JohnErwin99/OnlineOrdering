@@ -6,17 +6,18 @@
     <title>SIP Trunk - Number Source - Iristel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --rich-black: #01111E;
-            --tufts-blue: #3E8CCB;
+            --tufts-blue: #004a9f;
             --white: #FFFFFF;
             --light-gray: #F5F7FA;
             --medium-gray: #E8ECF1;
             --text-gray: #5A6A7A;
-            --magenta-glow: #C41E7A;
-            --cyan-glow: #3E8CCB;
+            --magenta-glow: #d1155a;
+            --cyan-glow: #004a9f;
             --success-green: #10B981;
             --warning-amber: #F59E0B;
         }
@@ -24,7 +25,7 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Heebo', sans-serif;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             background-color: var(--light-gray);
             min-height: 100vh;
             color: var(--rich-black);
@@ -55,14 +56,14 @@
         .progress-container { margin-bottom: 30px; max-width: 600px; }
         .progress-text { font-size: 13px; color: var(--text-gray); margin-bottom: 8px; }
         .progress-bar { height: 4px; background-color: var(--medium-gray); border-radius: 2px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 33.33%; background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%); border-radius: 2px; }
+        .progress-fill { height: 100%; width: 33.33%; background: linear-gradient(90deg, #d1155a 0%, #d1155a 100%); border-radius: 2px; }
 
         .content { flex: 1; max-width: 700px; }
         .page-title { font-size: 28px; font-weight: 500; color: var(--tufts-blue); margin-bottom: 8px; }
         .page-subtitle { font-size: 15px; color: var(--text-gray); margin-bottom: 30px; }
 
         .info-box {
-            background-color: rgba(62, 140, 203, 0.08);
+            background-color: rgba(45, 212, 191, 0.08);
             border-left: 4px solid var(--tufts-blue);
             padding: 16px 20px;
             border-radius: 0 4px 4px 0;
@@ -91,20 +92,20 @@
         .choice-card:hover {
             border-color: var(--tufts-blue);
             transform: translateY(-3px);
-            box-shadow: 0 8px 24px rgba(62, 140, 203, 0.12);
+            box-shadow: 0 8px 24px rgba(45, 212, 191, 0.12);
         }
 
         .choice-card.selected {
             border-color: var(--tufts-blue);
-            background: rgba(62, 140, 203, 0.04);
-            box-shadow: 0 0 0 3px rgba(62, 140, 203, 0.15);
+            background: rgba(45, 212, 191, 0.04);
+            box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15);
         }
 
         .choice-icon {
             width: 56px;
             height: 56px;
             margin: 0 auto 20px;
-            background: rgba(62, 140, 203, 0.1);
+            background: rgba(45, 212, 191, 0.1);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -165,14 +166,14 @@
             color: var(--white);
             padding: 16px 48px;
             border: none;
-            border-radius: 4px;
-            font-family: 'Heebo', sans-serif;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             font-size: 15px;
             font-weight: 500;
             cursor: pointer;
             transition: background-color 0.2s ease, transform 0.2s ease;
         }
-        .btn-back:hover, .btn-next:hover { background: #3580BC; transform: translateY(-1px); }
+        .btn-back:hover, .btn-next:hover { background: #003d85; transform: translateY(-1px); }
         .btn-next:disabled { background: var(--medium-gray); cursor: not-allowed; transform: none; }
 
         .right-panel {
@@ -302,5 +303,20 @@
 
     <script src="../js/common.js"></script>
     <script src="../js/sip-numberSource.js"></script>
+<script>
+  var parentOrigins = [
+    'https://iristel.webflow.io'
+    // add your live domain here once attached, e.g. 'https://www.iristel.com'
+  ];
+  function postHeight() {
+    var h = document.documentElement.scrollHeight;
+    parentOrigins.forEach(function (origin) {
+      parent.postMessage({ type: 'resize-iframe', height: h }, origin);
+    });
+  }
+  window.addEventListener('load', postHeight);
+  window.addEventListener('resize', postHeight);
+  new ResizeObserver(postHeight).observe(document.body);
+</script>
 </body>
 </html>

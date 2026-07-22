@@ -102,7 +102,7 @@
 
 .form-input:focus {
     border-color: var(--tufts-blue);
-    box-shadow: 0 0 0 3px rgba(62, 140, 203, 0.1);
+    box-shadow: 0 0 0 3px rgba(0, 74, 159, 0.1);
 }
 
 .form-input.error {
@@ -152,7 +152,7 @@ select.form-input {
 
 .phone-input-wrapper:focus-within {
     border-color: var(--tufts-blue);
-    box-shadow: 0 0 0 3px rgba(62, 140, 203, 0.1);
+    box-shadow: 0 0 0 3px rgba(0, 74, 159, 0.1);
 }
 
 .phone-prefix {
@@ -318,7 +318,7 @@ select.form-input {
 }
 
 .video-participant {
-    background: linear-gradient(135deg, rgba(62, 140, 203, 0.3) 0%, rgba(1, 17, 30, 0.5) 100%);
+    background: linear-gradient(135deg, rgba(0, 74, 159, 0.3) 0%, rgba(1, 17, 30, 0.5) 100%);
 }
 
 .participant-avatar {

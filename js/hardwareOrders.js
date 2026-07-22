@@ -12,7 +12,7 @@ selectButtons.forEach(button => {
 
         // Add selected state to clicked card
         const card = this.closest('.hardware-card');
-        card.style.boxShadow = '0 0 0 2px var(--tufts-blue), 0 8px 30px rgba(62, 140, 203, 0.2)';
+        card.style.boxShadow = '0 0 0 2px var(--tufts-blue), 0 8px 30px rgba(0, 74, 159, 0.2)';
         this.textContent = 'Selected';
     });
 });

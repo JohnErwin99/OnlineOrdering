@@ -24,7 +24,7 @@
 /* Divider */
 .divider {
     height: 2px;
-    background: linear-gradient(90deg, #C41E7A 0%, var(--tufts-blue) 50%, var(--medium-gray) 50%);
+    background: linear-gradient(90deg, #d1155a 0%, var(--tufts-blue) 50%, var(--medium-gray) 50%);
     margin-bottom: 20px;
 }
 

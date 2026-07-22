@@ -5,16 +5,16 @@
 /* CSS Variables (Iristel Brand) */
 :root {
     --rich-black: #01111E;
-    --tufts-blue: #3E8CCB;
+    --tufts-blue: #004a9f;
     --white: #FFFFFF;
     --light-gray: #F5F7FA;
     --medium-gray: #E8ECF1;
     --text-gray: #5A6A7A;
-    --magenta-glow: #C41E7A;
-    --cyan-glow: #3E8CCB;
-    --magenta-accent: #C41E7A;
-    --cyan-accent: #00B8D4;
-    --selected-bg: rgba(62, 140, 203, 0.08);
+    --magenta-glow: #d1155a;
+    --cyan-glow: #004a9f;
+    --magenta-accent: #d1155a;
+    --cyan-accent: #004a9f;
+    --selected-bg: rgba(0, 74, 159, 0.08);
 }
 
 * {
@@ -70,7 +70,7 @@ body {
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%);
+    background: linear-gradient(90deg, #d1155a 0%, #d1155a 100%);
     border-radius: 2px;
 }
 
@@ -313,7 +313,7 @@ body {
 }
 
 .btn-back:hover {
-    background: #3580BC;
+    background: #003d85;
     transform: translateY(-1px);
 }
 
@@ -331,7 +331,7 @@ body {
 }
 
 .btn-next:hover {
-    background: #3580BC;
+    background: #003d85;
     transform: translateY(-1px);
 }
 
@@ -349,7 +349,7 @@ body {
 }
 
 .btn-proceed:hover {
-    background: #3580BC;
+    background: #003d85;
     transform: translateY(-1px);
 }
 
@@ -369,7 +369,7 @@ body {
 }
 
 .btn-explore:hover {
-    background: #3580BC;
+    background: #003d85;
     transform: translateY(-1px);
 }
 

@@ -107,7 +107,7 @@ async function selectPlan(planCode, planName) {
         // Store selected plan in cookie
         setCookie('iristel_selected_plan', planCode, 7);
         setCookie('iristel_selected_plan_name', planName, 7);
-        setCookie('iristel_monthly_charge', '25', 7);
+        setCookie('iristel_monthly_charge', '25', 7); // base: 1 channel at $25
 
         // Redirect to SIP Trunk business setup
         setTimeout(() => {

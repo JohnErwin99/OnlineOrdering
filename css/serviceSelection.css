@@ -2,9 +2,9 @@
 
 /* Extra variables for this page */
 :root {
-    --tufts-blue-dark: #2d7ab8;
-    --magenta: #C41E7A;
-    --cyan: #00D4FF;
+    --tufts-blue-dark: #003d85;
+    --magenta: #d1155a;
+    --cyan: #004a9f;
     --border-gray: #E8ECF1;
     --text-dark: #2C3E50;
     --success-green: #28a745;
@@ -158,13 +158,13 @@ body {
 
 .plan-card:hover {
     border-color: var(--tufts-blue);
-    box-shadow: 0 4px 20px rgba(62, 140, 203, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 74, 159, 0.15);
     transform: translateY(-2px);
 }
 
 .plan-card.selected {
     border-color: var(--tufts-blue);
-    box-shadow: 0 4px 20px rgba(62, 140, 203, 0.25);
+    box-shadow: 0 4px 20px rgba(0, 74, 159, 0.25);
 }
 
 .plan-card.disabled {
@@ -283,7 +283,7 @@ body {
 
 .service-card:hover {
     border-color: var(--tufts-blue);
-    box-shadow: 0 4px 20px rgba(62, 140, 203, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 74, 159, 0.15);
     transform: translateY(-2px);
 }
 

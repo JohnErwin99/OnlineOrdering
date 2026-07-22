@@ -1,5 +1,7 @@
         let users = [];
         let availableNumbers = [];
+        // Trunk-aware: array of { trunkName, numbers[] } for grouped display
+        let trunkGroups = [];
 
         function addUser() {
             const id = Date.now();
@@ -24,6 +26,26 @@
                 user[field] = value;
             }
             updatePilotOptions();
+        }
+
+        function buildNumberOptions(selectedNum) {
+            if (trunkGroups.length > 1) {
+                // Multi-trunk: show numbers grouped by trunk using <optgroup>
+                return '<option value="">Select number</option>' +
+                    trunkGroups.map(g =>
+                        `<optgroup label="${g.trunkName}">` +
+                        g.numbers.map(num =>
+                            `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`
+                        ).join('') +
+                        '</optgroup>'
+                    ).join('');
+            } else {
+                // Single trunk: flat list
+                return '<option value="">Select number</option>' +
+                    availableNumbers.map(num =>
+                        `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`
+                    ).join('');
+            }
         }
 
         function renderUsers() {
@@ -53,10 +75,7 @@
                         </td>
                         <td>
                             <select onchange="updateUser(${user.id}, 'number', this.value)">
-                                <option value="">Select number</option>
-                                ${availableNumbers.map(num => `
-                                    <option value="${num}" ${user.number === num ? 'selected' : ''}>${num}</option>
-                                `).join('')}
+                                ${buildNumberOptions(user.number)}
                             </select>
                         </td>
                         <td>
@@ -123,13 +142,30 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
-            // Load selected numbers
-            const savedNumbers = getCookie('sip_selectedNumbers');
-            if (savedNumbers) {
+
+            // Load numbers — try multi-trunk format first
+            const trunksData = getCookie('sip_trunks');
+            if (trunksData) {
                 try {
-                    availableNumbers = JSON.parse(savedNumbers);
-                } catch (e) {
-                    availableNumbers = [];
+                    const trunksList = JSON.parse(trunksData);
+                    if (Array.isArray(trunksList) && trunksList.length > 0) {
+                        trunkGroups = trunksList.map(t => ({ trunkName: t.name, numbers: t.numbers }));
+                        // Flatten for backward compat
+                        availableNumbers = [];
+                        trunksList.forEach(t => availableNumbers.push(...t.numbers));
+                    }
+                } catch (e) {}
+            }
+
+            // Fallback: old flat format
+            if (availableNumbers.length === 0) {
+                const savedNumbers = getCookie('sip_selectedNumbers');
+                if (savedNumbers) {
+                    try {
+                        availableNumbers = JSON.parse(savedNumbers);
+                    } catch (e) {
+                        availableNumbers = [];
+                    }
                 }
             }
 

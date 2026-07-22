@@ -132,7 +132,7 @@ async function processPayment() {
     document.getElementById('loadingOverlay').classList.add('active');
 
     try {
-        const accountCode = getCookie('iristel_account_id') || '9615007';
+        const accountCode = getCookie('iristel_account_id') || '7142292';
 
         // Extract card data from form
         const cardNumber = document.getElementById('cardNumber').value.replace(/\s/g, '');
@@ -149,9 +149,9 @@ async function processPayment() {
 
         const monthly = parseFloat(getCookie('iristel_monthly_charge') || '25');
         const tax = +(monthly * 0.13).toFixed(2);
-        const total = (monthly + tax).toFixed(2);
+        const total = promoApplied ? '0.00' : (monthly + tax).toFixed(2);
 
-        // Step 1: Add card and get token
+        // Step 1: Add card and get token (always — saves card for future charges)
         document.getElementById('loadingText').textContent = 'Adding card...';
         const addCardResult = await addCard(accountCode, cardData);
         const token = addCardResult.token;
@@ -161,15 +161,16 @@ async function processPayment() {
         }
         console.log('Card added, token received');
 
-        // Step 2: Process payment with token
+        // Step 2: Process payment (charges $0.00 if promo applied)
         document.getElementById('loadingText').textContent = 'Processing payment...';
         const reference = generateReference();
         await makePayment(accountCode, cardData, token, total, reference);
 
-        // Store payment info in cookies
+        // Store payment info in cookies (token saved for future balance charges)
         setCookie('iristel_payment_reference', reference);
         setCookie('iristel_payment_token', token);
         setCookie('iristel_payment_amount', total);
+        if (promoApplied) setCookie('iristel_promo_code', 'TEST');
         console.log('Payment processed, reference:', reference);
 
         document.getElementById('loadingOverlay').classList.remove('active');
@@ -185,6 +186,36 @@ async function processPayment() {
         document.getElementById('loadingOverlay').classList.remove('active');
         payBtn.disabled = false;
         showMessage('error', 'Payment failed: ' + err.message);
+    }
+}
+
+// ============================================
+// PROMO CODE
+// ============================================
+let promoApplied = false;
+
+function applyPromo() {
+    const code = (document.getElementById('promoCode').value || '').trim().toUpperCase();
+    const msg = document.getElementById('promoMessage');
+
+    if (code === 'TEST') {
+        promoApplied = true;
+        msg.textContent = 'Promo applied — $0.00 charge';
+        msg.style.color = '#10B981';
+        msg.style.display = 'block';
+        document.getElementById('billTotal').textContent = '$0.00';
+        document.getElementById('payButtonAmount').textContent = '$0.00';
+    } else {
+        promoApplied = false;
+        msg.style.display = code.length > 0 ? 'block' : 'none';
+        msg.textContent = code.length > 0 ? 'Invalid promo code' : '';
+        msg.style.color = '#EF4444';
+        // Reset to original totals
+        const monthly = parseFloat(getCookie('iristel_monthly_charge') || '25');
+        const tax = +(monthly * 0.13).toFixed(2);
+        const total = +(monthly + tax).toFixed(2);
+        document.getElementById('billTotal').textContent = `$${total.toFixed(2)}`;
+        document.getElementById('payButtonAmount').textContent = `$${total.toFixed(2)}`;
     }
 }
 

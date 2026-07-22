@@ -6,6 +6,7 @@
     <title>SIP Trunk Service - Iristel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../css/global.css">
     <link rel="stylesheet" href="../css/serviceSelection.css">
@@ -58,15 +59,15 @@
         <!-- SIP Trunk Card -->
         <div class="sip-trunk-container">
             <div class="service-card" id="plan-sip-trunk" data-plan-code="SIP_TRUNK" data-plan-name="Sip Trunk">
-                <h3 class="service-name">Sip Trunk</h3>
+                <h3 class="service-name">SIP Trunk</h3>
                 <div class="service-price">
                     <span class="price-value">$25</span>
-                    <span class="price-period">/mo</span>
+                    <span class="price-period">/channel/mo</span>
                 </div>
                 <ul class="service-features">
                     <li>Enterprise-grade SIP connectivity</li>
-                    <li>Custom pricing based on usage</li>
-                    <li>Contact sales for details</li>
+                    <li>$25 per concurrent call channel</li>
+                    <li>Add channels as your business grows</li>
                 </ul>
                 <button class="btn-configure" onclick="selectPlan('SIP_TRUNK', 'Sip Trunk')">Configure Plan</button>
             </div>
@@ -80,5 +81,20 @@
 
     <script src="../js/common.js"></script>
     <script src="../js/sipTrunkSelection.js"></script>
+<script>
+  var parentOrigins = [
+    'https://iristel.webflow.io'
+    // add your live domain here once attached, e.g. 'https://www.iristel.com'
+  ];
+  function postHeight() {
+    var h = document.documentElement.scrollHeight;
+    parentOrigins.forEach(function (origin) {
+      parent.postMessage({ type: 'resize-iframe', height: h }, origin);
+    });
+  }
+  window.addEventListener('load', postHeight);
+  window.addEventListener('resize', postHeight);
+  new ResizeObserver(postHeight).observe(document.body);
+</script>
 </body>
 </html>

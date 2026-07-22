@@ -100,8 +100,8 @@
     color: var(--white);
     padding: 16px 32px;
     border: none;
-    border-radius: 4px;
-    font-family: 'Heebo', sans-serif;
+    border-radius: 999px;
+    font-family: 'Ubuntu', 'Heebo', sans-serif;
     font-size: 15px;
     font-weight: 500;
     cursor: pointer;
@@ -109,7 +109,7 @@
 }
 
 .btn-select:hover {
-    background: #3580BC;
+    background: #003d85;
     transform: translateY(-1px);
 }
 

@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIP Trunk - Provisioning Status - Iristel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --rich-black: #01111E;
+            --tufts-blue: #004a9f;
+            --white: #FFFFFF;
+            --light-gray: #F5F7FA;
+            --medium-gray: #E8ECF1;
+            --text-gray: #5A6A7A;
+            --magenta-glow: #d1155a;
+            --success-green: #10B981;
+            --warning-amber: #F59E0B;
+            --error-red: #EF4444;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
+            background-color: var(--light-gray);
+            min-height: 100vh;
+            color: var(--rich-black);
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 30px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .logo-img { height: 36px; width: auto; }
+        .support-link { font-size: 14px; color: var(--rich-black); }
+        .support-link a { color: var(--tufts-blue); text-decoration: underline; }
+
+        .status-card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            text-align: center;
+            flex: 0;
+        }
+
+        .status-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+
+        .status-icon svg { width: 40px; height: 40px; }
+
+        .status-icon.running {
+            background: rgba(45, 212, 191, 0.1);
+        }
+        .status-icon.running svg { color: var(--tufts-blue); }
+
+        .status-icon.completed {
+            background: rgba(16, 185, 129, 0.1);
+        }
+        .status-icon.completed svg { color: var(--success-green); }
+
+        .status-icon.failed {
+            background: rgba(239, 68, 68, 0.1);
+        }
+        .status-icon.failed svg { color: var(--error-red); }
+
+        .status-icon.queued {
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .status-icon.queued svg { color: var(--warning-amber); }
+
+        .status-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .status-subtitle {
+            font-size: 15px;
+            color: var(--text-gray);
+            line-height: 1.6;
+            margin-bottom: 30px;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Spinner animation */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .spinner {
+            animation: spin 1.5s linear infinite;
+        }
+
+        /* Progress steps */
+        .provision-steps {
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .provision-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--medium-gray);
+        }
+
+        .provision-step:last-child { border-bottom: none; }
+
+        .step-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .step-icon svg { width: 16px; height: 16px; }
+
+        .step-icon.done { background: rgba(16, 185, 129, 0.1); }
+        .step-icon.done svg { color: var(--success-green); }
+
+        .step-icon.active { background: rgba(45, 212, 191, 0.1); }
+        .step-icon.active svg { color: var(--tufts-blue); }
+
+        .step-icon.waiting { background: var(--light-gray); }
+        .step-icon.waiting svg { color: var(--text-gray); }
+
+        .step-icon.error { background: rgba(239, 68, 68, 0.1); }
+        .step-icon.error svg { color: var(--error-red); }
+
+        .step-content { flex: 1; }
+
+        .step-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--rich-black);
+        }
+
+        .step-detail {
+            font-size: 13px;
+            color: var(--text-gray);
+            margin-top: 2px;
+        }
+
+        /* Details box */
+        .details-box {
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 14px;
+            border-bottom: 1px solid var(--medium-gray);
+        }
+
+        .detail-row:last-child { border-bottom: none; }
+
+        .detail-label { color: var(--text-gray); }
+
+        .detail-value {
+            font-weight: 500;
+            color: var(--rich-black);
+            text-align: right;
+        }
+
+        .detail-value.mono {
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Error message */
+        .error-box {
+            background: rgba(239, 68, 68, 0.05);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            text-align: left;
+        }
+
+        .error-box-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--error-red);
+            margin-bottom: 6px;
+        }
+
+        .error-box-message {
+            font-size: 13px;
+            color: var(--text-gray);
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        /* Email notice */
+        .email-notice {
+            background: rgba(45, 212, 191, 0.06);
+            border-left: 4px solid var(--tufts-blue);
+            padding: 16px 20px;
+            border-radius: 0 8px 8px 0;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .email-notice p {
+            font-size: 14px;
+            color: var(--rich-black);
+            line-height: 1.5;
+        }
+
+        .email-notice strong { color: var(--tufts-blue); }
+
+        /* Trunk password */
+        .password-box {
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+            text-align: left;
+        }
+
+        .password-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .password-value {
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            color: var(--rich-black);
+            word-break: break-all;
+        }
+
+        .password-hint {
+            font-size: 12px;
+            color: var(--text-gray);
+            margin-top: 8px;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: var(--tufts-blue);
+            color: var(--white);
+            padding: 14px 40px;
+            border: none;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover { background: #003d85; }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--medium-gray);
+            color: var(--text-gray);
+            padding: 12px 28px;
+            border-radius: 4px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--tufts-blue);
+            color: var(--tufts-blue);
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .last-checked {
+            font-size: 12px;
+            color: var(--text-gray);
+            margin-top: 16px;
+        }
+
+        @media (max-width: 600px) {
+            .container { padding: 20px; }
+            .status-card { padding: 24px; }
+            .detail-row { flex-direction: column; gap: 2px; }
+            .detail-value { text-align: left; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="../Images/Iristel-logo.png" alt="Iristel" class="logo-img">
+            <span class="support-link">Need help? <a href="tel:18334747835">1 833 IRISTEL</a></span>
+        </div>
+
+        <div class="status-card" id="statusCard">
+            <!-- Status Icon -->
+            <div class="status-icon running" id="statusIcon">
+                <svg class="spinner" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                </svg>
+            </div>
+
+            <h1 class="status-title" id="statusTitle">Provisioning Your Trunk...</h1>
+            <p class="status-subtitle" id="statusSubtitle">Your SIP trunk is being configured. This usually takes a few minutes. You can stay on this page or come back later.</p>
+
+            <!-- Progress Steps -->
+            <div class="provision-steps" id="provisionSteps">
+                <div class="provision-step" id="stepAccount">
+                    <div class="step-icon done" id="stepAccountIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label">Account created</div>
+                        <div class="step-detail">Business account set up in billing system</div>
+                    </div>
+                </div>
+                <div class="provision-step" id="stepService">
+                    <div class="step-icon done" id="stepServiceIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label">SIP Trunk service assigned</div>
+                        <div class="step-detail">Trunk plan activated on your account</div>
+                    </div>
+                </div>
+                <div class="provision-step" id="stepProvision">
+                    <div class="step-icon active" id="stepProvisionIcon">
+                        <svg class="spinner" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label" id="stepProvisionLabel">Configuring trunk on platform...</div>
+                        <div class="step-detail" id="stepProvisionDetail">Setting up enterprise, users, and trunk group</div>
+                    </div>
+                </div>
+                <div class="provision-step" id="stepEmail">
+                    <div class="step-icon waiting" id="stepEmailIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label">Confirmation email</div>
+                        <div class="step-detail">Credentials and setup details sent to your email</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Details -->
+            <div class="details-box" id="detailsBox">
+                <div class="detail-row">
+                    <span class="detail-label">Job ID</span>
+                    <span class="detail-value mono" id="detailJobId">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Business</span>
+                    <span class="detail-value" id="detailBusiness">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Primary Number</span>
+                    <span class="detail-value mono" id="detailNumber">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Channels</span>
+                    <span class="detail-value" id="detailChannels">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Started</span>
+                    <span class="detail-value" id="detailStarted">--</span>
+                </div>
+                <div class="detail-row" id="detailCompletedRow" style="display:none;">
+                    <span class="detail-label">Completed</span>
+                    <span class="detail-value" id="detailCompleted">--</span>
+                </div>
+            </div>
+
+            <!-- Error box (hidden by default) -->
+            <div class="error-box" id="errorBox" style="display:none;">
+                <div class="error-box-title">Provisioning Error</div>
+                <div class="error-box-message" id="errorMessage"></div>
+            </div>
+
+            <!-- Trunk password (shown on completion) -->
+            <div class="password-box" id="passwordBox" style="display:none;">
+                <div class="password-label">SIP Authentication Password</div>
+                <div class="password-value" id="passwordValue"></div>
+                <div class="password-hint">Save this password — use it to configure your PBX/SBC registration.</div>
+            </div>
+
+            <!-- Email notice (shown on completion) -->
+            <div class="email-notice" id="emailNotice" style="display:none;">
+                <p><strong>Check your email!</strong> Your trunk credentials and configuration details have been sent to your notification email. Look for an email from Iristel with your SIP registration details.</p>
+            </div>
+
+            <!-- Buttons -->
+            <div class="btn-row" id="btnRow">
+                <button class="btn-secondary" onclick="refreshStatus()">Refresh Status</button>
+            </div>
+
+            <div class="last-checked" id="lastChecked"></div>
+        </div>
+    </div>
+
+    <script src="../js/common.js"></script>
+    <script>
+        // ============================================
+        // UbossRobot API Configuration
+        // ============================================
+        const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
+        const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
+        const TEST_MODE = true;
+
+        const UBOSS_STATUS = { QUEUED: 0, RUNNING: 1, COMPLETED: 2, FAILED: 3 };
+
+        const STATUS_LABELS = {
+            [UBOSS_STATUS.QUEUED]: 'Queued',
+            [UBOSS_STATUS.RUNNING]: 'In Progress',
+            [UBOSS_STATUS.COMPLETED]: 'Completed',
+            [UBOSS_STATUS.FAILED]: 'Failed'
+        };
+
+        let jobId = null;
+        let pollTimer = null;
+        let pollCount = 0;
+
+        async function checkStatus() {
+            if (!jobId) return;
+
+            try {
+                let data;
+
+                if (TEST_MODE) {
+                    // Simulate: queued -> running -> completed after a few polls
+                    await new Promise(r => setTimeout(r, 600));
+                    pollCount++;
+                    if (pollCount <= 2) {
+                        data = { id: jobId, status: UBOSS_STATUS.RUNNING, createdAt: new Date().toISOString() };
+                    } else {
+                        data = { id: jobId, status: UBOSS_STATUS.COMPLETED, createdAt: new Date().toISOString(), completedAt: new Date().toISOString() };
+                    }
+                } else {
+                    const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning?id=${jobId}`, {
+                        headers: { 'x-api-key': UBOSS_API_KEY }
+                    });
+                    data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data?.message || `Status check failed (HTTP ${response.status})`);
+                    }
+                }
+
+                updateUI(data);
+
+            } catch (err) {
+                console.error('Status check failed:', err);
+                document.getElementById('lastChecked').textContent =
+                    'Failed to check status — ' + formatTime(new Date());
+            }
+        }
+
+        const ICON_CHECK = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>';
+        const ICON_SPIN = '<svg class="spinner" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>';
+        const ICON_CLOCK = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>';
+        const ICON_X = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>';
+
+        function setStepState(iconEl, state, labelEl, detailEl, label, detail) {
+            iconEl.className = 'step-icon ' + state;
+            if (state === 'done') iconEl.innerHTML = ICON_CHECK;
+            else if (state === 'active') iconEl.innerHTML = ICON_SPIN;
+            else if (state === 'error') iconEl.innerHTML = ICON_X;
+            else iconEl.innerHTML = ICON_CLOCK; // waiting
+            if (labelEl && label) labelEl.textContent = label;
+            if (detailEl && detail) detailEl.textContent = detail;
+        }
+
+        function populateDetailsFromResponse(data) {
+            if (data.createdAt) {
+                document.getElementById('detailStarted').textContent = formatTime(new Date(data.createdAt));
+            }
+            if (data.completedAt) {
+                document.getElementById('detailCompletedRow').style.display = 'flex';
+                document.getElementById('detailCompleted').textContent = formatTime(new Date(data.completedAt));
+            }
+            if (data.parameters) {
+                const p = data.parameters;
+                if (p.phoneNumber) document.getElementById('detailNumber').textContent = p.phoneNumber;
+                if (p.companyName || p.businessName) document.getElementById('detailBusiness').textContent = p.companyName || p.businessName;
+                if (p.channelCount) document.getElementById('detailChannels').textContent = p.channelCount;
+            }
+        }
+
+        // Show final completed state instantly (no staged delay) — used when reloading page
+        function showFinalCompleted(data) {
+            const icon = document.getElementById('statusIcon');
+            const stepProvisionIcon = document.getElementById('stepProvisionIcon');
+            const stepProvisionLabel = document.getElementById('stepProvisionLabel');
+            const stepProvisionDetail = document.getElementById('stepProvisionDetail');
+            const stepEmailIcon = document.getElementById('stepEmailIcon');
+
+            populateDetailsFromResponse(data);
+
+            icon.className = 'status-icon completed';
+            icon.innerHTML = ICON_CHECK;
+            document.getElementById('statusTitle').textContent = 'Trunk Provisioned!';
+            document.getElementById('statusSubtitle').textContent = 'Your SIP trunk has been successfully configured and is ready to use.';
+
+            setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Enterprise, users, and trunk group created');
+            setStepState(stepEmailIcon, 'done');
+
+            const savedPassword = getCookie('sip_trunkPassword');
+            if (savedPassword) {
+                document.getElementById('passwordValue').textContent = savedPassword;
+                document.getElementById('passwordBox').style.display = 'block';
+            }
+            document.getElementById('emailNotice').style.display = 'block';
+            document.getElementById('btnRow').innerHTML = '<button class="btn-primary" onclick="window.location.href=\'../signUp.html\'">Done</button>';
+        }
+
+        function updateUI(data) {
+            const status = data.status;
+            const icon = document.getElementById('statusIcon');
+            const title = document.getElementById('statusTitle');
+            const subtitle = document.getElementById('statusSubtitle');
+            const stepProvisionIcon = document.getElementById('stepProvisionIcon');
+            const stepProvisionLabel = document.getElementById('stepProvisionLabel');
+            const stepProvisionDetail = document.getElementById('stepProvisionDetail');
+            const stepEmailIcon = document.getElementById('stepEmailIcon');
+
+            populateDetailsFromResponse(data);
+
+            if (status === UBOSS_STATUS.QUEUED) {
+                icon.className = 'status-icon queued';
+                icon.innerHTML = '<svg class="spinner" viewBox="0 0 20 20" fill="currentColor">' + ICON_CLOCK.match(/<path[^/]*\/>/)[0] + '</svg>';
+                title.textContent = 'Queued for Provisioning';
+                subtitle.textContent = 'Your trunk is in the queue and will be configured shortly.';
+                setStepState(stepProvisionIcon, 'waiting', stepProvisionLabel, stepProvisionDetail, 'Waiting in queue...', 'Will begin shortly');
+                setStepState(stepEmailIcon, 'waiting');
+                stopPolling();
+                startPolling(5000);
+
+            } else if (status === UBOSS_STATUS.RUNNING) {
+                icon.className = 'status-icon running';
+                icon.innerHTML = ICON_SPIN;
+                title.textContent = 'Provisioning Your Trunk...';
+                subtitle.textContent = 'Your SIP trunk is being configured on the platform. This usually takes a few minutes.';
+                setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring trunk on platform...', 'Setting up enterprise, users, and trunk group');
+                setStepState(stepEmailIcon, 'waiting');
+
+            } else if (status === UBOSS_STATUS.COMPLETED) {
+                stopPolling();
+
+                // Stage 1: show finalizing state — steps 3 & 4 not yet confirmed
+                icon.className = 'status-icon running';
+                icon.innerHTML = ICON_SPIN;
+                title.textContent = 'Finalizing...';
+                subtitle.textContent = 'Your SIP trunk configuration is almost complete.';
+                setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Finalizing trunk configuration...', 'Setting up enterprise, users, and trunk group');
+                setStepState(stepEmailIcon, 'waiting');
+
+                const completedData = data;
+
+                // Stage 2 (+5s): trunk configured
+                setTimeout(() => {
+                    setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Enterprise, users, and trunk group created');
+                    title.textContent = 'Sending confirmation...';
+                    subtitle.textContent = 'Your trunk is ready. Sending credentials to your email.';
+                    setStepState(stepEmailIcon, 'active');
+
+                    // Stage 3 (+10s): email sent + full success
+                    setTimeout(() => {
+                        setStepState(stepEmailIcon, 'done');
+                        showFinalCompleted(completedData);
+                        setCookie('sip_provisionResult', JSON.stringify(completedData));
+                    }, 5000);
+                }, 5000);
+
+            } else if (status === UBOSS_STATUS.FAILED) {
+                stopPolling();
+                icon.className = 'status-icon failed';
+                icon.innerHTML = ICON_X;
+                title.textContent = 'Provisioning Failed';
+                subtitle.textContent = 'There was an issue setting up your trunk. Our team has been notified and will follow up.';
+
+                setStepState(stepProvisionIcon, 'error', stepProvisionLabel, stepProvisionDetail, 'Configuration failed', 'An error occurred during provisioning');
+                setStepState(stepEmailIcon, 'waiting');
+
+                if (data.errorMessage) {
+                    document.getElementById('errorMessage').textContent = data.errorMessage;
+                    document.getElementById('errorBox').style.display = 'block';
+                }
+
+                document.getElementById('btnRow').innerHTML = `
+                    <button class="btn-secondary" onclick="refreshStatus()">Retry Check</button>
+                    <a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>
+                `;
+            }
+
+            document.getElementById('lastChecked').textContent = 'Last checked: ' + formatTime(new Date());
+        }
+
+        function startPolling(interval) {
+            if (pollTimer) return;
+            pollTimer = setInterval(checkStatus, interval || 5000);
+        }
+
+        function stopPolling() {
+            if (pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+            }
+        }
+
+        function refreshStatus() {
+            document.getElementById('lastChecked').textContent = 'Checking...';
+            checkStatus();
+        }
+
+        function formatTime(date) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserInfoBar();
+
+            jobId = getCookie('sip_provisionJobId');
+            if (!jobId) {
+                document.getElementById('statusTitle').textContent = 'No Provisioning Job Found';
+                document.getElementById('statusSubtitle').textContent = 'It looks like you haven\'t submitted an order yet. Please go back and complete the order process.';
+                document.getElementById('statusIcon').className = 'status-icon queued';
+                document.getElementById('provisionSteps').style.display = 'none';
+                document.getElementById('detailsBox').style.display = 'none';
+                document.getElementById('btnRow').innerHTML = '<button class="btn-primary" onclick="window.location.href=\'sipReview.html\'">Go to Review</button>';
+                return;
+            }
+
+            // Populate details
+            document.getElementById('detailJobId').textContent = jobId;
+            document.getElementById('detailBusiness').textContent = getCookie('sip_businessName') || '--';
+            document.getElementById('detailNumber').textContent = getCookie('sip_primaryNumber') || '--';
+
+            // Channel count from trunks
+            let channels = 1;
+            const trunksData = getCookie('sip_trunks');
+            if (trunksData) {
+                try {
+                    const trunksList = JSON.parse(trunksData);
+                    if (Array.isArray(trunksList) && trunksList.length > 0) {
+                        channels = trunksList[0].channels || 1;
+                    }
+                } catch (e) {}
+            }
+            document.getElementById('detailChannels').textContent = channels;
+
+            document.getElementById('detailStarted').textContent = 'Checking...';
+
+            // Check if already completed — show final state instantly (no staged delay)
+            const savedResult = getCookie('sip_provisionResult');
+            if (savedResult) {
+                try {
+                    const result = JSON.parse(savedResult);
+                    if (result.status === UBOSS_STATUS.COMPLETED) {
+                        showFinalCompleted(result);
+                        return;
+                    }
+                } catch (e) {}
+            }
+
+            // Start polling
+            checkStatus();
+            startPolling(5000);
+        });
+    </script>
+<script>
+  var parentOrigins = [
+    'https://iristel.webflow.io'
+    // add your live domain here once attached, e.g. 'https://www.iristel.com'
+  ];
+  function postHeight() {
+    var h = document.documentElement.scrollHeight;
+    parentOrigins.forEach(function (origin) {
+      parent.postMessage({ type: 'resize-iframe', height: h }, origin);
+    });
+  }
+  window.addEventListener('load', postHeight);
+  window.addEventListener('resize', postHeight);
+  new ResizeObserver(postHeight).observe(document.body);
+</script>
+</body>
+</html>

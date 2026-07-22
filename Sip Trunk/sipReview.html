@@ -6,24 +6,25 @@
     <title>SIP Trunk - Review & Confirm - Iristel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --rich-black: #01111E;
-            --tufts-blue: #3E8CCB;
+            --tufts-blue: #004a9f;
             --white: #FFFFFF;
             --light-gray: #F5F7FA;
             --medium-gray: #E8ECF1;
             --text-gray: #5A6A7A;
-            --magenta-glow: #C41E7A;
-            --cyan-glow: #3E8CCB;
+            --magenta-glow: #d1155a;
+            --cyan-glow: #004a9f;
             --success-green: #10B981;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Heebo', sans-serif;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             background-color: var(--light-gray);
             min-height: 100vh;
             color: var(--rich-black);
@@ -50,13 +51,13 @@
         .progress-container { margin-bottom: 30px; max-width: 600px; }
         .progress-text { font-size: 13px; color: var(--text-gray); margin-bottom: 8px; }
         .progress-bar { height: 4px; background-color: var(--medium-gray); border-radius: 2px; overflow: hidden; }
-        .progress-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #C41E7A 0%, #E84393 100%); border-radius: 2px; }
+        .progress-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #d1155a 0%, #d1155a 100%); border-radius: 2px; }
 
         .page-title { font-size: 28px; font-weight: 500; color: var(--tufts-blue); margin-bottom: 8px; }
         .page-subtitle { font-size: 15px; color: var(--text-gray); margin-bottom: 30px; max-width: 700px; }
 
         .info-box {
-            background-color: rgba(62, 140, 203, 0.08);
+            background-color: rgba(45, 212, 191, 0.08);
             border-left: 4px solid var(--tufts-blue);
             padding: 16px 20px;
             border-radius: 0 4px 4px 0;
@@ -99,8 +100,8 @@
             border: 1px solid var(--tufts-blue);
             color: var(--tufts-blue);
             padding: 6px 16px;
-            border-radius: 4px;
-            font-family: 'Heebo', sans-serif;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             font-size: 13px;
             font-weight: 500;
             cursor: pointer;
@@ -175,10 +176,10 @@
         }
 
         .number-chip.pilot {
-            background: rgba(62, 140, 203, 0.1);
+            background: rgba(45, 212, 191, 0.1);
             border-color: var(--tufts-blue);
             color: var(--tufts-blue);
-            font-family: 'Heebo', sans-serif;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             font-weight: 500;
         }
 
@@ -212,7 +213,7 @@
 
         .pilot-badge {
             display: inline-block;
-            background: rgba(62, 140, 203, 0.1);
+            background: rgba(45, 212, 191, 0.1);
             color: var(--tufts-blue);
             font-size: 11px;
             font-weight: 600;
@@ -303,23 +304,23 @@
             color: var(--white);
             padding: 16px 48px;
             border: none;
-            border-radius: 4px;
-            font-family: 'Heebo', sans-serif;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             font-size: 15px;
             font-weight: 500;
             cursor: pointer;
             transition: background-color 0.2s ease, transform 0.2s ease;
         }
 
-        .btn-back:hover { background: #3580BC; transform: translateY(-1px); }
+        .btn-back:hover { background: #003d85; transform: translateY(-1px); }
 
         .btn-submit {
             background: linear-gradient(135deg, var(--success-green) 0%, #059669 100%);
             color: var(--white);
             padding: 16px 48px;
             border: none;
-            border-radius: 4px;
-            font-family: 'Heebo', sans-serif;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             font-size: 15px;
             font-weight: 600;
             cursor: pointer;
@@ -416,15 +417,15 @@
             color: var(--white);
             padding: 14px 40px;
             border: none;
-            border-radius: 4px;
-            font-family: 'Heebo', sans-serif;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
             font-size: 15px;
             font-weight: 500;
             cursor: pointer;
             transition: background 0.2s;
         }
 
-        .modal .btn-done:hover { background: #3580BC; }
+        .modal .btn-done:hover { background: #003d85; }
 
         @keyframes spin {
             from { transform: rotate(0deg); }
@@ -458,6 +459,45 @@
 
         .payment-confirmed .pay-details { flex: 1; }
         .payment-confirmed .pay-ref { font-size: 12px; color: #5A6A7A; margin-top: 2px; }
+
+        .pricing-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .pricing-table th {
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-gray);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 10px 16px;
+            background: var(--light-gray);
+        }
+
+        .pricing-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--medium-gray);
+            font-size: 14px;
+            color: var(--rich-black);
+        }
+
+        .pricing-table tfoot td {
+            border-bottom: none;
+            border-top: 2px solid var(--medium-gray);
+            padding-top: 16px;
+        }
+
+        .pricing-trunk-label {
+            font-weight: 600;
+            color: var(--tufts-blue);
+        }
+
+        .pricing-sub-item {
+            padding-left: 32px !important;
+            color: var(--text-gray);
+        }
 
         @media (max-width: 900px) {
             .container { padding: 20px; }
@@ -648,15 +688,37 @@
             </table>
         </div>
 
-        <!-- Payment Status -->
+        <!-- Pricing & Payment -->
         <div class="review-card">
             <div class="card-header">
                 <h2 class="card-title">
                     <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z"/><path fill-rule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clip-rule="evenodd"/></svg>
-                    Payment
+                    Pricing & Payment
                 </h2>
             </div>
-            <div class="payment-confirmed" id="paymentStatus">
+            <table class="pricing-table" id="pricingTable">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th style="text-align:center;">Qty</th>
+                        <th style="text-align:right;">Unit Price</th>
+                        <th style="text-align:right;">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody id="pricingBody">
+                    <!-- Populated by JS -->
+                </tbody>
+                <tfoot>
+                    <tr class="pricing-total-row">
+                        <td colspan="3" style="text-align:right;font-weight:700;">Monthly Total</td>
+                        <td style="text-align:right;font-weight:700;font-size:18px;color:var(--tufts-blue);" id="pricingTotal">$0.00</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div id="additionalTrunkNotice" style="display:none;background:rgba(245,158,11,0.08);border-left:4px solid #F59E0B;padding:12px 16px;border-radius:0 4px 4px 0;margin-top:16px;">
+                <p style="font-size:13px;color:var(--rich-black);line-height:1.5;"><strong style="color:#F59E0B;">Note:</strong> Only the first trunk will be provisioned automatically upon submission. Additional trunks will be provisioned by our team and you will be notified once they are active.</p>
+            </div>
+            <div class="payment-confirmed" id="paymentStatus" style="margin-top: 16px;">
                 <div class="check-icon">
                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                 </div>
@@ -715,5 +777,20 @@
 
     <script src="../js/common.js"></script>
     <script src="../js/sip-sipReview.js"></script>
+<script>
+  var parentOrigins = [
+    'https://iristel.webflow.io'
+    // add your live domain here once attached, e.g. 'https://www.iristel.com'
+  ];
+  function postHeight() {
+    var h = document.documentElement.scrollHeight;
+    parentOrigins.forEach(function (origin) {
+      parent.postMessage({ type: 'resize-iframe', height: h }, origin);
+    });
+  }
+  window.addEventListener('load', postHeight);
+  window.addEventListener('resize', postHeight);
+  new ResizeObserver(postHeight).observe(document.body);
+</script>
 </body>
 </html>

@@ -16,7 +16,7 @@ fileInput.addEventListener('change', function() {
     if (this.files.length > 0) {
         uploadText.textContent = this.files[0].name;
         fileUpload.style.borderColor = 'var(--tufts-blue)';
-        fileUpload.style.backgroundColor = 'rgba(62, 140, 203, 0.05)';
+        fileUpload.style.backgroundColor = 'rgba(0, 74, 159, 0.05)';
     }
 });
 
@@ -24,7 +24,7 @@ fileInput.addEventListener('change', function() {
 fileUpload.addEventListener('dragover', function(e) {
     e.preventDefault();
     this.style.borderColor = 'var(--tufts-blue)';
-    this.style.backgroundColor = 'rgba(62, 140, 203, 0.05)';
+    this.style.backgroundColor = 'rgba(0, 74, 159, 0.05)';
 });
 
 fileUpload.addEventListener('dragleave', function(e) {
@@ -36,7 +36,7 @@ fileUpload.addEventListener('dragleave', function(e) {
 fileUpload.addEventListener('drop', function(e) {
     e.preventDefault();
     this.style.borderColor = 'var(--tufts-blue)';
-    this.style.backgroundColor = 'rgba(62, 140, 203, 0.05)';
+    this.style.backgroundColor = 'rgba(0, 74, 159, 0.05)';
 
     if (e.dataTransfer.files.length > 0) {
         fileInput.files = e.dataTransfer.files;

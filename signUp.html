@@ -6,6 +6,7 @@
     <title>Create Account - Iristel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/global.css">
     <link rel="stylesheet" href="css/signUp.css">
@@ -222,5 +223,20 @@
 
     <script src="js/common.js"></script>
     <script src="js/signUp.js"></script>
+<script>
+  var parentOrigins = [
+    'https://iristel.webflow.io'
+    // add your live domain here once attached, e.g. 'https://www.iristel.com'
+  ];
+  function postHeight() {
+    var h = document.documentElement.scrollHeight;
+    parentOrigins.forEach(function (origin) {
+      parent.postMessage({ type: 'resize-iframe', height: h }, origin);
+    });
+  }
+  window.addEventListener('load', postHeight);
+  window.addEventListener('resize', postHeight);
+  new ResizeObserver(postHeight).observe(document.body);
+</script>
 </body>
 </html>
