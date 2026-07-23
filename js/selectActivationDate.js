@@ -77,7 +77,7 @@ function confirmDate() {
     const dateStr = option === 'asap' ? 'As soon as possible' : selectedDate.toDateString();
     alert(`Activation date confirmed: ${dateStr}`);
     // Store and proceed
-    document.cookie = `iristel_activation_date=${encodeURIComponent(dateStr)};path=/;SameSite=Strict`;
+    setCookie('iristel_activation_date', dateStr);
     window.location.href = 'summary.html';
 }
 
