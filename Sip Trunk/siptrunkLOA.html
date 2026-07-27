@@ -432,7 +432,7 @@
                         
                         <div class="numbers-to-port" id="numbersContainer">
                             <div class="number-input-row">
-                                <input type="tel" placeholder="(555) 123-4567" class="port-number" required>
+                                <input type="tel" placeholder="(514) 866 3425" class="port-number" maxlength="14" oninput="formatPhoneNumber(this)" required>
                                 <button type="button" class="btn-remove" onclick="removeNumber(this)" style="visibility: hidden;">
                                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
                                 </button>
@@ -443,33 +443,6 @@
                             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>
                             Add Another Number
                         </button>
-                    </div>
-
-                    <!-- Current Provider Information -->
-                    <div class="form-section">
-                        <h2 class="section-title">Current Provider Information</h2>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Current Provider Name <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="currentProvider" placeholder="e.g. Bell, Rogers, Telus" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Account Number <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="accountNumber" placeholder="Your account number" required>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Account PIN (if applicable)</label>
-                                <input type="text" class="form-input" id="accountPin" placeholder="Account PIN or passcode">
-                                <p class="form-hint">Some providers require a PIN to authorize the port</p>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Service Address <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="serviceAddress" placeholder="Address on file with provider" required>
-                                <p class="form-hint">Must match the address on your current provider's records</p>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- LOA Upload -->

@@ -25,26 +25,36 @@
             if (user) {
                 user[field] = value;
             }
+            if (field === 'number') {
+                renderUsers();
+            }
             updatePilotOptions();
         }
 
-        function buildNumberOptions(selectedNum) {
+        function getUsedNumbers(excludeUserId) {
+            return users.filter(u => u.id !== excludeUserId && u.number).map(u => u.number);
+        }
+
+        function buildNumberOptions(selectedNum, userId) {
+            const used = getUsedNumbers(userId);
             if (trunkGroups.length > 1) {
-                // Multi-trunk: show numbers grouped by trunk using <optgroup>
                 return '<option value="">Select number</option>' +
                     trunkGroups.map(g =>
                         `<optgroup label="${g.trunkName}">` +
-                        g.numbers.map(num =>
-                            `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`
-                        ).join('') +
+                        g.numbers.map(num => {
+                            const taken = used.includes(num);
+                            if (taken && num !== selectedNum) return '';
+                            return `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`;
+                        }).join('') +
                         '</optgroup>'
                     ).join('');
             } else {
-                // Single trunk: flat list
                 return '<option value="">Select number</option>' +
-                    availableNumbers.map(num =>
-                        `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`
-                    ).join('');
+                    availableNumbers.map(num => {
+                        const taken = used.includes(num);
+                        if (taken && num !== selectedNum) return '';
+                        return `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`;
+                    }).join('');
             }
         }
 
@@ -75,14 +85,12 @@
                         </td>
                         <td>
                             <select onchange="updateUser(${user.id}, 'number', this.value)">
-                                ${buildNumberOptions(user.number)}
+                                ${buildNumberOptions(user.number, user.id)}
                             </select>
                         </td>
                         <td>
-                            <select onchange="updateUser(${user.id}, 'package', this.value)">
-                                <option value="business-trunk" ${user.package === 'business-trunk' ? 'selected' : ''}>Business Trunk</option>
-                                <option value="standard" ${user.package === 'standard' ? 'selected' : ''}>Standard</option>
-                                <option value="premium" ${user.package === 'premium' ? 'selected' : ''}>Premium</option>
+                            <select onchange="updateUser(${user.id}, 'package', this.value)" disabled>
+                                <option value="business-trunk" selected>Business Trunk</option>
                             </select>
                         </td>
                         <td>

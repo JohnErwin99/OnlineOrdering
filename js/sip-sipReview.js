@@ -68,9 +68,6 @@
                     } catch (e) {}
                 }
 
-                setText('revProvider', getCookie('sip_currentProvider'));
-                setText('revAccountNum', getCookie('sip_accountNumber'));
-                setText('revServiceAddr', getCookie('sip_serviceAddress'));
                 setText('revLoaFile', getCookie('sip_loaFileName'));
             }
 
@@ -200,9 +197,33 @@
 
         function loadPaymentStatus() {
             const ref = getCookie('iristel_payment_reference');
-            const amount = getCookie('iristel_payment_amount');
-            document.getElementById('payRefDisplay').textContent = ref || '--';
-            document.getElementById('payAmountDisplay').textContent = amount ? `$${amount} charged` : 'Paid';
+            const amount = parseFloat(getCookie('iristel_payment_amount') || '0');
+            const token = getCookie('iristel_payment_token');
+            const cardLast4 = getCookie('iristel_payment_card_last4') || '';
+            const statusEl = document.getElementById('paymentStatus');
+
+            if (amount > 0 && ref) {
+                // Payment has been charged
+                document.getElementById('payRefDisplay').textContent = ref;
+                document.getElementById('payAmountDisplay').textContent = `$${amount.toFixed(2)} charged`;
+                statusEl.style.background = '#f0fdf4';
+                statusEl.style.borderColor = '#86efac';
+            } else if (token) {
+                // Card saved but not yet charged
+                document.getElementById('payRefDisplay').textContent = cardLast4 ? `Card ending in ${cardLast4}` : 'Card on file';
+                document.getElementById('payAmountDisplay').textContent = 'Not yet charged';
+                statusEl.querySelector('strong').textContent = 'Card saved';
+                statusEl.style.background = '#eff6ff';
+                statusEl.style.borderColor = '#93c5fd';
+                statusEl.querySelector('.check-icon').style.background = '#3b82f6';
+            } else {
+                document.getElementById('payRefDisplay').textContent = '--';
+                document.getElementById('payAmountDisplay').textContent = 'No card on file';
+                statusEl.querySelector('strong').textContent = 'Payment required';
+                statusEl.style.background = '#fef2f2';
+                statusEl.style.borderColor = '#fca5a5';
+                statusEl.querySelector('.check-icon').style.background = '#ef4444';
+            }
         }
 
         function loadPricingBreakdown() {
@@ -651,9 +672,9 @@
                 return;
             }
 
-            // Verify payment was completed
-            if (!getCookie('iristel_payment_reference')) {
-                alert('Payment has not been completed. Please go back and complete payment first.');
+            // Verify card was saved
+            if (!getCookie('iristel_payment_token')) {
+                alert('No payment card on file. Please go back and save a card first.');
                 return;
             }
 

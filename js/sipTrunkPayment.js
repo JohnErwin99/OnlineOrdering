@@ -121,7 +121,7 @@ async function makePayment(accountCode, cardData, token, amount, reference) {
 }
 
 // ============================================
-// PROCESS PAYMENT — Full flow
+// SAVE CARD — Tokenize only, charge happens on Review page
 // ============================================
 async function processPayment() {
     hideMessage();
@@ -147,34 +147,24 @@ async function processPayment() {
             holder: document.getElementById('cardName').value.trim()
         };
 
-        const monthly = parseFloat(getCookie('iristel_monthly_charge') || '25');
-        const tax = +(monthly * 0.13).toFixed(2);
-        const total = promoApplied ? '0.00' : (monthly + tax).toFixed(2);
-
-        // Step 1: Add card and get token (always — saves card for future charges)
-        document.getElementById('loadingText').textContent = 'Adding card...';
+        // Add card and get token (no charge — payment happens on the Review page)
+        document.getElementById('loadingText').textContent = 'Saving card...';
         const addCardResult = await addCard(accountCode, cardData);
         const token = addCardResult.token;
 
         if (!token) {
             throw new Error('Failed to receive card token. Please try again.');
         }
-        console.log('Card added, token received');
+        console.log('Card saved, token received');
 
-        // Step 2: Process payment (charges $0.00 if promo applied)
-        document.getElementById('loadingText').textContent = 'Processing payment...';
-        const reference = generateReference();
-        await makePayment(accountCode, cardData, token, total, reference);
-
-        // Store payment info in cookies (token saved for future balance charges)
-        setCookie('iristel_payment_reference', reference);
+        // Store token and card info for charging later on the Review page
         setCookie('iristel_payment_token', token);
-        setCookie('iristel_payment_amount', total);
+        setCookie('iristel_payment_card_type', detectCardType(cardNumber));
+        setCookie('iristel_payment_card_last4', cardNumber.slice(-4));
         if (promoApplied) setCookie('iristel_promo_code', 'TEST');
-        console.log('Payment processed, reference:', reference);
 
         document.getElementById('loadingOverlay').classList.remove('active');
-        showMessage('success', 'Payment successful! Redirecting...');
+        showMessage('success', 'Card saved! Redirecting...');
 
         // Redirect to business setup
         setTimeout(() => {
@@ -182,10 +172,10 @@ async function processPayment() {
         }, 1500);
 
     } catch (err) {
-        console.error('Payment failed:', err);
+        console.error('Card save failed:', err);
         document.getElementById('loadingOverlay').classList.remove('active');
         payBtn.disabled = false;
-        showMessage('error', 'Payment failed: ' + err.message);
+        showMessage('error', 'Failed to save card: ' + err.message);
     }
 }
 
@@ -204,7 +194,6 @@ function applyPromo() {
         msg.style.color = '#10B981';
         msg.style.display = 'block';
         document.getElementById('billTotal').textContent = '$0.00';
-        document.getElementById('payButtonAmount').textContent = '$0.00';
     } else {
         promoApplied = false;
         msg.style.display = code.length > 0 ? 'block' : 'none';
@@ -215,7 +204,6 @@ function applyPromo() {
         const tax = +(monthly * 0.13).toFixed(2);
         const total = +(monthly + tax).toFixed(2);
         document.getElementById('billTotal').textContent = `$${total.toFixed(2)}`;
-        document.getElementById('payButtonAmount').textContent = `$${total.toFixed(2)}`;
     }
 }
 
@@ -230,7 +218,6 @@ function initializePage() {
     document.getElementById('billMonthly').textContent = `$${monthly.toFixed(2)}`;
     document.getElementById('billTax').textContent = `$${tax.toFixed(2)}`;
     document.getElementById('billTotal').textContent = `$${total.toFixed(2)}`;
-    document.getElementById('payButtonAmount').textContent = `$${total.toFixed(2)}`;
 
     // Pre-fill name from cookies if available
     const fname = getCookie('iristel_user_fname') || '';

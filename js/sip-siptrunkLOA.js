@@ -1,9 +1,22 @@
+        function formatPhoneNumber(input) {
+            let digits = input.value.replace(/\D/g, '').substring(0, 10);
+            if (digits.length > 6) {
+                input.value = '(' + digits.substring(0, 3) + ') ' + digits.substring(3, 6) + ' ' + digits.substring(6);
+            } else if (digits.length > 3) {
+                input.value = '(' + digits.substring(0, 3) + ') ' + digits.substring(3);
+            } else if (digits.length > 0) {
+                input.value = '(' + digits;
+            } else {
+                input.value = '';
+            }
+        }
+
         function addNumber() {
             const container = document.getElementById('numbersContainer');
             const row = document.createElement('div');
             row.className = 'number-input-row';
             row.innerHTML = `
-                <input type="tel" placeholder="(555) 123-4567" class="port-number" required>
+                <input type="tel" placeholder="(514) 866 3425" class="port-number" maxlength="14" oninput="formatPhoneNumber(this)" required>
                 <button type="button" class="btn-remove" onclick="removeNumber(this)">
                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
                 </button>
@@ -26,8 +39,12 @@
         }
 
         function downloadTemplate() {
-            // In production, this would download an actual LOA template
-            alert('LOA Template download would start here. In production, this links to the actual PDF template.');
+            const link = document.createElement('a');
+            link.href = '../docs/Iristel_LOA_Template.pdf';
+            link.download = 'Iristel_LOA_Template.pdf';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         // Drag and drop handling
@@ -89,6 +106,11 @@
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
 
+        function validatePortNumber(value) {
+            const digits = value.replace(/\D/g, '');
+            return digits.length === 10;
+        }
+
         function saveAndContinue() {
             const form = document.getElementById('loaForm');
             if (!form.checkValidity()) {
@@ -98,11 +120,24 @@
 
             // Collect numbers to port
             const numbers = [];
+            let hasInvalid = false;
             document.querySelectorAll('.port-number').forEach(input => {
-                if (input.value.trim()) {
-                    numbers.push(input.value.trim());
+                const val = input.value.trim();
+                if (val) {
+                    if (!validatePortNumber(val)) {
+                        hasInvalid = true;
+                        input.style.borderColor = '#ef4444';
+                    } else {
+                        input.style.borderColor = '';
+                        numbers.push(val);
+                    }
                 }
             });
+
+            if (hasInvalid) {
+                alert('All phone numbers must be exactly 10 digits.');
+                return;
+            }
 
             if (numbers.length === 0) {
                 alert('Please enter at least one phone number to port.');
@@ -111,10 +146,6 @@
 
             // Save data
             setCookie('sip_portNumbers', JSON.stringify(numbers));
-            setCookie('sip_currentProvider', document.getElementById('currentProvider').value);
-            setCookie('sip_accountNumber', document.getElementById('accountNumber').value);
-            setCookie('sip_accountPin', document.getElementById('accountPin').value);
-            setCookie('sip_serviceAddress', document.getElementById('serviceAddress').value);
             setCookie('sip_isPoriting', 'true');
 
             window.location.href = 'numberSelection.html';
@@ -133,20 +164,18 @@
                         const row = document.createElement('div');
                         row.className = 'number-input-row';
                         row.innerHTML = `
-                            <input type="tel" placeholder="(555) 123-4567" class="port-number" value="${num}" required>
+                            <input type="tel" placeholder="(514) 866 3425" class="port-number" maxlength="14" oninput="formatPhoneNumber(this)" required>
                             <button type="button" class="btn-remove" onclick="removeNumber(this)">
                                 <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
                             </button>
                         `;
                         container.appendChild(row);
+                        const input = row.querySelector('.port-number');
+                        input.value = num;
+                        formatPhoneNumber(input);
                     });
                     updateRemoveButtons();
                 } catch (e) {}
             }
 
-            const fields = ['currentProvider', 'accountNumber', 'accountPin', 'serviceAddress'];
-            fields.forEach(field => {
-                const saved = getCookie('sip_' + field);
-                if (saved) document.getElementById(field).value = saved;
-            });
         });

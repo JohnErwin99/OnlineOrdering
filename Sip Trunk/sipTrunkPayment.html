@@ -300,7 +300,7 @@
 
     <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
-        <div class="loading-text" id="loadingText">Processing payment...</div>
+        <div class="loading-text" id="loadingText">Saving card...</div>
     </div>
 
     <div class="container">
@@ -313,8 +313,8 @@
             <div class="progress-bar"><div class="progress-fill"></div></div>
         </div>
 
-        <h1 class="page-title">Secure Payment</h1>
-        <p class="page-subtitle">Payment is required before configuring your SIP trunk. Your card will be charged the amount shown below.</p>
+        <h1 class="page-title">Save Payment Method</h1>
+        <p class="page-subtitle">Save your card to proceed. You will not be charged until you review and confirm your order on the final step.</p>
 
         <div class="layout">
             <!-- LEFT: Billing Summary -->
@@ -341,7 +341,7 @@
                         <span id="billTax">$3.25</span>
                     </div>
                     <div class="pay-row total">
-                        <span>Total due today:</span>
+                        <span>Estimated total (charged at checkout):</span>
                         <span id="billTotal">$28.25</span>
                     </div>
 
@@ -361,7 +361,7 @@
             <!-- RIGHT: Card Form -->
             <div>
                 <div class="payment-card">
-                    <h2>Pay with card</h2>
+                    <h2>Card Details</h2>
 
                     <div class="message-box" id="messageBox"></div>
 
@@ -388,7 +388,7 @@
 
                     <button class="btn-pay" id="payBtn" onclick="processPayment()">
                         <span>🔒</span>
-                        Pay <span id="payButtonAmount">$28.25</span>
+                        Save Card & Continue
                     </button>
                 </div>
             </div>

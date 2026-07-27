@@ -415,6 +415,17 @@
                 document.getElementById('newNumbersInfo').style.display = 'none';
                 document.getElementById('pageTitle').textContent = 'Select Temporary Numbers';
                 document.getElementById('pageSubtitle').textContent = 'Choose temporary numbers to test your service while your existing numbers are being ported.';
+
+                // Default channel count to match the number of ported numbers
+                const portData = getCookie('sip_portNumbers');
+                if (portData) {
+                    try {
+                        const portedCount = JSON.parse(portData).length;
+                        if (portedCount > 0) {
+                            trunks[0].channels = portedCount;
+                        }
+                    } catch (e) {}
+                }
             }
 
             // Load saved trunk data (new format)
