@@ -50,6 +50,8 @@ function showMessage(type, message) {
     if (!box) return;
     box.className = 'message-box ' + type;
     box.textContent = message;
+    // Let the parent page (Iris) know what error the customer is looking at
+    if (type === 'error' && window.IrisBridge) window.IrisBridge.error(message);
 }
 
 function hideMessage() {

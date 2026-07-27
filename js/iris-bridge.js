@@ -79,6 +79,13 @@
       post({ type: "iris:error", message: String(message || ""), field: field || null });
     }
   
+    // Card tokenized and stored on the payment step. No money has moved
+    // yet — the charge happens on the review step.
+    //   IrisBridge.cardSaved("8785");
+    function cardSaved(last4) {
+      post({ type: "iris:payment", status: "card_saved", last4: last4 || null });
+    }
+
     // Payment succeeded — this is the important one. Iris uses the
     // reference instead of asking the customer to read it aloud.
     //   IrisBridge.paymentSuccess(reference, amount);
@@ -103,6 +110,7 @@
   
     window.IrisBridge = {
       error: error,
+      cardSaved: cardSaved,
       paymentSuccess: paymentSuccess,
       paymentFailed: paymentFailed,
       orderComplete: orderComplete,
@@ -110,20 +118,23 @@
     };
   
     /* ═══════════════════════════════════════════════════════════════
-       WIRING THE PAYMENT EVENT (js/sipTrunkPayment.js)
-  
-       In processPayment(), right after:
-           setCookie('iristel_payment_reference', reference);
-       add:
-           if (window.IrisBridge) window.IrisBridge.paymentSuccess(reference, amount);
-  
-       And in that function's catch block:
-           if (window.IrisBridge) window.IrisBridge.paymentFailed(err.message);
-  
-       WIRING ERRORS (any step)
-       Wherever you already show a validation or API error to the user:
-           if (window.IrisBridge) window.IrisBridge.error("Postal code must be Canadian", "postcode");
-  
+       WHERE THIS IS WIRED UP
+
+       js/common.js — showMessage('error', msg) forwards to error().
+         Covers every inline message box on every step automatically.
+
+       js/sipTrunkPayment.js — processPayment() only tokenizes the card,
+         so it calls cardSaved(last4). No charge happens on this step.
+
+       js/sip-sipReview.js — chargeRemainingBalance() calls
+         paymentSuccess(reference, amount) / paymentFailed(msg), and
+         submitOrder() calls orderComplete(jobId) plus error() on each
+         of its blocking checks.
+
+       Any NEW alert()-style error you add should also call:
+           if (window.IrisBridge) window.IrisBridge.error("...", "fieldId");
+       (alert() itself is not intercepted — the call has to be explicit.)
+
        ═══════════════════════════════════════════════════════════════
        NOTE — progress labels are inconsistent in the HTML:
          businessSetup.html says "Step 1 of 6" but is reached AFTER

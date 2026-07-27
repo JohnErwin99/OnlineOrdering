@@ -337,6 +337,7 @@
 
             if (!token) {
                 alert('No saved card found. Please go back to the payment step.');
+                if (window.IrisBridge) window.IrisBridge.error('No saved card found. Please go back to the payment step.');
                 return;
             }
 
@@ -381,6 +382,8 @@
                 setCookie('iristel_payment_amount', newTotal.toString());
                 setCookie('iristel_payment_reference_balance', reference);
 
+                if (window.IrisBridge) window.IrisBridge.paymentSuccess(reference, amount.toFixed(2));
+
                 // Update UI
                 btn.textContent = 'Charged successfully';
                 btn.style.background = 'var(--success-green)';
@@ -407,6 +410,7 @@
                 btn.textContent = `Charge $${amount.toFixed(2)} to card on file`;
                 btn.style.background = '';
                 alert('Payment failed: ' + err.message);
+                if (window.IrisBridge) window.IrisBridge.paymentFailed(err.message);
             }
         }
 
@@ -669,12 +673,14 @@
         async function submitOrder() {
             if (!document.getElementById('agreeTerms').checked) {
                 alert('Please agree to the Terms of Service before submitting.');
+                if (window.IrisBridge) window.IrisBridge.error('Please agree to the Terms of Service before submitting.', 'agreeTerms');
                 return;
             }
 
             // Verify card was saved
             if (!getCookie('iristel_payment_token')) {
                 alert('No payment card on file. Please go back and save a card first.');
+                if (window.IrisBridge) window.IrisBridge.error('No payment card on file. Please go back and save a card first.');
                 return;
             }
 
@@ -712,6 +718,7 @@
                 // Check remaining balance
                 if (window._remainingBalance > 0) {
                     alert('Please pay the remaining balance of $' + window._remainingBalance.toFixed(2) + ' before submitting.');
+                    if (window.IrisBridge) window.IrisBridge.error('Remaining balance of $' + window._remainingBalance.toFixed(2) + ' must be paid before submitting.');
                     resetSubmitButton();
                     return;
                 }
@@ -748,12 +755,15 @@
                     }
                 }
 
+                if (window.IrisBridge) window.IrisBridge.orderComplete(jobId);
+
                 // Redirect to provisioning status page
                 window.location.href = 'provisioningStatus.html';
 
             } catch (err) {
                 console.error('Order submission failed:', err);
                 alert('Order submission failed:\n\n' + err.message);
+                if (window.IrisBridge) window.IrisBridge.error('Order submission failed: ' + err.message);
                 resetSubmitButton();
             }
         }

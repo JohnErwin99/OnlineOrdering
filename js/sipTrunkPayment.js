@@ -163,6 +163,8 @@ async function processPayment() {
         setCookie('iristel_payment_card_last4', cardNumber.slice(-4));
         if (promoApplied) setCookie('iristel_promo_code', 'TEST');
 
+        if (window.IrisBridge) window.IrisBridge.cardSaved(cardNumber.slice(-4));
+
         document.getElementById('loadingOverlay').classList.remove('active');
         showMessage('success', 'Card saved! Redirecting...');
 
