@@ -29,16 +29,23 @@
        chain in the JS (not the on-page progress labels, which are
        inconsistent — see note at the bottom of this file). */
     var STEPS = {
-      "siptrunkselection.html": { step: 1, name: "plan_selection",   label: "Choosing your trunk plan" },
-      "siptrunkpayment.html":   { step: 2, name: "payment",          label: "Payment" },
-      "businesssetup.html":     { step: 3, name: "business_setup",   label: "Business details" },
-      "numbersource.html":      { step: 4, name: "number_source",    label: "New or ported numbers" },
-      "numberselection.html":   { step: 5, name: "number_selection", label: "Picking your numbers" },
-      "siptrunkloa.html":       { step: 5, name: "loa",              label: "Letter of Authorization" },
-      "userassignment.html":    { step: 6, name: "user_assignment",  label: "Assigning users" },
-      "sipreview.html":         { step: 7, name: "review",           label: "Review & confirm" }
+      "signup.html":            { step: 1, name: "signup",           label: "Creating your account" },
+      "siptrunkselection.html": { step: 2, name: "plan_selection",   label: "Choosing your trunk plan" },
+      "siptrunkpayment.html":   { step: 3, name: "payment",          label: "Saving your card" },
+      "businesssetup.html":     { step: 4, name: "business_setup",   label: "Business details" },
+      "numbersource.html":      { step: 5, name: "number_source",    label: "New or ported numbers" },
+      // Step 6 forks: porting goes LOA -> number selection, new numbers
+      // go straight to number selection. Both share a step number so the
+      // progress bar reads the same either way.
+      "siptrunkloa.html":       { step: 6, name: "loa",              label: "Letter of Authorization" },
+      "numberselection.html":   { step: 6, name: "number_selection", label: "Picking your numbers" },
+      "userassignment.html":    { step: 7, name: "user_assignment",  label: "Assigning users" },
+      "sipreview.html":         { step: 8, name: "review",           label: "Review & confirm" },
+      // Post-submission. All 8 customer steps are done by the time this
+      // page loads — it polls UbossRobot and has no Next button.
+      "provisioningstatus.html":{ step: 8, name: "provisioning",     label: "Setting up your trunk" }
     };
-    var TOTAL_STEPS = 7;
+    var TOTAL_STEPS = 8;
   
     function post(payload) {
       payload.source = "onlineordering";
