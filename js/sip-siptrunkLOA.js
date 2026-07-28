@@ -146,7 +146,7 @@
 
             // Save data
             setCookie('sip_portNumbers', JSON.stringify(numbers));
-            setCookie('sip_isPoriting', 'true');
+            setCookie('sip_isPorting', 'true');
 
             window.location.href = 'numberSelection.html';
         }

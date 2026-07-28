@@ -408,7 +408,7 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
-            isPorting = getCookie('sip_isPorting') === 'true' || getCookie('sip_numberSource') === 'port';
+            isPorting = isPortingOrder();
 
             if (isPorting) {
                 document.getElementById('tempNotice').style.display = 'block';

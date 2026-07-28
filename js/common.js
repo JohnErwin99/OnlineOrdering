@@ -43,6 +43,19 @@ function getAccountIdFromCookie() {
 }
 
 // ============================================
+// PORTING
+// One definition shared by every SIP trunk page — the number source page, the
+// number selection page and the review/provisioning step must always agree.
+// ============================================
+function isPortingOrder() {
+    return getCookie('sip_isPorting') === 'true'
+        || getCookie('sip_numberSource') === 'port'
+        // Transitional: the LOA page used to write this misspelling. Safe to drop
+        // once no session started before the fix can still be in flight.
+        || getCookie('sip_isPoriting') === 'true';
+}
+
+// ============================================
 // UI: MESSAGE BOX
 // ============================================
 function showMessage(type, message) {

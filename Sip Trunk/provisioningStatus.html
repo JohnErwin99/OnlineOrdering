@@ -246,37 +246,6 @@
 
         .email-notice strong { color: var(--tufts-blue); }
 
-        /* Trunk password */
-        .password-box {
-            background: var(--light-gray);
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
-            text-align: left;
-        }
-
-        .password-label {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-gray);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-        }
-
-        .password-value {
-            font-size: 18px;
-            font-family: 'Courier New', monospace;
-            color: var(--rich-black);
-            word-break: break-all;
-        }
-
-        .password-hint {
-            font-size: 12px;
-            color: var(--text-gray);
-            margin-top: 8px;
-        }
-
         /* Buttons */
         .btn-primary {
             background: var(--tufts-blue);
@@ -427,13 +396,6 @@
                 <div class="error-box-message" id="errorMessage"></div>
             </div>
 
-            <!-- Trunk password (shown on completion) -->
-            <div class="password-box" id="passwordBox" style="display:none;">
-                <div class="password-label">SIP Authentication Password</div>
-                <div class="password-value" id="passwordValue"></div>
-                <div class="password-hint">Save this password — use it to configure your PBX/SBC registration.</div>
-            </div>
-
             <!-- Email notice (shown on completion) -->
             <div class="email-notice" id="emailNotice" style="display:none;">
                 <p><strong>Check your email!</strong> Your trunk credentials and configuration details have been sent to your notification email. Look for an email from Iristel with your SIP registration details.</p>
@@ -455,45 +417,97 @@
         // ============================================
         const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
         const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
-        const TEST_MODE = true;
 
-        const UBOSS_STATUS = { QUEUED: 0, RUNNING: 1, COMPLETED: 2, FAILED: 3 };
+        // Status is returned as a STRING by the API, e.g. "Completed" / "PartiallyCompleted"
+        const UBOSS_STATUS = {
+            QUEUED: 'Queued',
+            RUNNING: 'Running',
+            COMPLETED: 'Completed',
+            PARTIAL: 'PartiallyCompleted',
+            FAILED: 'Failed'
+        };
 
         const STATUS_LABELS = {
             [UBOSS_STATUS.QUEUED]: 'Queued',
             [UBOSS_STATUS.RUNNING]: 'In Progress',
             [UBOSS_STATUS.COMPLETED]: 'Completed',
+            [UBOSS_STATUS.PARTIAL]: 'Partially Completed',
             [UBOSS_STATUS.FAILED]: 'Failed'
         };
 
+        // Compare case-insensitively so casing changes on the API side don't break the flow
+        function statusIs(data, expected) {
+            return String(data && data.status || '').toLowerCase() === expected.toLowerCase();
+        }
+
         let jobId = null;
         let pollTimer = null;
-        let pollCount = 0;
+        let emailSending = false;
+
+        // ============================================
+        // Welcome letter email — POST /uboss-robot/email/{id}
+        // Fired once, after provisioning reports Completed
+        // ============================================
+        async function sendWelcomeEmail() {
+            // Don't re-send on refresh/reload — the job's email already went out
+            if (getCookie('sip_welcomeEmailSent') === jobId) {
+                console.log('[Email] Already sent for job', jobId, '— skipping');
+                return { id: jobId, alreadySent: true };
+            }
+            if (emailSending) return { id: jobId, pending: true };
+            emailSending = true;
+
+            console.log('[Email] POST', `${UBOSS_API_URL}/email/${jobId}`);
+
+            try {
+                const response = await fetch(`${UBOSS_API_URL}/email/${encodeURIComponent(jobId)}`, {
+                    method: 'POST',
+                    headers: { 'x-api-key': UBOSS_API_KEY }
+                });
+                const data = await response.json().catch(() => null);
+                console.log('Email response:', data);
+
+                if (!response.ok) {
+                    throw new Error(data?.message || `HTTP ${response.status}`);
+                }
+
+                setCookie('sip_welcomeEmailSent', jobId);
+                return data;
+            } finally {
+                emailSending = false;
+            }
+        }
+
+        async function resendWelcomeEmail(btn) {
+            deleteCookie('sip_welcomeEmailSent');
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            try {
+                await sendWelcomeEmail();
+                btn.textContent = 'Email sent';
+                document.getElementById('errorBox').style.display = 'none';
+                document.getElementById('emailNotice').style.display = 'block';
+                setStepState(document.getElementById('stepEmailIcon'), 'done');
+            } catch (err) {
+                console.error('Resend failed:', err);
+                document.getElementById('errorMessage').textContent = 'Could not send the confirmation email — ' + err.message;
+                btn.disabled = false;
+                btn.textContent = original;
+            }
+        }
 
         async function checkStatus() {
             if (!jobId) return;
 
             try {
-                let data;
+                const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning/${encodeURIComponent(jobId)}/status`, {
+                    headers: { 'x-api-key': UBOSS_API_KEY }
+                });
+                const data = await response.json();
 
-                if (TEST_MODE) {
-                    // Simulate: queued -> running -> completed after a few polls
-                    await new Promise(r => setTimeout(r, 600));
-                    pollCount++;
-                    if (pollCount <= 2) {
-                        data = { id: jobId, status: UBOSS_STATUS.RUNNING, createdAt: new Date().toISOString() };
-                    } else {
-                        data = { id: jobId, status: UBOSS_STATUS.COMPLETED, createdAt: new Date().toISOString(), completedAt: new Date().toISOString() };
-                    }
-                } else {
-                    const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning?id=${jobId}`, {
-                        headers: { 'x-api-key': UBOSS_API_KEY }
-                    });
-                    data = await response.json();
-
-                    if (!response.ok) {
-                        throw new Error(data?.message || `Status check failed (HTTP ${response.status})`);
-                    }
+                if (!response.ok) {
+                    throw new Error(data?.message || `Status check failed (HTTP ${response.status})`);
                 }
 
                 updateUI(data);
@@ -523,6 +537,10 @@
         function populateDetailsFromResponse(data) {
             if (data.createdAt) {
                 document.getElementById('detailStarted').textContent = formatTime(new Date(data.createdAt));
+            }
+            // The API reports which robot step it is on, e.g. "Step 01: Add phone number to number pool"
+            if (data.currentStep && !statusIs(data, UBOSS_STATUS.COMPLETED)) {
+                document.getElementById('stepProvisionDetail').textContent = data.currentStep;
             }
             if (data.completedAt) {
                 document.getElementById('detailCompletedRow').style.display = 'flex';
@@ -554,17 +572,13 @@
             setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Enterprise, users, and trunk group created');
             setStepState(stepEmailIcon, 'done');
 
-            const savedPassword = getCookie('sip_trunkPassword');
-            if (savedPassword) {
-                document.getElementById('passwordValue').textContent = savedPassword;
-                document.getElementById('passwordBox').style.display = 'block';
-            }
+            // SIP credentials (incl. the authentication password) are delivered by the
+            // welcome letter — we deliberately don't surface them in the browser.
             document.getElementById('emailNotice').style.display = 'block';
             document.getElementById('btnRow').innerHTML = '<button class="btn-primary" onclick="window.location.href=\'../signUp.html\'">Done</button>';
         }
 
         function updateUI(data) {
-            const status = data.status;
             const icon = document.getElementById('statusIcon');
             const title = document.getElementById('statusTitle');
             const subtitle = document.getElementById('statusSubtitle');
@@ -575,7 +589,7 @@
 
             populateDetailsFromResponse(data);
 
-            if (status === UBOSS_STATUS.QUEUED) {
+            if (statusIs(data, UBOSS_STATUS.QUEUED)) {
                 icon.className = 'status-icon queued';
                 icon.innerHTML = '<svg class="spinner" viewBox="0 0 20 20" fill="currentColor">' + ICON_CLOCK.match(/<path[^/]*\/>/)[0] + '</svg>';
                 title.textContent = 'Queued for Provisioning';
@@ -585,7 +599,7 @@
                 stopPolling();
                 startPolling(5000);
 
-            } else if (status === UBOSS_STATUS.RUNNING) {
+            } else if (statusIs(data, UBOSS_STATUS.RUNNING)) {
                 icon.className = 'status-icon running';
                 icon.innerHTML = ICON_SPIN;
                 title.textContent = 'Provisioning Your Trunk...';
@@ -593,35 +607,62 @@
                 setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring trunk on platform...', 'Setting up enterprise, users, and trunk group');
                 setStepState(stepEmailIcon, 'waiting');
 
-            } else if (status === UBOSS_STATUS.COMPLETED) {
+            } else if (statusIs(data, UBOSS_STATUS.COMPLETED)) {
                 stopPolling();
 
-                // Stage 1: show finalizing state — steps 3 & 4 not yet confirmed
+                // Trunk is configured — now send the welcome letter
                 icon.className = 'status-icon running';
                 icon.innerHTML = ICON_SPIN;
-                title.textContent = 'Finalizing...';
-                subtitle.textContent = 'Your SIP trunk configuration is almost complete.';
-                setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Finalizing trunk configuration...', 'Setting up enterprise, users, and trunk group');
-                setStepState(stepEmailIcon, 'waiting');
+                title.textContent = 'Sending confirmation...';
+                subtitle.textContent = 'Your trunk is ready. Sending credentials to your email.';
+                setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Enterprise, users, and trunk group created');
+                setStepState(stepEmailIcon, 'active');
 
                 const completedData = data;
+                setCookie('sip_provisionResult', JSON.stringify(completedData));
 
-                // Stage 2 (+5s): trunk configured
-                setTimeout(() => {
-                    setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Enterprise, users, and trunk group created');
-                    title.textContent = 'Sending confirmation...';
-                    subtitle.textContent = 'Your trunk is ready. Sending credentials to your email.';
-                    setStepState(stepEmailIcon, 'active');
-
-                    // Stage 3 (+10s): email sent + full success
-                    setTimeout(() => {
+                sendWelcomeEmail()
+                    .then(() => {
                         setStepState(stepEmailIcon, 'done');
                         showFinalCompleted(completedData);
-                        setCookie('sip_provisionResult', JSON.stringify(completedData));
-                    }, 5000);
-                }, 5000);
+                    })
+                    .catch(err => {
+                        // The trunk is provisioned, but the welcome letter carries the SIP
+                        // credentials — without it the customer cannot configure anything.
+                        console.error('Welcome email failed:', err);
+                        setStepState(stepEmailIcon, 'error');
+                        showFinalCompleted(completedData);
+                        document.getElementById('emailNotice').style.display = 'none';
+                        document.getElementById('statusSubtitle').textContent =
+                            'Your trunk is configured, but we could not deliver your credentials.';
+                        document.getElementById('errorMessage').textContent =
+                            'We could not send the welcome letter with your SIP credentials — ' + err.message +
+                            '. Use Resend Email below, or contact support and we will send it manually.';
+                        document.getElementById('errorBox').style.display = 'block';
+                        document.getElementById('btnRow').innerHTML =
+                            '<button class="btn-secondary" onclick="resendWelcomeEmail(this)">Resend Email</button>' +
+                            '<a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>';
+                    });
 
-            } else if (status === UBOSS_STATUS.FAILED) {
+            } else if (statusIs(data, UBOSS_STATUS.PARTIAL)) {
+                // Trunk itself is up, but a later step failed — most often the welcome
+                // letter ("Failure sending mail."), which we can retry from here.
+                stopPolling();
+                setCookie('sip_provisionResult', JSON.stringify(data));
+                showFinalCompleted(data);
+
+                setStepState(stepEmailIcon, 'error');
+                document.getElementById('emailNotice').style.display = 'none';
+                document.getElementById('statusSubtitle').textContent =
+                    'Your trunk is configured, but one follow-up step did not complete.';
+                document.getElementById('errorMessage').textContent =
+                    data.errorMessage || 'A follow-up step did not complete.';
+                document.getElementById('errorBox').style.display = 'block';
+                document.getElementById('btnRow').innerHTML =
+                    '<button class="btn-secondary" onclick="resendWelcomeEmail(this)">Resend Email</button>' +
+                    '<button class="btn-primary" onclick="window.location.href=\'../signUp.html\'">Done</button>';
+
+            } else if (statusIs(data, UBOSS_STATUS.FAILED)) {
                 stopPolling();
                 icon.className = 'status-icon failed';
                 icon.innerHTML = ICON_X;
@@ -706,8 +747,11 @@
             if (savedResult) {
                 try {
                     const result = JSON.parse(savedResult);
-                    if (result.status === UBOSS_STATUS.COMPLETED) {
+                    if (statusIs(result, UBOSS_STATUS.COMPLETED)) {
                         showFinalCompleted(result);
+                        // Covers the case where the review page polled to Completed and
+                        // redirected here before the welcome letter was ever requested
+                        sendWelcomeEmail().catch(err => console.error('Welcome email failed:', err));
                         return;
                     }
                 } catch (e) {}

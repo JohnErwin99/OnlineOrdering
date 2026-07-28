@@ -11,6 +11,10 @@
             'premium': 'Premium'
         };
 
+        // Ported orders are flagged to the provisioning team by suffixing the business name
+        // (isPortingOrder() lives in common.js so every page agrees on what a port is)
+        const PORTING_SUFFIX = ' - PI';
+
         function setText(id, value) {
             const el = document.getElementById(id);
             if (value && value.trim()) {
@@ -53,8 +57,7 @@
             setText('revTechPhone', getCookie('sip_techPhone'));
 
             // Port Information
-            const isPorting = getCookie('sip_isPorting') === 'true' || getCookie('sip_isPoriting') === 'true' || getCookie('sip_numberSource') === 'port';
-            if (isPorting) {
+            if (isPortingOrder()) {
                 document.getElementById('portCard').style.display = 'block';
                 document.getElementById('numbersTitle').textContent = 'Temporary Numbers';
 
@@ -157,15 +160,19 @@
             return '+' + digits;
         }
 
+        // MIND stores Canadian postal codes as "A1A 1A1" — send them back in that shape
+        function formatPostalCode(postalCode) {
+            const raw = (postalCode || '').toUpperCase().replace(/\s/g, '');
+            if (/^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(raw)) {
+                return raw.slice(0, 3) + ' ' + raw.slice(3);
+            }
+            return postalCode || '';
+        }
+
         function sanitizeEnterpriseId(name) {
             // Remove special chars, replace spaces with underscores, lowercase
             return name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
         }
-
-        // ============================================
-        // TEST MODE — set to false to call real APIs
-        // ============================================
-        const TEST_MODE = true;
 
         // ============================================
         // MIND / Iristel-X API Configuration
@@ -186,6 +193,7 @@
         // ============================================
         const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
         const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
+        const UBOSS_RESELLER_NAME = 'Iristel';
         const UBOSS_POLL_INTERVAL = 3000; // ms between status checks
         const UBOSS_MAX_POLLS = 60;       // max polls (~3 min timeout)
 
@@ -357,23 +365,18 @@
                 console.log('[CHARGE BALANCE] POST', `${MIND_API_URL.replace('iristelx.com', 'iristelx.com')}/bot/${accountCode}/payment`);
                 console.log('Request:', JSON.stringify(requestBody, null, 2));
 
-                if (TEST_MODE) {
-                    await new Promise(r => setTimeout(r, 1000));
-                    console.log('[TEST] Mock balance charge success');
-                } else {
-                    const response = await fetch(`https://api.iristelx.com/bot/${accountCode}/payment`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-api-key': 'b1582d78d369685683e090ad37489937'
-                        },
-                        body: JSON.stringify(requestBody)
-                    });
+                const response = await fetch(`https://api.iristelx.com/bot/${accountCode}/payment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': 'b1582d78d369685683e090ad37489937'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
 
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.message || `Payment failed (HTTP ${response.status})`);
-                    }
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.message || `Payment failed (HTTP ${response.status})`);
                 }
 
                 // Update the paid amount cookie
@@ -473,13 +476,6 @@
             console.log('[STEP 1] MIND Create Account — POST', MIND_API_URL + '/accounts');
             console.log('Request Body:', JSON.stringify(requestBody, null, 2));
 
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 800));
-                const mockId = 'TEST-' + Date.now();
-                console.log('[TEST] Mock account created:', mockId);
-                return mockId;
-            }
-
             const response = await fetch(`${MIND_API_URL}/accounts`, {
                 method: 'POST',
                 headers: {
@@ -513,21 +509,18 @@
                     city: contactData.city,
                     province: contactData.province,
                     country: contactData.country,
-                    postalCode: contactData.postalCode,
+                    postalCode: formatPostalCode(contactData.postalCode),
                     emailAddress: contactData.emailAddress,
-                    phone: contactData.phone
+                    // MIND stores phone as an object — a bare string makes the account
+                    // update leg of this call fail with "Update Account failed."
+                    phone: {
+                        mobile: contactData.phone
+                    }
                 }
             };
 
             console.log('[STEP 2] MIND Assign Service — POST', `${MIND_API_URL}/accounts/${accountId}/services`);
             console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 800));
-                const mockResult = { serviceId: 'SVC-' + Date.now(), planCode: SIP_TRUNK_PLAN_CODE, status: 'active' };
-                console.log('[TEST] Mock service assigned:', mockResult);
-                return mockResult;
-            }
 
             const response = await fetch(`${MIND_API_URL}/accounts/${accountId}/services`, {
                 method: 'POST',
@@ -551,30 +544,32 @@
         // ============================================
         // STEP 3: Start UbossRobot trunk provisioning
         // ============================================
+        // Porting orders go to UbossRobot as "<Business Name> - PI"
+        function getProvisioningBusinessName() {
+            const name = (getCookie('sip_businessName') || '').trim();
+            if (!isPortingOrder() || !name || name.endsWith(PORTING_SUFFIX)) {
+                return name;
+            }
+            return name + PORTING_SUFFIX;
+        }
+
         async function startUbossProvisioning(contactData, primaryNumber, accountId, channelCount) {
+            // Field order/names must match the UbossRobot trunk-provisioning contract
             const requestBody = {
-                phoneNumber: primaryNumber,
-                resellerName: 'Iristel',
-                businessName: getCookie('sip_businessName') || '',
+                phoneNumber: formatUbossPhone(primaryNumber),
+                resellerName: UBOSS_RESELLER_NAME,
                 address: contactData.address1,
                 city: contactData.city,
                 postcode: contactData.postalCode,
                 notificationEmail: getCookie('sip_techEmail') || contactData.emailAddress,
                 invoiceEmail: contactData.emailAddress,
                 accountRef: accountId,
-                channelCount: channelCount,
-                sipAuthenticationPassword: generateSipPassword()
+                businessName: getProvisioningBusinessName(),
+                channelCount: channelCount
             };
 
             console.log('[STEP 3] UbossRobot Start Provisioning — POST', `${UBOSS_API_URL}/trunk-provisioning`);
             console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 800));
-                const mockResult = { id: 'UBOSS-JOB-' + Date.now(), status: 'Running', message: 'Trunk provisioning started' };
-                console.log('[TEST] Mock UbossRobot job started:', mockResult);
-                return mockResult;
-            }
 
             const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning`, {
                 method: 'POST',
@@ -597,31 +592,38 @@
             return data;
         }
 
-        function generateSipPassword() {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-            let password = '';
-            for (let i = 0; i < 16; i++) {
-                password += chars.charAt(Math.floor(Math.random() * chars.length));
+        // UbossRobot expects the number as +1-XXXXXXXXXX (country code, dash, subscriber digits)
+        function formatUbossPhone(number) {
+            const e164 = formatToE164(number || '');
+            const digits = e164.replace(/\D/g, '');
+            if (digits.length === 11) {
+                return `+${digits.charAt(0)}-${digits.slice(1)}`;
             }
-            return password;
+            return e164;
         }
 
         // ============================================
         // STEP 3b: Poll UbossRobot provisioning status
         // ============================================
-        // Status codes from UbossRobot API
-        // 0 = Queued, 1 = Running, 2 = Completed, 3 = Failed
-        const UBOSS_STATUS = { QUEUED: 0, RUNNING: 1, COMPLETED: 2, FAILED: 3 };
+        // Status is returned as a STRING by the UbossRobot API, e.g.
+        // "Queued" / "Running" / "Completed" / "PartiallyCompleted" / "Failed"
+        const UBOSS_STATUS = {
+            QUEUED: 'Queued',
+            RUNNING: 'Running',
+            COMPLETED: 'Completed',
+            PARTIAL: 'PartiallyCompleted',
+            FAILED: 'Failed'
+        };
+
+        // Compare case-insensitively so casing changes on the API side don't break the flow
+        function statusIs(data, expected) {
+            return String(data && data.status || '').toLowerCase() === expected.toLowerCase();
+        }
 
         async function checkProvisioningStatus(jobId) {
             console.log('[Status Check] UbossRobot job:', jobId);
 
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 800));
-                return { id: jobId, status: UBOSS_STATUS.COMPLETED, completedAt: new Date().toISOString() };
-            }
-
-            const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning?id=${jobId}`, {
+            const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning/${encodeURIComponent(jobId)}/status`, {
                 headers: { 'x-api-key': UBOSS_API_KEY }
             });
             const data = await response.json().catch(() => null);
@@ -634,23 +636,23 @@
             return data;
         }
 
+        // Note: the welcome letter (POST /uboss-robot/email/{id}) is fired from
+        // provisioningStatus.html once the job reports Completed. It carries the SIP
+        // credentials, so it is the customer's only route to the trunk password.
+
         async function pollProvisioningStatus(jobId) {
             console.log('[STEP 3b] Polling UbossRobot job status:', jobId);
 
-            if (TEST_MODE) {
-                await new Promise(r => setTimeout(r, 1500));
-                return { id: jobId, status: UBOSS_STATUS.COMPLETED, completedAt: new Date().toISOString() };
-            }
-
             for (let i = 0; i < UBOSS_MAX_POLLS; i++) {
                 const data = await checkProvisioningStatus(jobId);
-                const status = data.status;
 
-                if (status === UBOSS_STATUS.COMPLETED) {
+                // PartiallyCompleted means the trunk is up but a later step failed —
+                // hand off to the status page, which surfaces the detail and a retry.
+                if (statusIs(data, UBOSS_STATUS.COMPLETED) || statusIs(data, UBOSS_STATUS.PARTIAL)) {
                     return data;
                 }
 
-                if (status === UBOSS_STATUS.FAILED) {
+                if (statusIs(data, UBOSS_STATUS.FAILED)) {
                     throw new Error(data.errorMessage || 'Trunk provisioning failed');
                 }
 
@@ -748,11 +750,10 @@
                 updateStatusMessage('Provisioning trunk...');
                 const finalResult = await pollProvisioningStatus(jobId);
 
-                if (finalResult && finalResult.status === UBOSS_STATUS.COMPLETED) {
+                // The status page owns the welcome email, the SIP password lookup and
+                // the PartiallyCompleted case — it only needs the result to render from.
+                if (finalResult && statusIs(finalResult, UBOSS_STATUS.COMPLETED)) {
                     setCookie('sip_provisionResult', JSON.stringify(finalResult));
-                    if (finalResult.trunkGroupPassword) {
-                        setCookie('sip_trunkPassword', finalResult.trunkGroupPassword);
-                    }
                 }
 
                 if (window.IrisBridge) window.IrisBridge.orderComplete(jobId);
