@@ -56,6 +56,32 @@ function isPortingOrder() {
 }
 
 // ============================================
+// ORDER STEP RESULTS
+// The provisioning status page renders the pre-provisioning steps from these,
+// so every step must record what actually happened — never assume success.
+// state: 'done' | 'error'
+// ============================================
+const ORDER_STEP_KEYS = ['account', 'service'];
+
+function setOrderStepResult(step, state, detail) {
+    setCookie('sip_step_' + step, JSON.stringify({ state: state, detail: detail || '' }));
+}
+
+function getOrderStepResult(step) {
+    const raw = getCookie('sip_step_' + step);
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearOrderStepResults() {
+    ORDER_STEP_KEYS.forEach(step => deleteCookie('sip_step_' + step));
+}
+
+// ============================================
 // UI: MESSAGE BOX
 // ============================================
 function showMessage(type, message) {

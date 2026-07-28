@@ -324,22 +324,23 @@
 
             <!-- Progress Steps -->
             <div class="provision-steps" id="provisionSteps">
+                <!-- Steps 1 and 2 start neutral and are set from the recorded results -->
                 <div class="provision-step" id="stepAccount">
-                    <div class="step-icon done" id="stepAccountIcon">
-                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    <div class="step-icon waiting" id="stepAccountIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
                     </div>
                     <div class="step-content">
-                        <div class="step-label">Account created</div>
-                        <div class="step-detail">Business account set up in billing system</div>
+                        <div class="step-label" id="stepAccountLabel">Account created</div>
+                        <div class="step-detail" id="stepAccountDetail">Business account set up in billing system</div>
                     </div>
                 </div>
                 <div class="provision-step" id="stepService">
-                    <div class="step-icon done" id="stepServiceIcon">
-                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    <div class="step-icon waiting" id="stepServiceIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
                     </div>
                     <div class="step-content">
-                        <div class="step-label">SIP Trunk service assigned</div>
-                        <div class="step-detail">Trunk plan activated on your account</div>
+                        <div class="step-label" id="stepServiceLabel">SIP Trunk service assigned</div>
+                        <div class="step-detail" id="stepServiceDetail">Trunk plan activated on your account</div>
                     </div>
                 </div>
                 <div class="provision-step" id="stepProvision">
@@ -495,6 +496,37 @@
                 btn.disabled = false;
                 btn.textContent = original;
             }
+        }
+
+        // ============================================
+        // Steps 1 & 2 — rendered from what submitOrder actually recorded.
+        // No result recorded means we cannot claim the step succeeded.
+        // ============================================
+        function renderRecordedSteps() {
+            const steps = [
+                { key: 'account', icon: 'stepAccountIcon', label: 'stepAccountLabel', detail: 'stepAccountDetail',
+                  failLabel: 'Account setup failed' },
+                { key: 'service', icon: 'stepServiceIcon', label: 'stepServiceLabel', detail: 'stepServiceDetail',
+                  failLabel: 'Service assignment failed' }
+            ];
+
+            steps.forEach(step => {
+                const result = getOrderStepResult(step.key);
+                const iconEl = document.getElementById(step.icon);
+                const labelEl = document.getElementById(step.label);
+                const detailEl = document.getElementById(step.detail);
+
+                if (!result) {
+                    setStepState(iconEl, 'waiting');
+                    return;
+                }
+
+                if (result.state === 'error') {
+                    setStepState(iconEl, 'error', labelEl, detailEl, step.failLabel, result.detail);
+                } else {
+                    setStepState(iconEl, 'done', labelEl, detailEl, null, result.detail);
+                }
+            });
         }
 
         async function checkStatus() {
@@ -721,6 +753,9 @@
                 document.getElementById('btnRow').innerHTML = '<button class="btn-primary" onclick="window.location.href=\'sipReview.html\'">Go to Review</button>';
                 return;
             }
+
+            // Steps 1 & 2 reflect the recorded outcome of the MIND calls
+            renderRecordedSteps();
 
             // Populate details
             document.getElementById('detailJobId').textContent = jobId;

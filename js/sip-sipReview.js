@@ -695,27 +695,47 @@
             const savedPrimary = getCookie('sip_primaryNumber') || getCookie('sip_billingPhone') || '';
             const primaryNumber = savedPrimary ? formatToE164(savedPrimary) : '';
 
+            // The status page renders steps 1 and 2 from these — never assume success
+            clearOrderStepResults();
+
             try {
                 // ---- STEP 1: Create MIND Account ----
                 let accountId = getCookie('iristel_account_id');
 
-                if (!accountId) {
-                    updateStatusMessage('Creating account...');
-                    accountId = await createMindAccount(contactData);
-                    setCookie('iristel_account_id', accountId);
-                    console.log('MIND Account created:', accountId);
-                } else {
-                    console.log('Using existing MIND account:', accountId);
+                try {
+                    if (!accountId) {
+                        updateStatusMessage('Creating account...');
+                        accountId = await createMindAccount(contactData);
+                        setCookie('iristel_account_id', accountId);
+                        console.log('MIND Account created:', accountId);
+                        setOrderStepResult('account', 'done', 'Business account ' + accountId + ' created');
+                    } else {
+                        console.log('Using existing MIND account:', accountId);
+                        setOrderStepResult('account', 'done', 'Using existing account ' + accountId);
+                    }
+                } catch (err) {
+                    setOrderStepResult('account', 'error', err.message);
+                    throw err;
                 }
 
                 // ---- STEP 2: Assign SIP Trunk Service ----
                 updateStatusMessage('Assigning SIP Trunk service...');
-                const serviceResult = await assignSipTrunkService(accountId, contactData);
-                console.log('Service assigned:', serviceResult);
+                let serviceResult;
+                try {
+                    serviceResult = await assignSipTrunkService(accountId, contactData);
+                    console.log('Service assigned:', serviceResult);
+                } catch (err) {
+                    setOrderStepResult('service', 'error', err.message);
+                    throw err;
+                }
 
                 if (serviceResult && (serviceResult.serviceId || serviceResult.id)) {
                     setCookie('sip_serviceId', serviceResult.serviceId || serviceResult.id);
                 }
+                setOrderStepResult('service', 'done',
+                    serviceResult && (serviceResult.serviceId || serviceResult.id)
+                        ? SIP_TRUNK_PLAN_CODE + ' activated (service ' + (serviceResult.serviceId || serviceResult.id) + ')'
+                        : SIP_TRUNK_PLAN_CODE + ' activated on your account');
 
                 // Check remaining balance
                 if (window._remainingBalance > 0) {
