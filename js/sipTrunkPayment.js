@@ -161,7 +161,6 @@ async function processPayment() {
         setCookie('iristel_payment_token', token);
         setCookie('iristel_payment_card_type', detectCardType(cardNumber));
         setCookie('iristel_payment_card_last4', cardNumber.slice(-4));
-        if (promoApplied) setCookie('iristel_promo_code', 'TEST');
 
         if (window.IrisBridge) window.IrisBridge.cardSaved(cardNumber.slice(-4));
 
@@ -183,21 +182,21 @@ async function processPayment() {
 
 // ============================================
 // PROMO CODE
+// The code is stored the moment it is applied — the Review page reads the same
+// key to zero out the balance it charges, so the two steps can never disagree.
 // ============================================
-let promoApplied = false;
-
 function applyPromo() {
     const code = (document.getElementById('promoCode').value || '').trim().toUpperCase();
     const msg = document.getElementById('promoMessage');
 
     if (code === 'TEST') {
-        promoApplied = true;
+        setCookie('iristel_promo_code', 'TEST');
         msg.textContent = 'Promo applied — $0.00 charge';
         msg.style.color = '#10B981';
         msg.style.display = 'block';
         document.getElementById('billTotal').textContent = '$0.00';
     } else {
-        promoApplied = false;
+        deleteCookie('iristel_promo_code');
         msg.style.display = code.length > 0 ? 'block' : 'none';
         msg.textContent = code.length > 0 ? 'Invalid promo code' : '';
         msg.style.color = '#EF4444';
@@ -220,6 +219,13 @@ function initializePage() {
     document.getElementById('billMonthly').textContent = `$${monthly.toFixed(2)}`;
     document.getElementById('billTax').textContent = `$${tax.toFixed(2)}`;
     document.getElementById('billTotal').textContent = `$${total.toFixed(2)}`;
+
+    // Restore a promo applied earlier in this session
+    const savedPromo = getCookie('iristel_promo_code');
+    if (savedPromo) {
+        document.getElementById('promoCode').value = savedPromo;
+        applyPromo();
+    }
 
     // Pre-fill name from cookies if available
     const fname = getCookie('iristel_user_fname') || '';

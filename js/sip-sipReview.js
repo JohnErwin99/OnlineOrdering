@@ -203,11 +203,19 @@
         // Pricing constants
         const CHANNEL_PRICE = 25.00;  // $25/mo per channel
 
+        // Promo applied on the payment step. It waives the whole charge, so the
+        // balance this page works out has to honour it — otherwise the customer
+        // is asked to pay in full for an order they were quoted at $0.00.
+        function getAppliedPromo() {
+            return getCookie('iristel_promo_code') === 'TEST' ? 'TEST' : null;
+        }
+
         function loadPaymentStatus() {
             const ref = getCookie('iristel_payment_reference');
             const amount = parseFloat(getCookie('iristel_payment_amount') || '0');
             const token = getCookie('iristel_payment_token');
             const cardLast4 = getCookie('iristel_payment_card_last4') || '';
+            const promo = getAppliedPromo();
             const statusEl = document.getElementById('paymentStatus');
 
             if (amount > 0 && ref) {
@@ -219,7 +227,9 @@
             } else if (token) {
                 // Card saved but not yet charged
                 document.getElementById('payRefDisplay').textContent = cardLast4 ? `Card ending in ${cardLast4}` : 'Card on file';
-                document.getElementById('payAmountDisplay').textContent = 'Not yet charged';
+                document.getElementById('payAmountDisplay').textContent = promo
+                    ? `No charge — promo ${promo} applied`
+                    : 'Not yet charged';
                 statusEl.querySelector('strong').textContent = 'Card saved';
                 statusEl.style.background = '#eff6ff';
                 statusEl.style.borderColor = '#93c5fd';
@@ -286,11 +296,13 @@
             body.innerHTML = rows;
             document.getElementById('pricingTotal').textContent = '$' + totalMonthly.toFixed(2) + '/mo';
 
-            // Calculate remaining balance vs what was already paid
+            // Calculate remaining balance vs the promo and what was already paid
             const paidAmount = parseFloat(getCookie('iristel_payment_amount') || '0');
+            const promo = getAppliedPromo();
             const tax = +(totalMonthly * 0.13).toFixed(2);
             const totalWithTax = +(totalMonthly + tax).toFixed(2);
-            const remaining = +(totalWithTax - paidAmount).toFixed(2);
+            const promoDiscount = promo ? totalWithTax : 0;
+            const remaining = +(totalWithTax - promoDiscount - paidAmount).toFixed(2);
 
             const tfoot = document.getElementById('pricingTable').querySelector('tfoot');
             const totalRow = tfoot.querySelector('.pricing-total-row');
@@ -310,6 +322,14 @@
                     <td style="text-align:right;font-size:13px;color:var(--success-green);">-$${paidAmount.toFixed(2)}</td>
                 </tr>`;
 
+            if (promoDiscount > 0) {
+                footerRows += `
+                    <tr>
+                        <td colspan="3" style="text-align:right;font-size:13px;color:var(--text-gray);">Promo code (${promo})</td>
+                        <td style="text-align:right;font-size:13px;color:var(--success-green);">-$${promoDiscount.toFixed(2)}</td>
+                    </tr>`;
+            }
+
             if (remaining > 0) {
                 footerRows += `
                     <tr>
@@ -326,7 +346,7 @@
             } else {
                 footerRows += `
                     <tr>
-                        <td colspan="3" style="text-align:right;font-weight:600;color:var(--success-green);">Fully Paid</td>
+                        <td colspan="3" style="text-align:right;font-weight:600;color:var(--success-green);">${promoDiscount > 0 ? 'No Payment Due' : 'Fully Paid'}</td>
                         <td style="text-align:right;font-weight:600;color:var(--success-green);">$0.00</td>
                     </tr>`;
             }
