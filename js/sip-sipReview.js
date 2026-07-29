@@ -194,8 +194,6 @@
         const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
         const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
         const UBOSS_RESELLER_NAME = 'Iristel';
-        const UBOSS_POLL_INTERVAL = 3000; // ms between status checks
-        const UBOSS_MAX_POLLS = 60;       // max polls (~3 min timeout)
 
         // ============================================
         // Payment Status (already collected before business setup)
@@ -203,11 +201,32 @@
         // Pricing constants
         const CHANNEL_PRICE = 25.00;  // $25/mo per channel
 
-        // Promo applied on the payment step. It waives the whole charge, so the
-        // balance this page works out has to honour it — otherwise the customer
-        // is asked to pay in full for an order they were quoted at $0.00.
+        // ============================================
+        // PROMO CODE
+        // Entered on this page because this is where the card is charged. It waives
+        // the whole balance, so applying or clearing it re-prices straight away.
+        // ============================================
         function getAppliedPromo() {
             return getCookie('iristel_promo_code') === 'TEST' ? 'TEST' : null;
+        }
+
+        function applyPromo() {
+            const code = (document.getElementById('promoCode').value || '').trim().toUpperCase();
+            const msg = document.getElementById('promoMessage');
+
+            if (code === 'TEST') {
+                setCookie('iristel_promo_code', 'TEST');
+                msg.textContent = 'Promo applied — $0.00 charge';
+                msg.style.color = 'var(--success-green)';
+            } else {
+                deleteCookie('iristel_promo_code');
+                msg.textContent = code.length > 0 ? 'Invalid promo code' : '';
+                msg.style.color = '#EF4444';
+            }
+
+            // Re-price against the new promo state
+            loadPaymentStatus();
+            loadPricingBreakdown();
         }
 
         function loadPaymentStatus() {
@@ -222,8 +241,10 @@
                 // Payment has been charged
                 document.getElementById('payRefDisplay').textContent = ref;
                 document.getElementById('payAmountDisplay').textContent = `$${amount.toFixed(2)} charged`;
+                statusEl.querySelector('strong').textContent = 'Payment confirmed';
                 statusEl.style.background = '#f0fdf4';
                 statusEl.style.borderColor = '#86efac';
+                statusEl.querySelector('.check-icon').style.background = '#22c55e';
             } else if (token) {
                 // Card saved but not yet charged
                 document.getElementById('payRefDisplay').textContent = cardLast4 ? `Card ending in ${cardLast4}` : 'Card on file';
@@ -245,6 +266,14 @@
         }
 
         function loadPricingBreakdown() {
+            // Applying a promo re-runs this, so drop the footer rows a previous
+            // render appended — otherwise every keystroke stacks another set.
+            const tfoot = document.getElementById('pricingTable').querySelector('tfoot');
+            const totalRow = tfoot.querySelector('.pricing-total-row');
+            while (totalRow.nextElementSibling) {
+                totalRow.nextElementSibling.remove();
+            }
+
             const body = document.getElementById('pricingBody');
             const trunksData = getCookie('sip_trunks');
             let totalMonthly = 0;
@@ -303,9 +332,6 @@
             const totalWithTax = +(totalMonthly + tax).toFixed(2);
             const promoDiscount = promo ? totalWithTax : 0;
             const remaining = +(totalWithTax - promoDiscount - paidAmount).toFixed(2);
-
-            const tfoot = document.getElementById('pricingTable').querySelector('tfoot');
-            const totalRow = tfoot.querySelector('.pricing-total-row');
 
             // Always show tax and total with tax
             let footerRows = `
@@ -414,14 +440,6 @@
 
                 // Replace remaining balance row with "Fully Paid"
                 setTimeout(() => {
-                    // Reload pricing to reflect updated payment
-                    document.getElementById('pricingBody').innerHTML = '';
-                    const tfoot = document.getElementById('pricingTable').querySelector('tfoot');
-                    // Remove all rows after the total row
-                    const totalRow = tfoot.querySelector('.pricing-total-row');
-                    while (totalRow.nextElementSibling) {
-                        totalRow.nextElementSibling.remove();
-                    }
                     loadPricingBreakdown();
                     loadPaymentStatus();
                     window._remainingBalance = 0;
@@ -622,75 +640,20 @@
             return e164;
         }
 
-        // ============================================
-        // STEP 3b: Poll UbossRobot provisioning status
-        // ============================================
-        // Status is returned as a STRING by the UbossRobot API, e.g.
-        // "Queued" / "Running" / "Completed" / "PartiallyCompleted" / "Failed"
-        const UBOSS_STATUS = {
-            QUEUED: 'Queued',
-            RUNNING: 'Running',
-            COMPLETED: 'Completed',
-            PARTIAL: 'PartiallyCompleted',
-            FAILED: 'Failed'
-        };
-
-        // Compare case-insensitively so casing changes on the API side don't break the flow
-        function statusIs(data, expected) {
-            return String(data && data.status || '').toLowerCase() === expected.toLowerCase();
-        }
-
-        async function checkProvisioningStatus(jobId) {
-            console.log('[Status Check] UbossRobot job:', jobId);
-
-            const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning/${encodeURIComponent(jobId)}/status`, {
-                headers: { 'x-api-key': UBOSS_API_KEY }
-            });
-            const data = await response.json().catch(() => null);
-            console.log('Status response:', data);
-
-            if (!response.ok) {
-                throw new Error(data?.message || `Failed to check provisioning status (HTTP ${response.status})`);
-            }
-
-            return data;
-        }
-
-        // Note: the welcome letter (POST /uboss-robot/email/{id}) is fired from
-        // provisioningStatus.html once the job reports Completed. It carries the SIP
-        // credentials, so it is the customer's only route to the trunk password.
-
-        async function pollProvisioningStatus(jobId) {
-            console.log('[STEP 3b] Polling UbossRobot job status:', jobId);
-
-            for (let i = 0; i < UBOSS_MAX_POLLS; i++) {
-                const data = await checkProvisioningStatus(jobId);
-
-                // PartiallyCompleted means the trunk is up but a later step failed —
-                // hand off to the status page, which surfaces the detail and a retry.
-                if (statusIs(data, UBOSS_STATUS.COMPLETED) || statusIs(data, UBOSS_STATUS.PARTIAL)) {
-                    return data;
-                }
-
-                if (statusIs(data, UBOSS_STATUS.FAILED)) {
-                    throw new Error(data.errorMessage || 'Trunk provisioning failed');
-                }
-
-                // Still queued or running — wait and poll again
-                updateStatusMessage(`Provisioning trunk... (${i + 1})`);
-                await new Promise(r => setTimeout(r, UBOSS_POLL_INTERVAL));
-            }
-
-            // Timed out waiting — don't error, redirect to status page instead
-            return null;
-        }
+        // Note: this page does not poll the provisioning job. It starts the job and
+        // hands the id to provisioningStatus.html, which owns every status the API
+        // can report — including Failed and PartiallyCompleted, which it shows with
+        // the error detail and a retry — plus the welcome letter
+        // (POST /uboss-robot/email/{id}) that carries the SIP credentials.
 
         // ============================================
         // SUBMIT ORDER — Full 3-step flow
         // (Payment already collected before business setup)
         // 1. Create business account in MIND
         // 2. Assign EXLNP_EXTRUNK service to account
-        // 3. Provision trunk via UbossRobot (async + poll)
+        // 3. Start trunk provisioning via UbossRobot, then hand the job id to the
+        //    status page — it reports the real progress, so waiting here would only
+        //    hold the customer on a spinner
         // ============================================
         async function submitOrder() {
             if (!document.getElementById('agreeTerms').checked) {
@@ -783,22 +746,15 @@
                 const jobId = ubossResult.id;
                 console.log('UbossRobot job started:', jobId);
 
-                // Save job ID for status tracking
+                // Save job ID for status tracking. Drop any result left by an earlier
+                // job — the status page treats a stored result as this job's outcome.
                 setCookie('sip_provisionJobId', jobId);
-
-                // Brief poll — try a few times before redirecting to status page
-                updateStatusMessage('Provisioning trunk...');
-                const finalResult = await pollProvisioningStatus(jobId);
-
-                // The status page owns the welcome email, the SIP password lookup and
-                // the PartiallyCompleted case — it only needs the result to render from.
-                if (finalResult && statusIs(finalResult, UBOSS_STATUS.COMPLETED)) {
-                    setCookie('sip_provisionResult', JSON.stringify(finalResult));
-                }
+                deleteCookie('sip_provisionResult');
 
                 if (window.IrisBridge) window.IrisBridge.orderComplete(jobId);
 
-                // Redirect to provisioning status page
+                // Hand off to the status page, which polls this job for its real status
+                updateStatusMessage('Provisioning started — opening status...');
                 window.location.href = 'provisioningStatus.html';
 
             } catch (err) {
@@ -812,6 +768,18 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
             loadReviewData();
+
+            // Show a promo already applied — e.g. after stepping back into an edit
+            const savedPromo = getAppliedPromo();
+            if (savedPromo) {
+                document.getElementById('promoCode').value = savedPromo;
+            }
+
             loadPaymentStatus();
             loadPricingBreakdown();
+            if (savedPromo) {
+                const msg = document.getElementById('promoMessage');
+                msg.textContent = 'Promo applied — $0.00 charge';
+                msg.style.color = 'var(--success-green)';
+            }
         });

@@ -181,35 +181,9 @@ async function processPayment() {
 }
 
 // ============================================
-// PROMO CODE
-// The code is stored the moment it is applied — the Review page reads the same
-// key to zero out the balance it charges, so the two steps can never disagree.
-// ============================================
-function applyPromo() {
-    const code = (document.getElementById('promoCode').value || '').trim().toUpperCase();
-    const msg = document.getElementById('promoMessage');
-
-    if (code === 'TEST') {
-        setCookie('iristel_promo_code', 'TEST');
-        msg.textContent = 'Promo applied — $0.00 charge';
-        msg.style.color = '#10B981';
-        msg.style.display = 'block';
-        document.getElementById('billTotal').textContent = '$0.00';
-    } else {
-        deleteCookie('iristel_promo_code');
-        msg.style.display = code.length > 0 ? 'block' : 'none';
-        msg.textContent = code.length > 0 ? 'Invalid promo code' : '';
-        msg.style.color = '#EF4444';
-        // Reset to original totals
-        const monthly = parseFloat(getCookie('iristel_monthly_charge') || '25');
-        const tax = +(monthly * 0.13).toFixed(2);
-        const total = +(monthly + tax).toFixed(2);
-        document.getElementById('billTotal').textContent = `$${total.toFixed(2)}`;
-    }
-}
-
-// ============================================
 // INITIALIZE
+// Note: the promo code is entered on the Review page, where the card is actually
+// charged. The total shown here is the pre-promo estimate.
 // ============================================
 function initializePage() {
     const monthly = parseFloat(getCookie('iristel_monthly_charge') || '25');
@@ -219,13 +193,6 @@ function initializePage() {
     document.getElementById('billMonthly').textContent = `$${monthly.toFixed(2)}`;
     document.getElementById('billTax').textContent = `$${tax.toFixed(2)}`;
     document.getElementById('billTotal').textContent = `$${total.toFixed(2)}`;
-
-    // Restore a promo applied earlier in this session
-    const savedPromo = getCookie('iristel_promo_code');
-    if (savedPromo) {
-        document.getElementById('promoCode').value = savedPromo;
-        applyPromo();
-    }
 
     // Pre-fill name from cookies if available
     const fname = getCookie('iristel_user_fname') || '';

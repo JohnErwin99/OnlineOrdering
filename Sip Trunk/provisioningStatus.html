@@ -777,15 +777,17 @@
 
             document.getElementById('detailStarted').textContent = 'Checking...';
 
-            // Check if already completed — show final state instantly (no staged delay)
+            // Already completed on an earlier visit — show the final state instantly
+            // instead of replaying the staged progress. Submitting a new order clears
+            // this, so a stored result always belongs to the job id above.
             const savedResult = getCookie('sip_provisionResult');
             if (savedResult) {
                 try {
                     const result = JSON.parse(savedResult);
                     if (statusIs(result, UBOSS_STATUS.COMPLETED)) {
                         showFinalCompleted(result);
-                        // Covers the case where the review page polled to Completed and
-                        // redirected here before the welcome letter was ever requested
+                        // Guard against a reload that lands here before the welcome
+                        // letter was ever requested — sendWelcomeEmail de-dupes by job id
                         sendWelcomeEmail().catch(err => console.error('Welcome email failed:', err));
                         return;
                     }

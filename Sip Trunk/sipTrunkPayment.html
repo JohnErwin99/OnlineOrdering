@@ -227,6 +227,17 @@
         .btn-pay:hover { background-color: var(--tufts-blue-dark); }
         .btn-pay:disabled { background-color: var(--border-gray); cursor: not-allowed; }
 
+        /* Repeats the page subtitle at the point of action — the customer is about
+           to hand over card details and should not have to scroll up to be told
+           the card is only being saved, not charged. */
+        .pay-disclaimer {
+            margin-top: 14px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-gray);
+            text-align: center;
+        }
+
         /* Error/success messages */
         .message-box {
             display: none;
@@ -345,12 +356,6 @@
                         <span id="billTotal">$28.25</span>
                     </div>
 
-                    <div class="pay-row" style="margin-top:12px;">
-                        <span class="label">Promo code:</span>
-                        <input type="text" id="promoCode" placeholder="Enter code" style="width:120px;padding:6px 10px;border:1px solid #E8ECF1;border-radius:4px;font-family:'Heebo',sans-serif;font-size:14px;text-transform:uppercase;" oninput="applyPromo()">
-                    </div>
-                    <div id="promoMessage" style="font-size:12px;color:#10B981;margin-top:4px;display:none;"></div>
-
                     <div class="secure-notice">
                         <span>🔒</span>
                         <span>Your payment information is encrypted and secure.</span>
@@ -390,6 +395,7 @@
                         <span>🔒</span>
                         Save Card & Continue
                     </button>
+                    <p class="pay-disclaimer">Save your card to proceed. You will not be charged until you review and confirm your order on the final step.</p>
                 </div>
             </div>
         </div>

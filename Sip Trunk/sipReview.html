@@ -348,85 +348,6 @@
             color: var(--rich-black);
         }
 
-        /* Success Modal */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(1, 17, 30, 0.7);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal-overlay.active {
-            display: flex;
-        }
-
-        .modal {
-            background: var(--white);
-            border-radius: 16px;
-            padding: 50px;
-            max-width: 500px;
-            width: 90%;
-            text-align: center;
-            animation: modalSlideIn 0.3s ease;
-        }
-
-        @keyframes modalSlideIn {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .modal-icon {
-            width: 72px;
-            height: 72px;
-            background: rgba(16, 185, 129, 0.1);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 24px;
-        }
-
-        .modal-icon svg {
-            width: 36px;
-            height: 36px;
-            color: var(--success-green);
-        }
-
-        .modal h2 {
-            font-size: 24px;
-            font-weight: 600;
-            color: var(--rich-black);
-            margin-bottom: 12px;
-        }
-
-        .modal p {
-            font-size: 15px;
-            color: var(--text-gray);
-            line-height: 1.6;
-            margin-bottom: 30px;
-        }
-
-        .modal .btn-done {
-            background: var(--tufts-blue);
-            color: var(--white);
-            padding: 14px 40px;
-            border: none;
-            border-radius: 999px;
-            font-family: 'Ubuntu', 'Heebo', sans-serif;
-            font-size: 15px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .modal .btn-done:hover { background: #003d85; }
-
         @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
@@ -459,6 +380,38 @@
 
         .payment-confirmed .pay-details { flex: 1; }
         .payment-confirmed .pay-ref { font-size: 12px; color: #5A6A7A; margin-top: 2px; }
+
+        /* Promo entry sits with the payment box because this is the step that
+           actually charges the card — applying it here re-prices immediately. */
+        .promo-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+            padding: 14px 20px;
+            border: 1px solid var(--medium-gray);
+            border-radius: 8px;
+        }
+
+        .promo-box label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--rich-black);
+        }
+
+        .promo-box input {
+            width: 140px;
+            padding: 8px 12px;
+            border: 1px solid var(--medium-gray);
+            border-radius: 4px;
+            font-family: 'Heebo', sans-serif;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+
+        .promo-box input:focus { outline: none; border-color: var(--tufts-blue); }
+
+        .promo-message { font-size: 13px; font-weight: 500; }
 
         .pricing-table {
             width: 100%;
@@ -715,6 +668,11 @@
                     <div class="pay-ref">Reference: <span id="payRefDisplay">--</span></div>
                 </div>
             </div>
+            <div class="promo-box">
+                <label for="promoCode">Promo code:</label>
+                <input type="text" id="promoCode" placeholder="Enter code" oninput="applyPromo()">
+                <span class="promo-message" id="promoMessage"></span>
+            </div>
         </div>
 
         <!-- Terms & Conditions -->
@@ -743,23 +701,6 @@
                 <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                 Submit Order
             </button>
-        </div>
-    </div>
-
-    <!-- Success Modal -->
-    <div class="modal-overlay" id="successModal">
-        <div class="modal">
-            <div class="modal-icon">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-            </div>
-            <h2>Trunk Provisioned!</h2>
-            <p>Your SIP trunk has been provisioned successfully on Broadworks. Your enterprise, users, and trunk group have been configured.</p>
-            <div id="trunkPasswordDisplay" style="display: none; background: #F5F7FA; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: left;">
-                <div style="font-size: 12px; font-weight: 600; color: #5A6A7A; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Trunk Group Password</div>
-                <div id="trunkPasswordValue" style="font-size: 16px; font-family: 'Courier New', monospace; color: #01111E; word-break: break-all;"></div>
-                <div style="font-size: 12px; color: #5A6A7A; margin-top: 8px;">Use this password to configure your PBX registration.</div>
-            </div>
-            <button class="btn-done" onclick="window.location.href='../signUp.html'">Done</button>
         </div>
     </div>
 
