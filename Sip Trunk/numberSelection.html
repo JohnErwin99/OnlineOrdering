@@ -269,33 +269,6 @@
             margin-top: 4px;
         }
 
-        .vanity-input-group {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .vanity-input {
-            flex: 1;
-            padding: 14px 16px;
-            font-size: 16px;
-            font-family: 'Ubuntu', 'Heebo', sans-serif;
-            border: 1px solid var(--medium-gray);
-            border-radius: 4px;
-            outline: none;
-            text-transform: uppercase;
-        }
-
-        .vanity-input:focus {
-            border-color: var(--tufts-blue);
-        }
-
-        .vanity-hint {
-            font-size: 13px;
-            color: var(--text-gray);
-            margin-bottom: 20px;
-        }
-
         .selected-numbers {
             background: var(--light-gray);
             border-radius: 8px;
@@ -670,7 +643,7 @@
                 </div>
 
                 <div class="info-box" id="newNumbersInfo">
-                    <p>Select numbers from your preferred area code. You can choose multiple numbers and even search for vanity numbers that spell words.</p>
+                    <p>Select numbers from your preferred area code. You can choose multiple numbers for each trunk.</p>
                 </div>
 
                 <!-- Trunk Manager -->
@@ -706,33 +679,25 @@
                     </div>
                 </div>
 
-                <!-- Tabs -->
-                <div class="tabs">
-                    <button class="tab active" onclick="switchTab('standard')">Standard Numbers</button>
-                    <button class="tab" onclick="switchTab('vanity')">Vanity Numbers</button>
-                </div>
-
-                <!-- Standard Numbers Tab -->
+                <!-- Number search -->
                 <div class="tab-content active" id="standardTab">
                     <div class="filter-row">
+                        <div class="filter-group">
+                            <label class="filter-label">Country</label>
+                            <select class="filter-select" id="countryFilter" onchange="updateProvinces()">
+                                <option value="">All Countries</option>
+                            </select>
+                        </div>
                         <div class="filter-group">
                             <label class="filter-label">Province/State</label>
                             <select class="filter-select" id="provinceFilter" onchange="updateRateCenters()">
                                 <option value="">All Provinces</option>
-                                <option value="ON">Ontario</option>
-                                <option value="QC">Quebec</option>
-                                <option value="BC">British Columbia</option>
-                                <option value="AB">Alberta</option>
-                                <option value="MB">Manitoba</option>
-                                <option value="SK">Saskatchewan</option>
-                                <option value="NS">Nova Scotia</option>
-                                <option value="NB">New Brunswick</option>
                             </select>
                         </div>
                         <div class="filter-group">
                             <label class="filter-label">Rate Center</label>
                             <select class="filter-select" id="rateCenterFilter" onchange="updateNpaNxx()">
-                                <option value="">Select Rate Center</option>
+                                <option value="">All Rate Centers</option>
                             </select>
                         </div>
                         <div class="filter-group">
@@ -749,24 +714,6 @@
 
                     <div class="numbers-grid" id="numbersGrid">
                         <!-- Numbers will be populated here -->
-                    </div>
-                </div>
-
-                <!-- Vanity Numbers Tab -->
-                <div class="tab-content" id="vanityTab">
-                    <p class="vanity-hint">Enter a word or pattern to search for vanity numbers. For example, "BRAND" or "00" for easy-to-remember numbers.</p>
-                    
-                    <div class="vanity-input-group">
-                        <input type="text" class="vanity-input" id="vanitySpelling" placeholder="Enter word (e.g., BRAND)" maxlength="7">
-                        <input type="text" class="vanity-input" id="vanityPattern" placeholder="Numeric pattern (e.g., 00)" maxlength="4">
-                        <button class="btn-search" onclick="searchVanityNumbers()">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-                            Search
-                        </button>
-                    </div>
-
-                    <div class="numbers-grid" id="vanityNumbersGrid">
-                        <!-- Vanity numbers will be populated here -->
                     </div>
                 </div>
 
@@ -797,7 +744,7 @@
                     <p class="promo-description">Select from thousands of available numbers across Canada. Find the perfect numbers for your business.</p>
                     <ul class="feature-list">
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Local numbers in any area code</li>
-                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Vanity numbers available</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Filter by country, province, rate center</li>
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Toll-free options</li>
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Instant activation</li>
                     </ul>
