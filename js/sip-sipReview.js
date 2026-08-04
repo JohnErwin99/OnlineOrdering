@@ -169,6 +169,19 @@
             return postalCode || '';
         }
 
+        // MIND wraps the real reason in errors[] and puts a generic sentence in
+        // message — "Update Account failed." for a plan code it will not accept. The
+        // detail is what tells you which field to fix, so it goes in the thrown error.
+        function describeApiError(data, fallback) {
+            if (!data) return fallback;
+            const details = Array.isArray(data.errors)
+                ? data.errors.map(e => e && e.message).filter(Boolean)
+                : [];
+            if (!details.length) return data.message || fallback;
+            if (!data.message) return details.join(' ');
+            return data.message + ' — ' + details.join(' ');
+        }
+
         function sanitizeEnterpriseId(name) {
             // Remove special chars, replace spaces with underscores, lowercase
             return name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_').toLowerCase();
@@ -182,7 +195,6 @@
         // The payment route authenticates on x-api-key, not the iristelx-api-key the
         // rest of MIND takes — same pair sipTrunkPayment.js uses to tokenize the card.
         const PAYMENT_API_KEY = 'b1582d78d369685683e090ad37489937';
-        const SIP_TRUNK_PLAN_CODE = 'EXLNP_EXTRUNK';
 
         // ============================================
         // TRUNK (Broadworks) API Configuration — DEPRECATED
@@ -510,7 +522,7 @@
                 }
 
                 if (!response.ok) {
-                    throw new Error(data.message || `Payment failed (HTTP ${response.status})`);
+                    throw new Error(describeApiError(data, `Payment failed (HTTP ${response.status})`));
                 }
 
                 // Update the paid amount cookie
@@ -629,56 +641,10 @@
             console.log('MIND Create Account Response:', data);
 
             if (!response.ok) {
-                throw new Error(data.message || `MIND account creation failed (HTTP ${response.status})`);
+                throw new Error(describeApiError(data, `MIND account creation failed (HTTP ${response.status})`));
             }
 
             return data.accountId || data.id || data.accountcode;
-        }
-
-        // ============================================
-        // STEP 2: Assign SIP Trunk service in MIND
-        // ============================================
-        async function assignSipTrunkService(accountId, contactData) {
-            const requestBody = {
-                accountId: accountId,
-                planCode: SIP_TRUNK_PLAN_CODE,
-                contact: {
-                    fname: contactData.fname,
-                    lname: contactData.lname,
-                    address1: contactData.address1,
-                    city: contactData.city,
-                    province: contactData.province,
-                    country: contactData.country,
-                    postalCode: formatPostalCode(contactData.postalCode),
-                    emailAddress: contactData.emailAddress,
-                    // MIND stores phone as an object — a bare string makes the account
-                    // update leg of this call fail with "Update Account failed."
-                    phone: {
-                        mobile: contactData.phone
-                    }
-                }
-            };
-
-            console.log('[STEP 2] MIND Assign Service — POST', `${MIND_API_URL}/accounts/${accountId}/services`);
-            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            const response = await fetch(`${MIND_API_URL}/accounts/${accountId}/services`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'iristelx-api-key': MIND_API_KEY
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            const data = await response.json();
-            console.log('MIND Assign Service Response:', data);
-
-            if (!response.ok) {
-                throw new Error(data.message || `Service assignment failed (HTTP ${response.status})`);
-            }
-
-            return data;
         }
 
         // ============================================
@@ -726,9 +692,8 @@
             console.log('UbossRobot Start Response:', data);
 
             if (!response.ok) {
-                const errorMsg = data && data.message ? data.message
-                               : `UbossRobot provisioning failed to start (HTTP ${response.status})`;
-                throw new Error(errorMsg);
+                throw new Error(describeApiError(data,
+                    `UbossRobot provisioning failed to start (HTTP ${response.status})`));
             }
 
             return data;
@@ -754,7 +719,7 @@
         // SUBMIT ORDER — Full 3-step flow
         // (Payment already collected before business setup)
         // 1. Create business account in MIND
-        // 2. Assign EXLNP_EXTRUNK service to account
+        // 2. Record the SIP Trunk service (already assigned at plan selection)
         // 3. Start trunk provisioning via UbossRobot, then hand the job id to the
         //    status page — it reports the real progress, so waiting here would only
         //    hold the customer on a spinner
@@ -807,24 +772,14 @@
                     throw err;
                 }
 
-                // ---- STEP 2: Assign SIP Trunk Service ----
-                updateStatusMessage('Assigning SIP Trunk service...');
-                let serviceResult;
-                try {
-                    serviceResult = await assignSipTrunkService(accountId, contactData);
-                    console.log('Service assigned:', serviceResult);
-                } catch (err) {
-                    setOrderStepResult('service', 'error', err.message);
-                    throw err;
-                }
-
-                if (serviceResult && (serviceResult.serviceId || serviceResult.id)) {
-                    setCookie('sip_serviceId', serviceResult.serviceId || serviceResult.id);
-                }
-                setOrderStepResult('service', 'done',
-                    serviceResult && (serviceResult.serviceId || serviceResult.id)
-                        ? SIP_TRUNK_PLAN_CODE + ' activated (service ' + (serviceResult.serviceId || serviceResult.id) + ')'
-                        : SIP_TRUNK_PLAN_CODE + ' activated on your account');
+                // ---- STEP 2: SIP Trunk service ----
+                // Already assigned at plan selection (sipTrunkSelection.js), so there
+                // is nothing to call here — assigning a second time only asks MIND to
+                // add a package the account already has. The step is still recorded
+                // because the status page renders it.
+                const assignedPlan = getCookie('iristel_selected_plan_name')
+                    || getCookie('iristel_selected_plan') || 'SIP Trunk';
+                setOrderStepResult('service', 'done', assignedPlan + ' active on your account');
 
                 // Check remaining balance
                 if (window._remainingBalance > 0) {
