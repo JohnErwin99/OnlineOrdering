@@ -101,6 +101,175 @@ function hideMessage() {
 }
 
 // ============================================
+// UI: BRANDED DIALOG
+// ============================================
+// Replaces the browser's native alert/confirm, which ignore the page styling and
+// name the host ("onlineordering.onrender.com says") in the middle of a checkout.
+// The markup and styles are injected here so every page gets them from common.js
+// alone. Colours fall back to literals because not every page defines the vars.
+const IRIS_DIALOG_STYLES = `
+    .iris-dialog-overlay {
+        position: fixed; inset: 0; z-index: 10000;
+        background: rgba(1, 17, 30, 0.55);
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px; opacity: 0; pointer-events: none;
+        transition: opacity 0.18s ease;
+    }
+    .iris-dialog-overlay.active { opacity: 1; pointer-events: auto; }
+    .iris-dialog {
+        background: #FFFFFF; border-radius: 12px;
+        box-shadow: 0 18px 50px rgba(1, 17, 30, 0.28);
+        width: 100%; max-width: 440px; overflow: hidden;
+        font-family: 'Ubuntu', 'Heebo', sans-serif;
+        transform: translateY(8px) scale(0.98);
+        transition: transform 0.18s ease;
+    }
+    .iris-dialog-overlay.active .iris-dialog { transform: translateY(0) scale(1); }
+    .iris-dialog-accent { height: 4px; background: var(--tufts-blue, #004a9f); }
+    .iris-dialog-accent.error { background: var(--magenta-glow, #d1155a); }
+    .iris-dialog-accent.success { background: var(--success-green, #10B981); }
+    .iris-dialog-body { padding: 26px 28px 22px; display: flex; gap: 16px; }
+    .iris-dialog-icon {
+        flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0, 74, 159, 0.1); color: var(--tufts-blue, #004a9f);
+    }
+    .iris-dialog-icon.error { background: rgba(209, 21, 90, 0.1); color: var(--magenta-glow, #d1155a); }
+    .iris-dialog-icon.success { background: rgba(16, 185, 129, 0.1); color: var(--success-green, #10B981); }
+    .iris-dialog-icon svg { width: 22px; height: 22px; }
+    .iris-dialog-text { flex: 1; min-width: 0; }
+    .iris-dialog-title {
+        font-size: 16px; font-weight: 600; margin-bottom: 6px;
+        color: var(--rich-black, #01111E);
+    }
+    .iris-dialog-message {
+        font-size: 14px; line-height: 1.55; color: var(--text-gray, #5A6A7A);
+        white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .iris-dialog-actions {
+        display: flex; justify-content: flex-end; gap: 10px;
+        padding: 0 28px 24px;
+    }
+    .iris-dialog-btn {
+        padding: 10px 22px; border-radius: 999px; border: none; cursor: pointer;
+        font-family: 'Ubuntu', 'Heebo', sans-serif; font-size: 14px; font-weight: 500;
+        transition: background 0.2s, opacity 0.2s;
+    }
+    .iris-dialog-btn.primary { background: var(--tufts-blue, #004a9f); color: #FFFFFF; }
+    .iris-dialog-btn.primary:hover { opacity: 0.88; }
+    .iris-dialog-btn.primary.error { background: var(--magenta-glow, #d1155a); }
+    .iris-dialog-btn.secondary {
+        background: transparent; color: var(--text-gray, #5A6A7A);
+        border: 1px solid var(--medium-gray, #E8ECF1);
+    }
+    .iris-dialog-btn.secondary:hover { background: var(--light-gray, #F5F7FA); }
+`;
+
+const IRIS_DIALOG_ICONS = {
+    info: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10A8 8 0 112 10a8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>',
+    error: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>',
+    success: '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>'
+};
+
+function ensureIrisDialog() {
+    let overlay = document.getElementById('irisDialogOverlay');
+    if (overlay) return overlay;
+
+    const style = document.createElement('style');
+    style.textContent = IRIS_DIALOG_STYLES;
+    document.head.appendChild(style);
+
+    overlay = document.createElement('div');
+    overlay.id = 'irisDialogOverlay';
+    overlay.className = 'iris-dialog-overlay';
+    overlay.innerHTML = `
+        <div class="iris-dialog" role="dialog" aria-modal="true" aria-labelledby="irisDialogTitle">
+            <div class="iris-dialog-accent" id="irisDialogAccent"></div>
+            <div class="iris-dialog-body">
+                <div class="iris-dialog-icon" id="irisDialogIcon"></div>
+                <div class="iris-dialog-text">
+                    <div class="iris-dialog-title" id="irisDialogTitle"></div>
+                    <div class="iris-dialog-message" id="irisDialogMessage"></div>
+                </div>
+            </div>
+            <div class="iris-dialog-actions" id="irisDialogActions"></div>
+        </div>`;
+    document.body.appendChild(overlay);
+    return overlay;
+}
+
+// type: 'info' | 'error' | 'success'. onConfirm omitted means a single OK button.
+function showDialog(options) {
+    const opts = options || {};
+    const type = opts.type || 'info';
+    const overlay = ensureIrisDialog();
+
+    document.getElementById('irisDialogAccent').className = 'iris-dialog-accent ' + type;
+    const icon = document.getElementById('irisDialogIcon');
+    icon.className = 'iris-dialog-icon ' + type;
+    icon.innerHTML = IRIS_DIALOG_ICONS[type] || IRIS_DIALOG_ICONS.info;
+    document.getElementById('irisDialogTitle').textContent = opts.title
+        || (type === 'error' ? 'Something went wrong' : type === 'success' ? 'Success' : 'Please confirm');
+    document.getElementById('irisDialogMessage').textContent = opts.message || '';
+
+    const actions = document.getElementById('irisDialogActions');
+    actions.innerHTML = '';
+
+    function close() {
+        overlay.classList.remove('active');
+        document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) {
+        if (e.key === 'Escape') { close(); if (opts.onCancel) opts.onCancel(); }
+    }
+
+    if (opts.onConfirm) {
+        const cancel = document.createElement('button');
+        cancel.className = 'iris-dialog-btn secondary';
+        cancel.textContent = opts.cancelText || 'Cancel';
+        cancel.onclick = () => { close(); if (opts.onCancel) opts.onCancel(); };
+        actions.appendChild(cancel);
+    }
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'iris-dialog-btn primary' + (type === 'error' ? ' error' : '');
+    confirmBtn.textContent = opts.confirmText || 'OK';
+    confirmBtn.onclick = () => { close(); if (opts.onConfirm) opts.onConfirm(); };
+    actions.appendChild(confirmBtn);
+
+    document.addEventListener('keydown', onKey);
+    overlay.classList.add('active');
+    confirmBtn.focus();
+}
+
+// Drop-in for the native calls. alert() returns nothing, so routing it through the
+// branded dialog is transparent to callers. confirm() cannot be — it answers
+// synchronously — so showConfirm takes a callback and callers were converted.
+function showAlert(message, type, title) {
+    showDialog({ message: message, type: type || 'info', title: title });
+}
+
+function showConfirm(message, onConfirm, options) {
+    const opts = options || {};
+    showDialog({
+        message: message,
+        type: opts.type || 'info',
+        title: opts.title || 'Please confirm',
+        confirmText: opts.confirmText || 'Continue',
+        cancelText: opts.cancelText || 'Cancel',
+        onConfirm: onConfirm,
+        onCancel: opts.onCancel
+    });
+}
+
+// Safety net for any alert() left in the codebase: neutral styling, since a bare
+// string says nothing about whether it is a failure or a validation nudge. Call
+// sites that know better call showAlert directly with a type and title.
+window.alert = function (message) {
+    showAlert(String(message == null ? '' : message), 'info', 'Notice');
+};
+
+// ============================================
 // UI: LOADING OVERLAY
 // ============================================
 function showLoading(message = 'Loading...') {

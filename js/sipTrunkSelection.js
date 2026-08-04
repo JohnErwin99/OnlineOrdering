@@ -92,9 +92,12 @@ async function selectPlan(planCode, planName) {
         return;
     }
 
-    const confirmed = confirm(`You are about to configure the "${planName}" plan. Continue?`);
-    if (!confirmed) return;
+    showConfirm(`You are about to configure the "${planName}" plan. Continue?`,
+        () => configurePlan(accountId, planCode, planName, contactData),
+        { title: 'Configure plan', confirmText: 'Continue' });
+}
 
+async function configurePlan(accountId, planCode, planName, contactData) {
     try {
         showLoading(`Adding ${planName} to your account...`);
         hideMessage();

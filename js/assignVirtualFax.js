@@ -179,10 +179,10 @@ function deleteUser(id) {
         return;
     }
 
-    if (confirm('Are you sure you want to remove this user?')) {
+    showConfirm('Are you sure you want to remove this user?', () => {
         users = users.filter(u => u.id !== id);
         renderUsers();
-    }
+    }, { title: 'Remove user', confirmText: 'Remove', type: 'error' });
 }
 
 function goBack() {

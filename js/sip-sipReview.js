@@ -426,7 +426,7 @@
             const accountCode = getCookie('iristel_account_id') || '7142292';
 
             if (!token) {
-                alert('No saved card found. Please go back to the payment step.');
+                showAlert('No saved card found. Please go back to the payment step.', 'error', 'No card on file');
                 if (window.IrisBridge) window.IrisBridge.error('No saved card found. Please go back to the payment step.');
                 return;
             }
@@ -439,7 +439,7 @@
                                         'iristel_payment_card_holder'].some(c => !getCookie(c));
             if (cardDetailsMissing) {
                 const msg = 'Your saved card is missing details this payment needs. Please go back to the payment step and re-enter the card.';
-                alert(msg);
+                showAlert(msg, 'error', 'Card details incomplete');
                 if (window.IrisBridge) window.IrisBridge.error(msg);
                 return;
             }
@@ -544,7 +544,7 @@
                     loadPricingBreakdown();
 
                     const message = `${UNRECONCILED_NOTICE} Reference: ${reference}`;
-                    alert(message);
+                    showAlert(message, 'error', 'Payment outcome unknown');
                     if (window.IrisBridge) window.IrisBridge.paymentFailed(message);
                     return;
                 }
@@ -552,7 +552,7 @@
                 btn.disabled = false;
                 btn.textContent = `Charge $${amount.toFixed(2)} to card on file`;
                 btn.style.background = '';
-                alert('Payment failed: ' + err.message);
+                showAlert(err.message, 'error', 'Payment failed');
                 if (window.IrisBridge) window.IrisBridge.paymentFailed(err.message);
             }
         }
@@ -761,7 +761,7 @@
         // ============================================
         async function submitOrder() {
             if (!document.getElementById('agreeTerms').checked) {
-                alert('Please agree to the Terms of Service before submitting.');
+                showAlert('Please agree to the Terms of Service before submitting.', 'info', 'Almost there');
                 if (window.IrisBridge) window.IrisBridge.error('Please agree to the Terms of Service before submitting.', 'agreeTerms');
                 return;
             }
@@ -770,7 +770,7 @@
             // zeroes the charge and bypasses payment entirely (no card needed).
             const promoApplied = getAppliedPromo();
             if (!promoApplied && !getCookie('iristel_payment_token')) {
-                alert('No payment card on file. Please go back and save a card first.');
+                showAlert('No payment card on file. Please go back and save a card first.', 'error', 'No card on file');
                 if (window.IrisBridge) window.IrisBridge.error('No payment card on file. Please go back and save a card first.');
                 return;
             }
@@ -828,7 +828,7 @@
 
                 // Check remaining balance
                 if (window._remainingBalance > 0) {
-                    alert('Please pay the remaining balance of $' + window._remainingBalance.toFixed(2) + ' before submitting.');
+                    showAlert('Please pay the remaining balance of $' + window._remainingBalance.toFixed(2) + ' before submitting.', 'info', 'Balance outstanding');
                     if (window.IrisBridge) window.IrisBridge.error('Remaining balance of $' + window._remainingBalance.toFixed(2) + ' must be paid before submitting.');
                     resetSubmitButton();
                     return;
@@ -893,7 +893,7 @@
 
             } catch (err) {
                 console.error('Order submission failed:', err);
-                alert('Order submission failed:\n\n' + err.message);
+                showAlert(err.message, 'error', 'Order submission failed');
                 if (window.IrisBridge) window.IrisBridge.error('Order submission failed: ' + err.message);
                 resetSubmitButton();
             }
