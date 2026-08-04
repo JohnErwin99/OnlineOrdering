@@ -179,6 +179,9 @@
         // ============================================
         const MIND_API_URL = 'https://api.iristelx.com';
         const MIND_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
+        // The payment route authenticates on x-api-key, not the iristelx-api-key the
+        // rest of MIND takes — same pair sipTrunkPayment.js uses to tokenize the card.
+        const PAYMENT_API_KEY = 'b1582d78d369685683e090ad37489937';
         const SIP_TRUNK_PLAN_CODE = 'EXLNP_EXTRUNK';
 
         // ============================================
@@ -361,7 +364,10 @@
                     <tr>
                         <td colspan="3" style="text-align:right;font-weight:700;">Remaining Balance</td>
                         <td style="text-align:right;font-weight:700;font-size:16px;color:var(--magenta-glow);">$${remaining.toFixed(2)}</td>
-                    </tr>
+                    </tr>`;
+
+                if (!unreconciledCharge) {
+                    footerRows += `
                     <tr>
                         <td colspan="4" style="text-align:right;padding-top:12px;">
                             <button class="btn-edit" id="chargeBalanceBtn" onclick="chargeRemainingBalance(${remaining})" style="background:var(--tufts-blue);color:#fff;padding:8px 20px;">
@@ -369,6 +375,7 @@
                             </button>
                         </td>
                     </tr>`;
+                }
             } else {
                 footerRows += `
                     <tr>
@@ -377,10 +384,39 @@
                     </tr>`;
             }
 
+            // A charge whose outcome we never learned outlives the balance it was for:
+            // a promo can take the balance to $0.00, but the card may still have been
+            // charged, so the reference stays on screen either way.
+            if (unreconciledCharge) {
+                footerRows += `
+                    <tr>
+                        <td colspan="4" style="text-align:right;padding-top:12px;font-size:13px;color:#EF4444;line-height:1.6;">
+                            ${UNRECONCILED_NOTICE}<br>Reference: ${unreconciledCharge.reference}
+                        </td>
+                    </tr>`;
+            }
+
             totalRow.insertAdjacentHTML('afterend', footerRows);
 
             // Store remaining for submitOrder check
             window._remainingBalance = remaining;
+        }
+
+        // ============================================
+        // BALANCE CHARGE
+        // ============================================
+        // An attempt that ends without a readable response leaves the outcome unknown —
+        // the card may already have been charged. Recorded here so every later render
+        // honours it: re-pricing rebuilds the footer, and a fresh button would invite
+        // exactly the second charge we can't rule out.
+        const UNRECONCILED_NOTICE = 'Payment service unavailable — do not retry, contact support.';
+        const GATEWAY_ERRORS = [502, 503, 504];
+        let unreconciledCharge = null;
+
+        function unknownOutcome(detail) {
+            const err = new Error(detail);
+            err.outcomeUnknown = true;
+            return err;
         }
 
         // Charge remaining balance using saved card token
@@ -398,8 +434,11 @@
             btn.disabled = true;
             btn.textContent = 'Processing...';
 
+            // Outside the try: the catch reports it, because it is the only handle
+            // support has on a charge that may have gone through.
+            const reference = 'IRS-BAL-' + Date.now().toString(36).toUpperCase();
+
             try {
-                const reference = 'IRS-BAL-' + Date.now().toString(36).toUpperCase();
                 const requestBody = {
                     amount: amount.toFixed(2),
                     creditCard: {
@@ -408,19 +447,45 @@
                     reference: reference
                 };
 
-                console.log('[CHARGE BALANCE] POST', `${MIND_API_URL.replace('iristelx.com', 'iristelx.com')}/bot/${accountCode}/payment`);
+                console.log('[CHARGE BALANCE] POST', `${MIND_API_URL}/bot/${accountCode}/payment`);
                 console.log('Request:', JSON.stringify(requestBody, null, 2));
 
-                const response = await fetch(`https://api.iristelx.com/bot/${accountCode}/payment`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': 'b1582d78d369685683e090ad37489937'
-                    },
-                    body: JSON.stringify(requestBody)
-                });
+                let response;
+                try {
+                    response = await fetch(`${MIND_API_URL}/bot/${accountCode}/payment`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-api-key': PAYMENT_API_KEY
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+                } catch (networkErr) {
+                    // fetch() only rejects before a response is readable: the connection
+                    // failed, or the browser refused what came back. The API's gateway
+                    // serves its own error pages without CORS headers, so an upstream
+                    // failure surfaces here as "Failed to fetch" rather than as a status.
+                    throw unknownOutcome(networkErr.message);
+                }
 
-                const data = await response.json();
+                // Read as text first. A gateway error page is HTML, and parsing it as
+                // JSON reports a syntax error instead of the failure that happened.
+                const raw = await response.text();
+                let data = null;
+                try {
+                    data = JSON.parse(raw);
+                } catch (_) {
+                    // Left null — handled below as an unreadable response.
+                }
+
+                // The payment service answers in JSON, successes and errors alike.
+                // Anything else came from in front of it and says nothing about
+                // whether the charge ran.
+                if (!data || GATEWAY_ERRORS.includes(response.status)) {
+                    console.error('Unreadable payment response:', response.status, raw.slice(0, 200));
+                    throw unknownOutcome(`HTTP ${response.status}`);
+                }
+
                 if (!response.ok) {
                     throw new Error(data.message || `Payment failed (HTTP ${response.status})`);
                 }
@@ -447,6 +512,20 @@
 
             } catch (err) {
                 console.error('Balance charge failed:', err);
+
+                if (err.outcomeUnknown) {
+                    // Whether the card was charged is unknowable from here, so the
+                    // button does not come back — re-rendering replaces it with the
+                    // reference support needs to reconcile the attempt.
+                    unreconciledCharge = { reference };
+                    loadPricingBreakdown();
+
+                    const message = `${UNRECONCILED_NOTICE} Reference: ${reference}`;
+                    alert(message);
+                    if (window.IrisBridge) window.IrisBridge.paymentFailed(message);
+                    return;
+                }
+
                 btn.disabled = false;
                 btn.textContent = `Charge $${amount.toFixed(2)} to card on file`;
                 btn.style.background = '';
@@ -662,8 +741,10 @@
                 return;
             }
 
-            // Verify card was saved
-            if (!getCookie('iristel_payment_token')) {
+            // Verify card was saved — unless the TEST promo is applied, which
+            // zeroes the charge and bypasses payment entirely (no card needed).
+            const promoApplied = getAppliedPromo();
+            if (!promoApplied && !getCookie('iristel_payment_token')) {
                 alert('No payment card on file. Please go back and save a card first.');
                 if (window.IrisBridge) window.IrisBridge.error('No payment card on file. Please go back and save a card first.');
                 return;
