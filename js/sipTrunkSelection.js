@@ -124,8 +124,12 @@ async function selectPlan(planCode, planName) {
 // ============================================
 // NAVIGATION
 // ============================================
+// This is the first screen of the SIP trunk flow, reached from signup. Going back
+// through history lands wherever the browser happens to have been — the signup
+// page's own redirect, or off the site entirely on a direct link — so the real
+// previous step is named outright.
 function goBack() {
-    window.history.back();
+    window.location.href = '../signUp.html';
 }
 
 // ============================================
