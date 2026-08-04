@@ -100,13 +100,20 @@
         function removeTrunk(trunkId, event) {
             event.stopPropagation();
             if (trunks.length <= 1) {
-                alert('You must have at least one trunk.');
+                showAlert('You must have at least one trunk.', 'info', 'Cannot remove');
                 return;
             }
             const trunk = trunks.find(t => t.id === trunkId);
             if (trunk && trunk.numbers.length > 0) {
-                if (!confirm('Remove "' + trunk.name + '" and unassign its ' + trunk.numbers.length + ' number(s)?')) return;
+                showConfirm('Remove "' + trunk.name + '" and unassign its ' + trunk.numbers.length + ' number(s)?',
+                    () => applyRemoveTrunk(trunkId),
+                    { title: 'Remove trunk', confirmText: 'Remove', type: 'error' });
+                return;
             }
+            applyRemoveTrunk(trunkId);
+        }
+
+        function applyRemoveTrunk(trunkId) {
             trunks = trunks.filter(t => t.id !== trunkId);
             if (activeTrunkId === trunkId) {
                 activeTrunkId = trunks[0].id;
