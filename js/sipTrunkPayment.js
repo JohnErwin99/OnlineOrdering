@@ -1,9 +1,10 @@
 // ============================================
 // PAYMENT API CONFIGURATION
 // ============================================
+// This page only tokenizes the card, so it needs the billing credentials alone.
+// The payment key lives with the charge, on the Review page.
 const BILLING_API_URL = 'https://api.iristelx.com';
 const BILLING_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
-const PAYMENT_API_KEY = 'b1582d78d369685683e090ad37489937';
 
 // ============================================
 // HELPERS
@@ -21,10 +22,6 @@ function maskCardNumber(number) {
     const digits = number.replace(/\s/g, '');
     if (digits.length < 10) return digits;
     return digits.substring(0, 6) + '******' + digits.substring(digits.length - 4);
-}
-
-function generateReference() {
-    return 'IRS-' + Date.now().toString(36).toUpperCase();
 }
 
 // ============================================
@@ -79,46 +76,9 @@ async function addCard(accountCode, cardData) {
     return data;
 }
 
-// ============================================
-// STEP 2: Process payment with token
-// ============================================
-async function makePayment(accountCode, cardData, token, amount, reference) {
-    const requestBody = {
-        amount: amount,
-        creditCard: {
-            code: detectCardType(cardData.number).toUpperCase(),
-            number: maskCardNumber(cardData.number),
-            token: token,
-            expDate: {
-                expMonth: cardData.expMonth,
-                expYear: cardData.expYear
-            },
-            holder: cardData.holder
-        },
-        reference: reference
-    };
-
-    console.log('[PAYMENT STEP 2] Make Payment — POST', `${BILLING_API_URL}/bot/${accountCode}/payment`);
-    console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-    const response = await fetch(`${BILLING_API_URL}/bot/${accountCode}/payment`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': PAYMENT_API_KEY
-        },
-        body: JSON.stringify(requestBody)
-    });
-
-    const data = await response.json();
-    console.log('Payment Response:', data);
-
-    if (!response.ok) {
-        throw new Error(data.message || `Payment failed (HTTP ${response.status})`);
-    }
-
-    return data;
-}
+// Note: this page only tokenizes the card. The charge itself lives on the Review
+// page (chargeRemainingBalance in sip-sipReview.js), which owns the one call to
+// POST /bot/{account}/payment.
 
 // ============================================
 // DIGITAL WALLETS — Placeholder only.
@@ -167,10 +127,18 @@ async function processPayment() {
         }
         console.log('Card saved, token received');
 
-        // Store token and card info for charging later on the Review page
+        // Store token and card info for charging later on the Review page.
+        // The payment API needs the full creditCard object — code, masked number,
+        // expDate and holder alongside the token — so every field it wants is
+        // persisted here. Only the masked number is kept; the full PAN is not.
         setCookie('iristel_payment_token', token);
         setCookie('iristel_payment_card_type', detectCardType(cardNumber));
         setCookie('iristel_payment_card_last4', cardNumber.slice(-4));
+        setCookie('iristel_payment_card_code', detectCardType(cardNumber).toUpperCase());
+        setCookie('iristel_payment_card_masked', maskCardNumber(cardNumber));
+        setCookie('iristel_payment_card_expmonth', cardData.expMonth);
+        setCookie('iristel_payment_card_expyear', cardData.expYear);
+        setCookie('iristel_payment_card_holder', cardData.holder);
 
         if (window.IrisBridge) window.IrisBridge.cardSaved(cardNumber.slice(-4));
 
