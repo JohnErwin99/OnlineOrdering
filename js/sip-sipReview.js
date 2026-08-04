@@ -670,10 +670,12 @@
             return name + PORTING_SUFFIX;
         }
 
-        async function startUbossProvisioning(contactData, primaryNumber, accountId, channelCount) {
-            // Field order/names must match the UbossRobot trunk-provisioning contract
+        async function startUbossProvisioning(contactData, phoneNumbers, accountId, channelCount) {
+            // Field order/names must match the UbossRobot trunk-provisioning contract.
+            // phoneNumbers: the first entry is the trunk number; any further entries
+            // are provisioned as channel numbers on the same trunk (bulk).
             const requestBody = {
-                phoneNumber: formatUbossPhone(primaryNumber),
+                phoneNumbers: phoneNumbers.map(formatUbossPhone),
                 resellerName: UBOSS_RESELLER_NAME,
                 address: contactData.address1,
                 city: contactData.city,
@@ -810,20 +812,31 @@
                 }
 
                 // ---- STEP 3: Provision trunk via UbossRobot ----
-                // Channel count from the first trunk's channel setting
+                // Channel count and numbers from the first trunk. The API takes all
+                // numbers in one call: first entry is the trunk number, the rest are
+                // channel numbers.
                 let channelCount = 1;
+                let trunkNumbers = [];
                 const trunksData = getCookie('sip_trunks');
                 if (trunksData) {
                     try {
                         const trunksList = JSON.parse(trunksData);
                         if (Array.isArray(trunksList) && trunksList.length > 0) {
                             channelCount = trunksList[0].channels || 1;
+                            // Trunk (primary) number first, then the channel numbers
+                            const primary = trunksList[0].primaryNumber || '';
+                            trunkNumbers = (trunksList[0].numbers || [])
+                                .filter(n => n && n !== primary);
+                            if (primary) trunkNumbers.unshift(primary);
                         }
                     } catch (e) {}
                 }
+                if (trunkNumbers.length === 0 && primaryNumber) {
+                    trunkNumbers = [primaryNumber];
+                }
 
                 updateStatusMessage('Starting trunk provisioning...');
-                const ubossResult = await startUbossProvisioning(contactData, primaryNumber, accountId, channelCount);
+                const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, channelCount);
                 const jobId = ubossResult.id;
                 console.log('UbossRobot job started:', jobId);
 
