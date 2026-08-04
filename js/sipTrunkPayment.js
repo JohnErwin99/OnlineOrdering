@@ -121,6 +121,16 @@ async function makePayment(accountCode, cardData, token, amount, reference) {
 }
 
 // ============================================
+// DIGITAL WALLETS — Placeholder only.
+// Moneris is being enhanced to support Apple Pay / Google Pay;
+// wire up the real wallet flow here once it's available.
+// ============================================
+function payWithWallet(walletName) {
+    hideMessage();
+    showMessage('error', walletName + ' is coming soon. Please pay with a card for now.');
+}
+
+// ============================================
 // SAVE CARD — Tokenize only, charge happens on Review page
 // ============================================
 async function processPayment() {
