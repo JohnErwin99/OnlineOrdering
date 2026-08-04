@@ -811,41 +811,58 @@
                     return;
                 }
 
-                // ---- STEP 3: Provision trunk via UbossRobot ----
-                // Channel count and numbers from the first trunk. The API takes all
-                // numbers in one call: first entry is the trunk number, the rest are
-                // channel numbers.
-                let channelCount = 1;
-                let trunkNumbers = [];
+                // ---- STEP 3: Provision each trunk via UbossRobot ----
+                // One API call per trunk. Each call carries all of that trunk's
+                // numbers: first entry is the trunk number, the rest are channel
+                // numbers on the same trunk.
+                let trunksList = [];
                 const trunksData = getCookie('sip_trunks');
                 if (trunksData) {
                     try {
-                        const trunksList = JSON.parse(trunksData);
-                        if (Array.isArray(trunksList) && trunksList.length > 0) {
-                            channelCount = trunksList[0].channels || 1;
-                            // Trunk (primary) number first, then the channel numbers
-                            const primary = trunksList[0].primaryNumber || '';
-                            trunkNumbers = (trunksList[0].numbers || [])
-                                .filter(n => n && n !== primary);
-                            if (primary) trunkNumbers.unshift(primary);
-                        }
+                        const parsed = JSON.parse(trunksData);
+                        if (Array.isArray(parsed)) trunksList = parsed;
                     } catch (e) {}
                 }
-                if (trunkNumbers.length === 0 && primaryNumber) {
-                    trunkNumbers = [primaryNumber];
+                if (trunksList.length === 0) {
+                    // Old single-trunk format: fall back to the primary number
+                    trunksList = [{ name: 'Trunk 1', channels: 1, numbers: primaryNumber ? [primaryNumber] : [], primaryNumber: primaryNumber }];
                 }
 
-                updateStatusMessage('Starting trunk provisioning...');
-                const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, channelCount);
-                const jobId = ubossResult.id;
-                console.log('UbossRobot job started:', jobId);
+                const provisionJobs = [];
+                for (let i = 0; i < trunksList.length; i++) {
+                    const trunk = trunksList[i];
+                    // Trunk (primary) number first, then the channel numbers
+                    const primary = trunk.primaryNumber || '';
+                    const trunkNumbers = (trunk.numbers || []).filter(n => n && n !== primary);
+                    if (primary) trunkNumbers.unshift(primary);
+                    if (trunkNumbers.length === 0) continue;
 
-                // Save job ID for status tracking. Drop any result left by an earlier
-                // job — the status page treats a stored result as this job's outcome.
-                setCookie('sip_provisionJobId', jobId);
+                    updateStatusMessage('Starting provisioning for ' + (trunk.name || ('Trunk ' + (i + 1))) + ' (' + (i + 1) + '/' + trunksList.length + ')...');
+                    try {
+                        const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, trunk.channels || 1);
+                        console.log('UbossRobot job started for', trunk.name, ':', ubossResult.id);
+                        provisionJobs.push({ trunkName: trunk.name || ('Trunk ' + (i + 1)), jobId: ubossResult.id });
+                    } catch (err) {
+                        // Report which trunks already went through so support can reconcile
+                        const started = provisionJobs.map(j => j.trunkName + ' (job ' + j.jobId + ')').join(', ');
+                        throw new Error('Provisioning failed for "' + (trunk.name || ('Trunk ' + (i + 1))) + '": ' + err.message
+                            + (started ? '\n\nAlready started: ' + started : ''));
+                    }
+                }
+
+                if (provisionJobs.length === 0) {
+                    throw new Error('No trunk has numbers to provision.');
+                }
+
+                // Save job IDs for status tracking. The status page polls the first
+                // job; the full list is kept alongside it. Drop any result left by an
+                // earlier job — the status page treats a stored result as this job's
+                // outcome.
+                setCookie('sip_provisionJobId', provisionJobs[0].jobId);
+                setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
                 deleteCookie('sip_provisionResult');
 
-                if (window.IrisBridge) window.IrisBridge.orderComplete(jobId);
+                if (window.IrisBridge) window.IrisBridge.orderComplete(provisionJobs[0].jobId);
 
                 // Hand off to the status page, which polls this job for its real status
                 updateStatusMessage('Provisioning started — opening status...');
