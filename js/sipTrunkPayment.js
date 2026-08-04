@@ -167,10 +167,18 @@ async function processPayment() {
         }
         console.log('Card saved, token received');
 
-        // Store token and card info for charging later on the Review page
+        // Store token and card info for charging later on the Review page.
+        // The payment API needs the full creditCard object — code, masked number,
+        // expDate and holder alongside the token — so every field it wants is
+        // persisted here. Only the masked number is kept; the full PAN is not.
         setCookie('iristel_payment_token', token);
         setCookie('iristel_payment_card_type', detectCardType(cardNumber));
         setCookie('iristel_payment_card_last4', cardNumber.slice(-4));
+        setCookie('iristel_payment_card_code', detectCardType(cardNumber).toUpperCase());
+        setCookie('iristel_payment_card_masked', maskCardNumber(cardNumber));
+        setCookie('iristel_payment_card_expmonth', cardData.expMonth);
+        setCookie('iristel_payment_card_expyear', cardData.expYear);
+        setCookie('iristel_payment_card_holder', cardData.holder);
 
         if (window.IrisBridge) window.IrisBridge.cardSaved(cardNumber.slice(-4));
 

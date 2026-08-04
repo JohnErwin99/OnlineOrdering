@@ -431,6 +431,19 @@
                 return;
             }
 
+            // A card saved before the full-payload change has only the token. Sending
+            // the API a half-filled creditCard is what it cannot handle, so stop here
+            // rather than repeat the call that fails.
+            const cardDetailsMissing = ['iristel_payment_card_code', 'iristel_payment_card_masked',
+                                        'iristel_payment_card_expmonth', 'iristel_payment_card_expyear',
+                                        'iristel_payment_card_holder'].some(c => !getCookie(c));
+            if (cardDetailsMissing) {
+                const msg = 'Your saved card is missing details this payment needs. Please go back to the payment step and re-enter the card.';
+                alert(msg);
+                if (window.IrisBridge) window.IrisBridge.error(msg);
+                return;
+            }
+
             btn.disabled = true;
             btn.textContent = 'Processing...';
 
@@ -439,10 +452,20 @@
             const reference = 'IRS-BAL-' + Date.now().toString(36).toUpperCase();
 
             try {
+                // The payment API expects the full creditCard object — code, masked
+                // number, token, expDate and holder. Sending the token alone is not
+                // enough; the fields are saved at tokenization on the payment page.
                 const requestBody = {
                     amount: amount.toFixed(2),
                     creditCard: {
-                        token: token
+                        code: getCookie('iristel_payment_card_code') || '',
+                        number: getCookie('iristel_payment_card_masked') || '',
+                        token: token,
+                        expDate: {
+                            expMonth: getCookie('iristel_payment_card_expmonth') || '',
+                            expYear: getCookie('iristel_payment_card_expyear') || ''
+                        },
+                        holder: getCookie('iristel_payment_card_holder') || ''
                     },
                     reference: reference
                 };
