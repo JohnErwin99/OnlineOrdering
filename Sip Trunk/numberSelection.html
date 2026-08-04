@@ -706,33 +706,25 @@
                     </div>
                 </div>
 
-                <!-- Tabs -->
-                <div class="tabs">
-                    <button class="tab active" onclick="switchTab('standard')">Standard Numbers</button>
-                    <button class="tab" onclick="switchTab('vanity')">Vanity Numbers</button>
-                </div>
-
-                <!-- Standard Numbers Tab -->
+                <!-- Number search -->
                 <div class="tab-content active" id="standardTab">
                     <div class="filter-row">
+                        <div class="filter-group">
+                            <label class="filter-label">Country</label>
+                            <select class="filter-select" id="countryFilter" onchange="updateProvinces()">
+                                <option value="">All Countries</option>
+                            </select>
+                        </div>
                         <div class="filter-group">
                             <label class="filter-label">Province/State</label>
                             <select class="filter-select" id="provinceFilter" onchange="updateRateCenters()">
                                 <option value="">All Provinces</option>
-                                <option value="ON">Ontario</option>
-                                <option value="QC">Quebec</option>
-                                <option value="BC">British Columbia</option>
-                                <option value="AB">Alberta</option>
-                                <option value="MB">Manitoba</option>
-                                <option value="SK">Saskatchewan</option>
-                                <option value="NS">Nova Scotia</option>
-                                <option value="NB">New Brunswick</option>
                             </select>
                         </div>
                         <div class="filter-group">
                             <label class="filter-label">Rate Center</label>
                             <select class="filter-select" id="rateCenterFilter" onchange="updateNpaNxx()">
-                                <option value="">Select Rate Center</option>
+                                <option value="">All Rate Centers</option>
                             </select>
                         </div>
                         <div class="filter-group">
@@ -749,24 +741,6 @@
 
                     <div class="numbers-grid" id="numbersGrid">
                         <!-- Numbers will be populated here -->
-                    </div>
-                </div>
-
-                <!-- Vanity Numbers Tab -->
-                <div class="tab-content" id="vanityTab">
-                    <p class="vanity-hint">Enter a word or pattern to search for vanity numbers. For example, "BRAND" or "00" for easy-to-remember numbers.</p>
-                    
-                    <div class="vanity-input-group">
-                        <input type="text" class="vanity-input" id="vanitySpelling" placeholder="Enter word (e.g., BRAND)" maxlength="7">
-                        <input type="text" class="vanity-input" id="vanityPattern" placeholder="Numeric pattern (e.g., 00)" maxlength="4">
-                        <button class="btn-search" onclick="searchVanityNumbers()">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-                            Search
-                        </button>
-                    </div>
-
-                    <div class="numbers-grid" id="vanityNumbersGrid">
-                        <!-- Vanity numbers will be populated here -->
                     </div>
                 </div>
 

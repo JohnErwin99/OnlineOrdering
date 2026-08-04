@@ -5,52 +5,65 @@
         let nextTrunkId = 2;
         let isPorting = false;
 
-        // Rate centers data (simplified)
-        const rateCenters = {
-            'ON': ['Toronto', 'Ottawa', 'Mississauga', 'Hamilton', 'London', 'Markham', 'Vaughan', 'Kitchener', 'Windsor', 'Burlington'],
-            'QC': ['Montreal', 'Quebec City', 'Laval', 'Gatineau', 'Longueuil', 'Sherbrooke', 'Trois-Rivières'],
-            'BC': ['Vancouver', 'Victoria', 'Burnaby', 'Surrey', 'Richmond', 'Kelowna'],
-            'AB': ['Calgary', 'Edmonton', 'Red Deer', 'Lethbridge', 'Medicine Hat'],
-            'MB': ['Winnipeg', 'Brandon', 'Steinbach'],
-            'SK': ['Saskatoon', 'Regina', 'Moose Jaw'],
-            'NS': ['Halifax', 'Dartmouth', 'Sydney'],
-            'NB': ['Moncton', 'Saint John', 'Fredericton']
-        };
+        // ============================================
+        // TELEPHONE NUMBERS API (live inventory)
+        // https://iristel-x.readme.io/reference/reserved
+        // ============================================
+        const TN_API_URL = 'https://api.iristelx.com/telephone-numbers/reserved';
+        const TN_API_KEY = 'OB0VcACMyxxXVbjp0UQnDFsTuScpT4seDR1t';
+        const TN_PAGE_LIMIT = 100000; // pull full available inventory in one call
+        const MAX_RESULTS_SHOWN = 60; // cards rendered per search
 
-        const npaCodes = {
-            'Toronto': ['416', '647', '437'],
-            'Ottawa': ['613', '343'],
-            'Montreal': ['514', '438'],
-            'Vancouver': ['604', '778', '236'],
-            'Calgary': ['403', '587'],
-            'Edmonton': ['780', '587'],
-            'default': ['825', '306', '204', '902']
-        };
+        // Live inventory loaded from the API
+        let availableNumbers = [];
+        let numbersLoaded = false;
+        let numbersLoadError = null;
 
-        // Sample available numbers
-        const sampleNumbers = [
-            { number: '(416) 555-1001', location: 'Toronto, ON' },
-            { number: '(416) 555-1002', location: 'Toronto, ON' },
-            { number: '(416) 555-1003', location: 'Toronto, ON' },
-            { number: '(647) 555-2001', location: 'Toronto, ON' },
-            { number: '(647) 555-2002', location: 'Toronto, ON' },
-            { number: '(905) 555-3001', location: 'Mississauga, ON' },
-            { number: '(514) 555-4001', location: 'Montreal, QC' },
-            { number: '(514) 555-4002', location: 'Montreal, QC' },
-            { number: '(604) 555-5001', location: 'Vancouver, BC' },
-            { number: '(604) 555-5002', location: 'Vancouver, BC' },
-            { number: '(403) 555-6001', location: 'Calgary, AB' },
-            { number: '(780) 555-7001', location: 'Edmonton, AB' }
-        ];
+        function titleCase(str) {
+            return (str || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        }
 
-        const vanityNumbers = [
-            { number: '1-800-MY-BRAND', location: 'Toll-Free' },
-            { number: '(416) 00Y-BRAND', location: 'Toronto, ON' },
-            { number: '(800) 555-0000', location: 'Toll-Free' },
-            { number: '(416) 200-2000', location: 'Toronto, ON' },
-            { number: '(647) 600-6000', location: 'Toronto, ON' },
-            { number: '(514) 888-8888', location: 'Montreal, QC' }
-        ];
+        function formatTn(tn) {
+            // "14169005507" -> "(416) 900-5507"
+            const d = String(tn).replace(/\D/g, '').replace(/^1/, '');
+            if (d.length !== 10) return String(tn);
+            return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+        }
+
+        async function loadAvailableNumbers() {
+            const grid = document.getElementById('numbersGrid');
+            grid.innerHTML = '<p style="grid-column:1/-1;color:var(--text-gray);font-size:14px;padding:20px;text-align:center;">Loading available numbers…</p>';
+            try {
+                const response = await fetch(`${TN_API_URL}?inUse=false&page=1&pageLimit=${TN_PAGE_LIMIT}`, {
+                    headers: {
+                        'accept': 'application/json',
+                        'iristelx-api-key': TN_API_KEY
+                    }
+                });
+                if (!response.ok) throw new Error('API returned ' + response.status);
+                const data = await response.json();
+                availableNumbers = (data.telephoneNumbers || [])
+                    .filter(tn => tn.inUse === false)
+                    .map(tn => ({
+                        number: formatTn(tn.telephoneNumber),
+                        raw: tn.telephoneNumber,
+                        city: titleCase(tn.city),
+                        province: tn.province || '',
+                        country: tn.country || '',
+                        areaCode: tn.areaCode || '',
+                        location: titleCase(tn.city) + ', ' + (tn.province || '')
+                    }));
+                numbersLoaded = true;
+                numbersLoadError = null;
+                populateCountryFilter();
+                updateProvinces();
+            } catch (err) {
+                console.error('Failed to load telephone numbers:', err);
+                numbersLoadError = err;
+                grid.innerHTML = '<p style="grid-column:1/-1;color:var(--text-gray);font-size:14px;padding:20px;text-align:center;">Could not load available numbers. <a href="#" onclick="loadAvailableNumbers();return false;">Retry</a></p>';
+            }
+            if (numbersLoaded) searchNumbers();
+        }
 
         // --- Trunk helpers ---
         function getActiveTrunk() {
@@ -164,35 +177,56 @@
             document.getElementById('estMonthlyCost').textContent = '$' + (totalChannels * 25).toFixed(2);
         }
 
-        // --- Filter functions ---
-        function updateRateCenters() {
-            const province = document.getElementById('provinceFilter').value;
-            const rateCenterSelect = document.getElementById('rateCenterFilter');
-            rateCenterSelect.innerHTML = '<option value="">Select Rate Center</option>';
+        // --- Filter functions (options built from live inventory) ---
+        function getFilterValue(id) {
+            const el = document.getElementById(id);
+            return el ? el.value : '';
+        }
 
-            if (province && rateCenters[province]) {
-                rateCenters[province].forEach(rc => {
-                    rateCenterSelect.innerHTML += `<option value="${rc}">${rc}</option>`;
-                });
-            }
+        function fillSelect(selectId, values, allLabel, keepValue) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+            const previous = keepValue ? select.value : '';
+            select.innerHTML = `<option value="">${allLabel}</option>` +
+                values.map(v => `<option value="${v}">${v}</option>`).join('');
+            if (previous && values.includes(previous)) select.value = previous;
+        }
+
+        function populateCountryFilter() {
+            const countries = [...new Set(availableNumbers.map(n => n.country).filter(Boolean))].sort();
+            fillSelect('countryFilter', countries, 'All Countries', true);
+        }
+
+        function updateProvinces() {
+            const country = getFilterValue('countryFilter');
+            const pool = availableNumbers.filter(n => !country || n.country === country);
+            const provinces = [...new Set(pool.map(n => n.province).filter(Boolean))].sort();
+            fillSelect('provinceFilter', provinces, 'All Provinces', true);
+            updateRateCenters();
+        }
+
+        function updateRateCenters() {
+            const country = getFilterValue('countryFilter');
+            const province = getFilterValue('provinceFilter');
+            const pool = availableNumbers.filter(n =>
+                (!country || n.country === country) &&
+                (!province || n.province === province));
+            const cities = [...new Set(pool.map(n => n.city).filter(Boolean))].sort();
+            fillSelect('rateCenterFilter', cities, 'All Rate Centers', true);
+            updateNpaNxx();
         }
 
         function updateNpaNxx() {
-            const rateCenter = document.getElementById('rateCenterFilter').value;
-            const npaSelect = document.getElementById('npaFilter');
-            npaSelect.innerHTML = '<option value="">All Area Codes</option>';
-
-            const codes = npaCodes[rateCenter] || npaCodes['default'];
-            codes.forEach(npa => {
-                npaSelect.innerHTML += `<option value="${npa}">${npa}</option>`;
-            });
+            const country = getFilterValue('countryFilter');
+            const province = getFilterValue('provinceFilter');
+            const rateCenter = getFilterValue('rateCenterFilter');
+            const pool = availableNumbers.filter(n =>
+                (!country || n.country === country) &&
+                (!province || n.province === province) &&
+                (!rateCenter || n.city === rateCenter));
+            const npas = [...new Set(pool.map(n => n.areaCode).filter(Boolean))].sort();
+            fillSelect('npaFilter', npas, 'All Area Codes', true);
         }
-
-        // Province abbreviation to location name mapping for filtering
-        const provinceNames = {
-            'ON': 'ON', 'QC': 'QC', 'BC': 'BC', 'AB': 'AB',
-            'MB': 'MB', 'SK': 'SK', 'NS': 'NS', 'NB': 'NB'
-        };
 
         // --- Number search & selection ---
         function searchNumbers() {
@@ -200,17 +234,21 @@
             grid.innerHTML = '';
             const trunk = getActiveTrunk();
 
-            const province = document.getElementById('provinceFilter').value;
-            const rateCenter = document.getElementById('rateCenterFilter').value;
-            const npa = document.getElementById('npaFilter').value;
+            if (!numbersLoaded) {
+                grid.innerHTML = '<p style="grid-column:1/-1;color:var(--text-gray);font-size:14px;padding:20px;text-align:center;">Loading available numbers…</p>';
+                return;
+            }
 
-            let filtered = sampleNumbers.filter(num => {
-                // Filter by province (match the abbreviation in location e.g. "Toronto, ON")
-                if (province && !num.location.endsWith(', ' + province)) return false;
-                // Filter by rate center (match city name in location)
-                if (rateCenter && !num.location.startsWith(rateCenter + ',')) return false;
-                // Filter by area code (match NPA in the number string)
-                if (npa && !num.number.includes('(' + npa + ')')) return false;
+            const country = getFilterValue('countryFilter');
+            const province = getFilterValue('provinceFilter');
+            const rateCenter = getFilterValue('rateCenterFilter');
+            const npa = getFilterValue('npaFilter');
+
+            const filtered = availableNumbers.filter(num => {
+                if (country && num.country !== country) return false;
+                if (province && num.province !== province) return false;
+                if (rateCenter && num.city !== rateCenter) return false;
+                if (npa && num.areaCode !== npa) return false;
                 return true;
             });
 
@@ -219,27 +257,12 @@
                 return;
             }
 
-            filtered.forEach(num => {
-                const isSelected = trunk && trunk.numbers.includes(num.number);
-                const takenBy = isNumberTaken(num.number);
-                const takenClass = takenBy ? ' taken' : '';
-                const takenLabel = takenBy ? `<div class="number-taken-label">On: ${takenBy}</div>` : '';
-                grid.innerHTML += `
-                    <div class="number-card ${isSelected ? 'selected' : ''}${takenClass}" onclick="toggleNumber('${num.number}', '${num.location}')">
-                        <div class="number-value">${num.number}</div>
-                        <div class="number-location">${num.location}</div>
-                        ${takenLabel}
-                    </div>
-                `;
-            });
-        }
+            const shown = filtered.slice(0, MAX_RESULTS_SHOWN);
+            if (filtered.length > shown.length) {
+                grid.innerHTML += `<p style="grid-column:1/-1;color:var(--text-gray);font-size:13px;padding:4px 0;">Showing ${shown.length} of ${filtered.length.toLocaleString()} available numbers. Use the filters to narrow your search.</p>`;
+            }
 
-        function searchVanityNumbers() {
-            const grid = document.getElementById('vanityNumbersGrid');
-            grid.innerHTML = '';
-            const trunk = getActiveTrunk();
-
-            vanityNumbers.forEach(num => {
+            shown.forEach(num => {
                 const isSelected = trunk && trunk.numbers.includes(num.number);
                 const takenBy = isNumberTaken(num.number);
                 const takenClass = takenBy ? ' taken' : '';
@@ -256,10 +279,6 @@
 
         function refreshNumberGrids() {
             searchNumbers();
-            // Only refresh vanity grid if the vanity tab has been used
-            if (document.getElementById('vanityNumbersGrid').children.length > 0) {
-                searchVanityNumbers();
-            }
         }
 
         function toggleNumber(number, location) {
@@ -360,19 +379,6 @@
             }
         }
 
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-            if (tab === 'standard') {
-                document.querySelector('.tab:first-child').classList.add('active');
-                document.getElementById('standardTab').classList.add('active');
-            } else {
-                document.querySelector('.tab:last-child').classList.add('active');
-                document.getElementById('vanityTab').classList.add('active');
-            }
-        }
-
         function goBack() {
             if (isPorting) {
                 window.location.href = 'siptrunkLOA.html';
@@ -459,6 +465,6 @@
             updateSelectedDisplay();
             updateSummaryBar();
 
-            // Initial search
-            searchNumbers();
+            // Load live inventory from the API, then render the grid
+            loadAvailableNumbers();
         });
