@@ -151,16 +151,30 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
 
-            // Load numbers — try multi-trunk format first
+            // Load numbers — try multi-trunk format first.
+            // With espresso ordering, concrete numbers don't exist yet: the
+            // trunk carries rate-center requests instead. Build placeholder
+            // SLOTS from those requests ("TORONTO (647) — Number 1"); each slot
+            // maps positionally to the number assigned when the order
+            // completes, since numbers are distributed in request order.
             const trunksData = getCookie('sip_trunks');
             if (trunksData) {
                 try {
                     const trunksList = JSON.parse(trunksData);
                     if (Array.isArray(trunksList) && trunksList.length > 0) {
-                        trunkGroups = trunksList.map(t => ({ trunkName: t.name, numbers: t.numbers }));
+                        trunkGroups = trunksList.map(t => {
+                            let nums = t.numbers || [];
+                            if (!nums.length && Array.isArray(t.requests)) {
+                                nums = t.requests.flatMap(r => {
+                                    const qty = parseInt(r.quantity, 10) || 0;
+                                    return Array.from({ length: qty }, (_, i) =>
+                                        `${r.ratecenter} (${r.npa}) — Number ${i + 1}`);
+                                });
+                            }
+                            return { trunkName: t.name, numbers: nums };
+                        });
                         // Flatten for backward compat
-                        availableNumbers = [];
-                        trunksList.forEach(t => availableNumbers.push(...t.numbers));
+                        availableNumbers = trunkGroups.flatMap(g => g.numbers);
                     }
                 } catch (e) {}
             }

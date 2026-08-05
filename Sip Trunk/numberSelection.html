@@ -643,7 +643,7 @@
                 </div>
 
                 <div class="info-box" id="newNumbersInfo">
-                    <p>Select numbers from your preferred area code. You can choose multiple numbers for each trunk.</p>
+                    <p>Choose the city (rate center), area code and how many numbers you need for each trunk. Your numbers are assigned when the order is processed — you'll see them on the order status page.</p>
                 </div>
 
                 <!-- Trunk Manager -->
@@ -673,58 +673,50 @@
                         <div class="trunk-summary-bar" id="trunkSummaryBar">
                             <span class="trunk-summary-item">Total Trunks: <strong id="totalTrunksCount">1</strong></span>
                             <span class="trunk-summary-item">Channels (this trunk): <strong id="currentTrunkChannelCount">1</strong></span>
-                            <span class="trunk-summary-item">Numbers on this trunk: <strong id="currentTrunkNumberCount">0</strong></span>
+                            <span class="trunk-summary-item">Numbers requested: <strong id="currentTrunkNumberCount">0</strong></span>
                             <span class="trunk-summary-item">Est. Monthly: <strong id="estMonthlyCost">$25.00</strong></span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Number search -->
+                <!-- Number request builder -->
                 <div class="tab-content active" id="standardTab">
                     <div class="filter-row">
-                        <div class="filter-group">
-                            <label class="filter-label">Country</label>
-                            <select class="filter-select" id="countryFilter" onchange="updateProvinces()">
-                                <option value="">All Countries</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">Province/State</label>
-                            <select class="filter-select" id="provinceFilter" onchange="updateRateCenters()">
-                                <option value="">All Provinces</option>
-                            </select>
-                        </div>
-                        <div class="filter-group">
-                            <label class="filter-label">Rate Center</label>
-                            <select class="filter-select" id="rateCenterFilter" onchange="updateNpaNxx()">
-                                <option value="">All Rate Centers</option>
-                            </select>
+                        <div class="filter-group" style="flex:2;">
+                            <label class="filter-label">Rate Center (city)</label>
+                            <input type="text" class="filter-input" id="rateCenterFilter" list="rateCenterList"
+                                   placeholder="Start typing — e.g. TORONTO" oninput="updateNpaOptions()" autocomplete="off">
+                            <datalist id="rateCenterList"></datalist>
                         </div>
                         <div class="filter-group">
                             <label class="filter-label">Area Code (NPA)</label>
                             <select class="filter-select" id="npaFilter">
-                                <option value="">All Area Codes</option>
+                                <option value="">Pick rate center first</option>
                             </select>
                         </div>
-                        <button class="btn-search" onclick="searchNumbers()">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
-                            Search
+                        <div class="filter-group" style="max-width:120px;">
+                            <label class="filter-label">Quantity</label>
+                            <input type="number" class="filter-input" id="quantityInput" min="1" max="100" value="1">
+                        </div>
+                        <button class="btn-search" onclick="addNumberRequest()">
+                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                            Add to Trunk
                         </button>
                     </div>
 
-                    <div class="numbers-grid" id="numbersGrid">
-                        <!-- Numbers will be populated here -->
+                    <div class="numbers-grid" id="catalogStatus" style="display:block;max-height:none;">
+                        <!-- Catalog load status -->
                     </div>
                 </div>
 
-                <!-- Selected Numbers for Current Trunk -->
+                <!-- Requested Numbers for Current Trunk -->
                 <div class="selected-numbers">
                     <div class="selected-numbers-title">
-                        <span>Selected Numbers — <strong id="selectedTrunkLabel">Trunk 1</strong></span>
+                        <span>Requested Numbers — <strong id="selectedTrunkLabel">Trunk 1</strong></span>
                         <span class="selected-count" id="selectedCount">0</span>
                     </div>
                     <div class="selected-list" id="selectedList">
-                        <span class="no-selection">No numbers selected yet</span>
+                        <span class="no-selection">No numbers requested yet</span>
                     </div>
                 </div>
 
@@ -740,13 +732,13 @@
             <div class="gradient-circle cyan"></div>
             <div class="promo-content">
                 <div class="promo-text">
-                    <h2 class="promo-headline">Choose Your <span>Numbers</span></h2>
-                    <p class="promo-description">Select from thousands of available numbers across Canada. Find the perfect numbers for your business.</p>
+                    <h2 class="promo-headline">Request Your <span>Numbers</span></h2>
+                    <p class="promo-description">Order numbers from any rate center Iristel serves across Canada. Pick your city, area code and quantity.</p>
                     <ul class="feature-list">
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Local numbers in any area code</li>
-                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Filter by country, province, rate center</li>
-                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Toll-free options</li>
-                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Instant activation</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Rate centers across every province</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>As many numbers as you need per trunk</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Numbers assigned as your order completes</li>
                     </ul>
                 </div>
             </div>

@@ -81,12 +81,22 @@
                     const trunksList = JSON.parse(trunksData);
                     if (Array.isArray(trunksList) && trunksList.length > 0) {
                         document.getElementById('revSelectedNumbers').innerHTML = trunksList.map(trunk => {
-                            const numberChips = trunk.numbers.map(n =>
-                                n === trunk.primaryNumber
-                                    ? `<span class="number-chip pilot">${n} (Main)</span>`
-                                    : `<span class="number-chip">${n}</span>`
-                            ).join('');
-                            return `<div style="margin-bottom:12px;"><strong style="font-size:13px;color:#004a9f;">${trunk.name}</strong><div style="margin-top:6px;">${numberChips}</div></div>`;
+                            // Concrete numbers when they exist; otherwise the
+                            // rate-center requests this order will place
+                            let chips;
+                            if (trunk.numbers && trunk.numbers.length > 0) {
+                                chips = trunk.numbers.map(n =>
+                                    n === trunk.primaryNumber
+                                        ? `<span class="number-chip pilot">${n} (Main)</span>`
+                                        : `<span class="number-chip">${n}</span>`
+                                ).join('');
+                            } else {
+                                chips = (trunk.requests || []).map(r =>
+                                    `<span class="number-chip">${r.ratecenter} (${r.npa}) &times; ${r.quantity}</span>`
+                                ).join('') || '<span class="number-chip">No numbers requested</span>';
+                                chips += '<div style="font-size:12px;color:var(--text-gray);margin-top:6px;">Numbers are assigned when your order is processed.</div>';
+                            }
+                            return `<div style="margin-bottom:12px;"><strong style="font-size:13px;color:#004a9f;">${trunk.name}</strong><div style="margin-top:6px;">${chips}</div></div>`;
                         }).join('');
                     }
                 } catch (e) {}
@@ -789,10 +799,13 @@
                     return;
                 }
 
-                // ---- STEP 3: Provision each trunk via UbossRobot ----
-                // One API call per trunk. Each call carries all of that trunk's
-                // numbers: first entry is the trunk number, the rest are channel
-                // numbers on the same trunk.
+                // ---- STEP 3: Order the numbers (espresso DID order) ----
+                // espresso is ONLY the number source: rate center + NPA +
+                // quantity go in, concrete numbers come out once Iristel
+                // completes the order. Submit places one order covering every
+                // trunk's requests, waits here for it to complete, fills the
+                // trunks with the assigned numbers, and then provisioning
+                // starts via UbossRobot exactly as before.
                 let trunksList = [];
                 const trunksData = getCookie('sip_trunks');
                 if (trunksData) {
@@ -802,14 +815,84 @@
                     } catch (e) {}
                 }
                 if (trunksList.length === 0) {
-                    // Old single-trunk format: fall back to the primary number
-                    trunksList = [{ name: 'Trunk 1', channels: 1, numbers: primaryNumber ? [primaryNumber] : [], primaryNumber: primaryNumber }];
+                    trunksList = [{ name: 'Trunk 1', channels: 1, requests: [], numbers: primaryNumber ? [primaryNumber] : [], primaryNumber: primaryNumber }];
                 }
 
+                const needsNumbers = trunksList.some(t => (!t.numbers || !t.numbers.length) && (t.requests || []).length);
+                if (needsNumbers) {
+                    // Re-use an order placed by an earlier submit attempt (e.g. the
+                    // wait below timed out) instead of ordering the numbers twice.
+                    let didOrderNumber = getCookie('sip_didOrderNumber');
+                    if (!didOrderNumber) {
+                        updateStatusMessage('Placing your number order...');
+                        const allRequests = trunksList.flatMap(t => t.requests || []);
+                        const orderResponse = await fetch('/api/did/order', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ requests: allRequests })
+                        });
+                        const orderData = await orderResponse.json().catch(() => null);
+                        if (!orderResponse.ok || !orderData || !orderData.orderNumber) {
+                            throw new Error('Number order failed: ' + ((orderData && orderData.error) || ('HTTP ' + orderResponse.status)));
+                        }
+                        didOrderNumber = orderData.orderNumber;
+                        setCookie('sip_didOrderNumber', didOrderNumber);
+                        console.log('DID order placed:', didOrderNumber);
+                    } else {
+                        console.log('Resuming DID order:', didOrderNumber);
+                    }
+
+                    // Wait for the order to complete (poll every 10s, ~3 min per
+                    // attempt). The order number is saved, so if this times out the
+                    // customer just clicks Submit again to keep waiting.
+                    let orderStatus = '';
+                    for (let attempt = 0; attempt < 18; attempt++) {
+                        const sr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/status`);
+                        const sd = await sr.json().catch(() => null);
+                        if (!sr.ok) throw new Error('Number order status failed: ' + ((sd && sd.error) || ('HTTP ' + sr.status)));
+                        orderStatus = String(sd.status || '');
+                        console.log('DID order', didOrderNumber, 'status:', orderStatus);
+                        if (/^completed$/i.test(orderStatus)) break;
+                        if (/rejected|canceled/i.test(orderStatus)) {
+                            deleteCookie('sip_didOrderNumber');
+                            throw new Error('Number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase() + '. Please adjust your number requests and try again.');
+                        }
+                        updateStatusMessage('Waiting for your numbers (' + (orderStatus || 'Processing') + ')...');
+                        await new Promise(r => setTimeout(r, 10000));
+                    }
+                    if (!/^completed$/i.test(orderStatus)) {
+                        throw new Error('Your number order (' + didOrderNumber + ') is still being processed by Iristel. Click Submit Order again in a few minutes to continue — the order will not be placed twice.');
+                    }
+
+                    // Completed: fetch the assigned numbers and distribute them
+                    // across the trunks in request order
+                    updateStatusMessage('Retrieving your new numbers...');
+                    const dr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/details`);
+                    const dd = await dr.json().catch(() => null);
+                    if (!dr.ok || !dd) throw new Error('Could not retrieve the ordered numbers: ' + ((dd && dd.error) || ('HTTP ' + dr.status)));
+                    const numbers = dd.numbers || [];
+                    if (!numbers.length) throw new Error('Number order completed but returned no numbers. Please contact support with order ' + didOrderNumber + '.');
+                    console.log('DID order delivered', numbers.length, 'numbers');
+
+                    let cursor = 0;
+                    trunksList.forEach(trunk => {
+                        if (trunk.numbers && trunk.numbers.length) return;
+                        const wanted = (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0) || 1;
+                        trunk.numbers = numbers.slice(cursor, cursor + wanted);
+                        trunk.primaryNumber = trunk.numbers[0] || '';
+                        cursor += wanted;
+                    });
+                    setCookie('sip_trunks', JSON.stringify(trunksList));
+                    if (trunksList[0] && trunksList[0].primaryNumber) {
+                        setCookie('sip_primaryNumber', trunksList[0].primaryNumber);
+                    }
+                    deleteCookie('sip_didOrderNumber');
+                }
+
+                // ---- STEP 4: Provision each trunk via UbossRobot (unchanged) ----
                 const provisionJobs = [];
                 for (let i = 0; i < trunksList.length; i++) {
                     const trunk = trunksList[i];
-                    // Trunk (primary) number first, then the channel numbers
                     const primary = trunk.primaryNumber || '';
                     const trunkNumbers = (trunk.numbers || []).filter(n => n && n !== primary);
                     if (primary) trunkNumbers.unshift(primary);
@@ -829,20 +912,15 @@
                 }
 
                 if (provisionJobs.length === 0) {
-                    throw new Error('No trunk has numbers to provision.');
+                    throw new Error('No trunk has number requests or numbers to provision.');
                 }
 
-                // Save job IDs for status tracking. The status page polls the first
-                // job; the full list is kept alongside it. Drop any result left by an
-                // earlier job — the status page treats a stored result as this job's
-                // outcome.
                 setCookie('sip_provisionJobId', provisionJobs[0].jobId);
                 setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
                 deleteCookie('sip_provisionResult');
 
                 if (window.IrisBridge) window.IrisBridge.orderComplete(provisionJobs[0].jobId);
 
-                // Hand off to the status page, which polls this job for its real status
                 updateStatusMessage('Provisioning started — opening status...');
                 window.location.href = 'provisioningStatus.html';
 
