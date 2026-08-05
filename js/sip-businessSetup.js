@@ -63,9 +63,25 @@
         }
 
         function prefillTestDefaults() {
+            // Full test defaults so the flow can be exercised on a fresh
+            // browser/domain without going through signup first. Saved cookies
+            // and signup data always win — these only fill still-empty fields.
             const defaults = {
                 businessName: 'Erwin Test Corp',
-                siteName: 'Main Office HQ'
+                siteName: 'Main Office HQ',
+                address1: '625 President-Kennedy Ave',
+                city: 'Montreal',
+                province: 'QC',
+                postalCode: 'H3A 1K2',
+                country: 'CA',
+                billingFirstName: 'John',
+                billingLastName: 'Erwin',
+                billingEmail: 'john.erwin.h@gmail.com',
+                billingPhone: '4388663425',
+                techFirstName: 'John',
+                techLastName: 'Erwin',
+                techEmail: 'john.erwin.h@gmail.com',
+                techPhone: '4388663425'
             };
             for (const [id, val] of Object.entries(defaults)) {
                 const el = document.getElementById(id);
