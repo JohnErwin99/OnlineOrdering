@@ -11,9 +11,8 @@
             'premium': 'Premium'
         };
 
-        // Ported orders are flagged to the provisioning team by suffixing the business name
-        // (isPortingOrder() lives in common.js so every page agrees on what a port is)
-        const PORTING_SUFFIX = ' - PI';
+        // PORTING_SUFFIX / UBoss config / formatToE164 / describeApiError now live
+        // in sip-provisioning-common.js, shared with provisioningStatus.html.
 
         function setText(id, value) {
             const el = document.getElementById(id);
@@ -71,7 +70,17 @@
                     } catch (e) {}
                 }
 
-                setText('revLoaFile', getCookie('sip_loaFileName'));
+                // Port request (PON) details collected on the port-in page
+                let ponData = null;
+                try { ponData = JSON.parse(getCookie('sip_ponData') || 'null'); } catch (e) {}
+                if (ponData) {
+                    setText('revPonEndUser', ponData.end_user_name);
+                    setText('revPonAccount', ponData.existing_account_number);
+                    setText('revPonAuthDate', ponData.auth_date);
+                    setText('revPonDueDate', ponData.desired_due_date);
+                    const addr = [ponData.house_number, ponData.street_name, ponData.street_type].filter(Boolean).join(' ');
+                    setText('revPonAddress', [addr, ponData.city, ponData.province_state, ponData.zip_code].filter(Boolean).join(', '));
+                }
             }
 
             // Selected Numbers — multi-trunk aware
@@ -142,34 +151,6 @@
             document.getElementById('submitBtn').disabled = !document.getElementById('agreeTerms').checked;
         }
 
-        // Vanity letter-to-digit mapping (standard phone keypad)
-        const VANITY_MAP = {
-            'A': '2', 'B': '2', 'C': '2',
-            'D': '3', 'E': '3', 'F': '3',
-            'G': '4', 'H': '4', 'I': '4',
-            'J': '5', 'K': '5', 'L': '5',
-            'M': '6', 'N': '6', 'O': '6',
-            'P': '7', 'Q': '7', 'R': '7', 'S': '7',
-            'T': '8', 'U': '8', 'V': '8',
-            'W': '9', 'X': '9', 'Y': '9', 'Z': '9'
-        };
-
-        function formatToE164(number) {
-            // Convert vanity letters to digits first, then strip non-digits
-            let converted = number.toUpperCase().split('').map(ch => VANITY_MAP[ch] || ch).join('');
-            let digits = converted.replace(/\D/g, '');
-            // If it starts with 1 and has 11 digits, it's already correct
-            if (digits.length === 11 && digits.startsWith('1')) {
-                return '+' + digits;
-            }
-            // If 10 digits, prepend +1
-            if (digits.length === 10) {
-                return '+1' + digits;
-            }
-            // Fallback: return with + prefix
-            return '+' + digits;
-        }
-
         // MIND stores Canadian postal codes as "A1A 1A1" — send them back in that shape
         function formatPostalCode(postalCode) {
             const raw = (postalCode || '').toUpperCase().replace(/\s/g, '');
@@ -177,19 +158,6 @@
                 return raw.slice(0, 3) + ' ' + raw.slice(3);
             }
             return postalCode || '';
-        }
-
-        // MIND wraps the real reason in errors[] and puts a generic sentence in
-        // message — "Update Account failed." for a plan code it will not accept. The
-        // detail is what tells you which field to fix, so it goes in the thrown error.
-        function describeApiError(data, fallback) {
-            if (!data) return fallback;
-            const details = Array.isArray(data.errors)
-                ? data.errors.map(e => e && e.message).filter(Boolean)
-                : [];
-            if (!details.length) return data.message || fallback;
-            if (!data.message) return details.join(' ');
-            return data.message + ' — ' + details.join(' ');
         }
 
         function sanitizeEnterpriseId(name) {
@@ -212,13 +180,6 @@
         // ============================================
         // const TRUNK_API_URL = 'http://100.67.14.26:8099/api/trunk/provision';
         // const TRUNK_API_KEY = '3c901f55e7864d2aae31b08c9746f9132d8847f1acb94c65b0897e3624f1edc6';
-
-        // ============================================
-        // UbossRobot API Configuration
-        // ============================================
-        const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
-        const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
-        const UBOSS_RESELLER_NAME = 'Iristel';
 
         // ============================================
         // Payment Status (already collected before business setup)
@@ -579,21 +540,6 @@
             }
         }
 
-        // Override common.js version — SIP Review checks sip_ cookies first
-        function getContactDataFromCookies() {
-            return {
-                fname: getCookie('sip_billingFirstName') || getCookie('iristel_user_fname') || '',
-                lname: getCookie('sip_billingLastName') || getCookie('iristel_user_lname') || '',
-                emailAddress: getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '',
-                phone: getCookie('sip_billingPhone') || getCookie('iristel_user_phone') || '',
-                address1: getCookie('sip_address1') || getCookie('iristel_user_address1') || '',
-                city: getCookie('sip_city') || getCookie('iristel_user_city') || '',
-                province: getCookie('sip_province') || getCookie('iristel_user_province') || '',
-                country: getCookie('sip_country') || getCookie('iristel_user_country') || '',
-                postalCode: (getCookie('sip_postalCode') || getCookie('iristel_user_postalCode') || '').replace(/\s/g, '')
-            };
-        }
-
         function updateStatusMessage(message) {
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.innerHTML = `
@@ -658,81 +604,49 @@
         }
 
         // ============================================
-        // STEP 3: Start UbossRobot trunk provisioning
+        // STEP 3b: Submit the porting request (PON) via the LNP API
         // ============================================
-        // Porting orders go to UbossRobot as "<Business Name> - PI"
-        function getProvisioningBusinessName() {
-            const name = (getCookie('sip_businessName') || '').trim();
-            if (!isPortingOrder() || !name || name.endsWith(PORTING_SUFFIX)) {
-                return name;
+        // Creation is quick; the STATUS page owns tracking it afterwards.
+        // sip_ponNumber makes this idempotent across submit retries.
+        async function submitPortRequest() {
+            const existing = getCookie('sip_ponNumber');
+            if (existing) {
+                console.log('Re-using existing PON:', existing);
+                return existing;
             }
-            return name + PORTING_SUFFIX;
-        }
 
-        async function startUbossProvisioning(contactData, phoneNumbers, accountId, channelCount) {
-            // Field order/names must match the UbossRobot trunk-provisioning contract.
-            // phoneNumbers: the first entry is the trunk number; any further entries
-            // are provisioned as channel numbers on the same trunk (bulk).
-            const requestBody = {
-                phoneNumbers: phoneNumbers.map(formatUbossPhone),
-                resellerName: UBOSS_RESELLER_NAME,
-                address: contactData.address1,
-                city: contactData.city,
-                postcode: contactData.postalCode,
-                notificationEmail: getCookie('sip_techEmail') || contactData.emailAddress,
-                invoiceEmail: contactData.emailAddress,
-                accountRef: accountId,
-                businessName: getProvisioningBusinessName(),
-                channelCount: channelCount
-            };
+            let ponData = null;
+            try { ponData = JSON.parse(getCookie('sip_ponData') || 'null'); } catch (e) {}
+            if (!ponData || !Array.isArray(ponData.numbers) || !ponData.numbers.length) {
+                throw new Error('Port request details are missing. Please go back to the Port Request step and fill them in.');
+            }
 
-            console.log('[STEP 3] UbossRobot Start Provisioning — POST', `${UBOSS_API_URL}/trunk-provisioning`);
-            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning`, {
+            console.log('[STEP 3b] LNP Create PON — POST /api/lnp/pon');
+            const response = await fetch('/api/lnp/pon', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': UBOSS_API_KEY
-                },
-                body: JSON.stringify(requestBody)
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(ponData)
             });
-
             const data = await response.json().catch(() => null);
-            console.log('UbossRobot Start Response:', data);
-
-            if (!response.ok) {
-                throw new Error(describeApiError(data,
-                    `UbossRobot provisioning failed to start (HTTP ${response.status})`));
+            console.log('LNP Create PON Response:', data);
+            if (!response.ok || !data || !data.pon) {
+                throw new Error('Port request failed: ' + ((data && data.error) || ('HTTP ' + response.status)));
             }
 
-            return data;
+            setCookie('sip_ponNumber', data.pon);
+            return data.pon;
         }
-
-        // UbossRobot expects the number as +1-XXXXXXXXXX (country code, dash, subscriber digits)
-        function formatUbossPhone(number) {
-            const e164 = formatToE164(number || '');
-            const digits = e164.replace(/\D/g, '');
-            if (digits.length === 11) {
-                return `+${digits.charAt(0)}-${digits.slice(1)}`;
-            }
-            return e164;
-        }
-
-        // Note: this page does not poll the provisioning job. It starts the job and
-        // hands the id to provisioningStatus.html, which owns every status the API
-        // can report — including Failed and PartiallyCompleted, which it shows with
-        // the error detail and a retry — plus the welcome letter
-        // (POST /uboss-robot/email/{id}) that carries the SIP credentials.
 
         // ============================================
-        // SUBMIT ORDER — Full 3-step flow
+        // SUBMIT ORDER
         // (Payment already collected before business setup)
         // 1. Create business account in MIND
         // 2. Record the SIP Trunk service (already assigned at plan selection)
-        // 3. Start trunk provisioning via UbossRobot, then hand the job id to the
-        //    status page — it reports the real progress, so waiting here would only
-        //    hold the customer on a spinner
+        // 3. Place the espresso DID order for the (temporary) numbers — do NOT
+        //    wait for it here; the status page polls it, distributes the numbers
+        //    and starts UBoss provisioning once they arrive
+        // 3b. Porting orders: create the PON via the LNP API
+        // Then redirect to provisioningStatus.html, where the customer waits.
         // ============================================
         async function submitOrder() {
             if (!document.getElementById('agreeTerms').checked) {
@@ -753,7 +667,7 @@
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
 
-            const contactData = getContactDataFromCookies();
+            const contactData = getProvisioningContactData();
 
             // Get primary number
             const savedPrimary = getCookie('sip_primaryNumber') || getCookie('sip_billingPhone') || '';
@@ -799,29 +713,20 @@
                     return;
                 }
 
-                // ---- STEP 3: Order the numbers (espresso DID order) ----
-                // espresso is ONLY the number source: rate center + NPA +
-                // quantity go in, concrete numbers come out once Iristel
-                // completes the order. Submit places one order covering every
-                // trunk's requests, waits here for it to complete, fills the
-                // trunks with the assigned numbers, and then provisioning
-                // starts via UbossRobot exactly as before.
-                let trunksList = [];
-                const trunksData = getCookie('sip_trunks');
-                if (trunksData) {
-                    try {
-                        const parsed = JSON.parse(trunksData);
-                        if (Array.isArray(parsed)) trunksList = parsed;
-                    } catch (e) {}
-                }
+                // ---- STEP 3: Place the number order (espresso DID) ----
+                // espresso is ONLY the number source: rate center + NPA + quantity
+                // go in. The order is only PLACED here — the status page polls it,
+                // distributes the numbers and starts UBoss provisioning; the
+                // customer waits there, not on this button.
+                let trunksList = loadTrunksFromCookie();
                 if (trunksList.length === 0) {
                     trunksList = [{ name: 'Trunk 1', channels: 1, requests: [], numbers: primaryNumber ? [primaryNumber] : [], primaryNumber: primaryNumber }];
+                    setCookie('sip_trunks', JSON.stringify(trunksList));
                 }
 
-                const needsNumbers = trunksList.some(t => (!t.numbers || !t.numbers.length) && (t.requests || []).length);
-                if (needsNumbers) {
-                    // Re-use an order placed by an earlier submit attempt (e.g. the
-                    // wait below timed out) instead of ordering the numbers twice.
+                if (trunksNeedNumbers(trunksList)) {
+                    // Re-use an order placed by an earlier submit attempt
+                    // instead of ordering the numbers twice.
                     let didOrderNumber = getCookie('sip_didOrderNumber');
                     if (!didOrderNumber) {
                         updateStatusMessage('Placing your number order...');
@@ -841,87 +746,31 @@
                     } else {
                         console.log('Resuming DID order:', didOrderNumber);
                     }
-
-                    // Wait for the order to complete (poll every 10s, ~3 min per
-                    // attempt). The order number is saved, so if this times out the
-                    // customer just clicks Submit again to keep waiting.
-                    let orderStatus = '';
-                    for (let attempt = 0; attempt < 18; attempt++) {
-                        const sr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/status`);
-                        const sd = await sr.json().catch(() => null);
-                        if (!sr.ok) throw new Error('Number order status failed: ' + ((sd && sd.error) || ('HTTP ' + sr.status)));
-                        orderStatus = String(sd.status || '');
-                        console.log('DID order', didOrderNumber, 'status:', orderStatus);
-                        if (/^completed$/i.test(orderStatus)) break;
-                        if (/rejected|canceled/i.test(orderStatus)) {
-                            deleteCookie('sip_didOrderNumber');
-                            throw new Error('Number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase() + '. Please adjust your number requests and try again.');
-                        }
-                        updateStatusMessage('Waiting for your numbers (' + (orderStatus || 'Processing') + ')...');
-                        await new Promise(r => setTimeout(r, 10000));
-                    }
-                    if (!/^completed$/i.test(orderStatus)) {
-                        throw new Error('Your number order (' + didOrderNumber + ') is still being processed by Iristel. Click Submit Order again in a few minutes to continue — the order will not be placed twice.');
-                    }
-
-                    // Completed: fetch the assigned numbers and distribute them
-                    // across the trunks in request order
-                    updateStatusMessage('Retrieving your new numbers...');
-                    const dr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/details`);
-                    const dd = await dr.json().catch(() => null);
-                    if (!dr.ok || !dd) throw new Error('Could not retrieve the ordered numbers: ' + ((dd && dd.error) || ('HTTP ' + dr.status)));
-                    const numbers = dd.numbers || [];
-                    if (!numbers.length) throw new Error('Number order completed but returned no numbers. Please contact support with order ' + didOrderNumber + '.');
-                    console.log('DID order delivered', numbers.length, 'numbers');
-
-                    let cursor = 0;
-                    trunksList.forEach(trunk => {
-                        if (trunk.numbers && trunk.numbers.length) return;
-                        const wanted = (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0) || 1;
-                        trunk.numbers = numbers.slice(cursor, cursor + wanted);
-                        trunk.primaryNumber = trunk.numbers[0] || '';
-                        cursor += wanted;
-                    });
-                    setCookie('sip_trunks', JSON.stringify(trunksList));
-                    if (trunksList[0] && trunksList[0].primaryNumber) {
-                        setCookie('sip_primaryNumber', trunksList[0].primaryNumber);
-                    }
-                    deleteCookie('sip_didOrderNumber');
-                }
-
-                // ---- STEP 4: Provision each trunk via UbossRobot (unchanged) ----
-                const provisionJobs = [];
-                for (let i = 0; i < trunksList.length; i++) {
-                    const trunk = trunksList[i];
-                    const primary = trunk.primaryNumber || '';
-                    const trunkNumbers = (trunk.numbers || []).filter(n => n && n !== primary);
-                    if (primary) trunkNumbers.unshift(primary);
-                    if (trunkNumbers.length === 0) continue;
-
-                    updateStatusMessage('Starting provisioning for ' + (trunk.name || ('Trunk ' + (i + 1))) + ' (' + (i + 1) + '/' + trunksList.length + ')...');
-                    try {
-                        const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, trunk.channels || 1);
-                        console.log('UbossRobot job started for', trunk.name, ':', ubossResult.id);
-                        provisionJobs.push({ trunkName: trunk.name || ('Trunk ' + (i + 1)), jobId: ubossResult.id });
-                    } catch (err) {
-                        // Report which trunks already went through so support can reconcile
-                        const started = provisionJobs.map(j => j.trunkName + ' (job ' + j.jobId + ')').join(', ');
-                        throw new Error('Provisioning failed for "' + (trunk.name || ('Trunk ' + (i + 1))) + '": ' + err.message
-                            + (started ? '\n\nAlready started: ' + started : ''));
-                    }
-                }
-
-                if (provisionJobs.length === 0) {
+                } else if (!trunksList.some(t => t.numbers && t.numbers.length)) {
                     throw new Error('No trunk has number requests or numbers to provision.');
                 }
 
-                setCookie('sip_provisionJobId', provisionJobs[0].jobId);
-                setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
+                // ---- STEP 3b: Porting orders — create the PON (LNP API) ----
+                if (isPortingOrder()) {
+                    updateStatusMessage('Submitting your port request...');
+                    try {
+                        const pon = await submitPortRequest();
+                        setOrderStepResult('port', 'done', 'Port request ' + pon + ' submitted to the losing carrier');
+                    } catch (err) {
+                        setOrderStepResult('port', 'error', err.message);
+                        throw err;
+                    }
+                }
+
+                // The status page starts UBoss once the numbers exist — clear any
+                // job state left over from a previous order.
+                deleteCookie('sip_provisionJobId');
+                deleteCookie('sip_provisionJobs');
                 deleteCookie('sip_provisionResult');
 
-                if (window.IrisBridge) window.IrisBridge.orderComplete(provisionJobs[0].jobId);
+                if (window.IrisBridge) window.IrisBridge.orderComplete(getCookie('sip_didOrderNumber') || getCookie('sip_ponNumber') || accountId);
 
-                updateStatusMessage('Provisioning started — opening status...');
+                updateStatusMessage('Order submitted — opening status...');
                 window.location.href = 'provisioningStatus.html';
 
             } catch (err) {

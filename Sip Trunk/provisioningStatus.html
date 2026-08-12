@@ -343,6 +343,24 @@
                         <div class="step-detail" id="stepServiceDetail">Trunk plan activated on your account</div>
                     </div>
                 </div>
+                <div class="provision-step" id="stepNumbers">
+                    <div class="step-icon waiting" id="stepNumbersIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label" id="stepNumbersLabel">Ordering your numbers</div>
+                        <div class="step-detail" id="stepNumbersDetail">Reserving numbers with Iristel</div>
+                    </div>
+                </div>
+                <div class="provision-step" id="stepPort" style="display:none;">
+                    <div class="step-icon waiting" id="stepPortIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label" id="stepPortLabel">Port request submitted</div>
+                        <div class="step-detail" id="stepPortDetail">Sent to your current provider for approval</div>
+                    </div>
+                </div>
                 <div class="provision-step" id="stepProvision">
                     <div class="step-icon active" id="stepProvisionIcon">
                         <svg class="spinner" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd"/></svg>
@@ -391,6 +409,30 @@
                 </div>
             </div>
 
+            <!-- Port (PON) status — porting orders only. Ports take days, so this
+                 card keeps updating without ever blocking trunk completion. -->
+            <div class="details-box" id="ponBox" style="display:none; text-align:left;">
+                <div class="detail-row">
+                    <span class="detail-label">Port Request (PON)</span>
+                    <span class="detail-value mono" id="ponId">--</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Port Status</span>
+                    <span class="detail-value" id="ponStatus">Checking...</span>
+                </div>
+                <div class="detail-row" id="ponUpdatedRow" style="display:none;">
+                    <span class="detail-label">Last Update</span>
+                    <span class="detail-value" id="ponUpdated">--</span>
+                </div>
+                <div class="detail-row" id="ponReasonRow" style="display:none;">
+                    <span class="detail-label">Rejection Reason</span>
+                    <span class="detail-value" id="ponReason" style="color:#EF4444;">--</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-gray);margin-top:10px;" id="ponNote">
+                    Your ported numbers activate once the losing carrier confirms the request (5+ business days). Your trunk works on the temporary numbers in the meantime.
+                </div>
+            </div>
+
             <!-- Error box (hidden by default) -->
             <div class="error-box" id="errorBox" style="display:none;">
                 <div class="error-box-title">Provisioning Error</div>
@@ -412,12 +454,9 @@
     </div>
 
     <script src="../js/common.js"></script>
+    <script src="../js/sip-provisioning-common.js"></script>
     <script>
-        // ============================================
-        // UbossRobot API Configuration
-        // ============================================
-        const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
-        const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
+        // UbossRobot config comes from sip-provisioning-common.js
 
         // Status is returned as a STRING by the API, e.g. "Completed" / "PartiallyCompleted"
         const UBOSS_STATUS = {
@@ -739,12 +778,162 @@
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         }
 
+        // ============================================
+        // PON (port request) status — porting orders only.
+        // Ports take days; this card informs, it never blocks trunk completion.
+        // ============================================
+        let ponTimer = null;
+
+        async function checkPonStatus() {
+            const pon = getCookie('sip_ponNumber');
+            if (!pon) return;
+            try {
+                const resp = await fetch(`/api/lnp/pon/${encodeURIComponent(pon)}/status`);
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'HTTP ' + resp.status);
+
+                document.getElementById('ponStatus').textContent = data.status || 'Unknown';
+                if (data.dateLastUpdate) {
+                    document.getElementById('ponUpdatedRow').style.display = 'flex';
+                    document.getElementById('ponUpdated').textContent = data.dateLastUpdate;
+                }
+
+                const rejected = /rejected/i.test(data.status || '');
+                document.getElementById('ponReasonRow').style.display = rejected ? 'flex' : 'none';
+                if (rejected) {
+                    const reasons = (data.statusReason && data.statusReason.details || []).join('; ');
+                    document.getElementById('ponReason').textContent =
+                        reasons || data.statusReason && data.statusReason.typeLabel || 'See rejection details with support';
+                    setStepState(document.getElementById('stepPortIcon'), 'error',
+                        document.getElementById('stepPortLabel'), document.getElementById('stepPortDetail'),
+                        'Port request rejected', 'Correction required — contact support or update your port details');
+                } else if (/closed/i.test(data.status || '')) {
+                    setStepState(document.getElementById('stepPortIcon'), 'done',
+                        document.getElementById('stepPortLabel'), document.getElementById('stepPortDetail'),
+                        'Numbers ported!', 'Your numbers are now active on Iristel');
+                    document.getElementById('ponNote').textContent = 'Port complete — your numbers are live on Iristel.';
+                    if (ponTimer) { clearInterval(ponTimer); ponTimer = null; }
+                } else if (/confirmed/i.test(data.status || '')) {
+                    setStepState(document.getElementById('stepPortIcon'), 'done',
+                        document.getElementById('stepPortLabel'), document.getElementById('stepPortDetail'),
+                        'Port confirmed', 'The losing carrier confirmed your due date');
+                }
+            } catch (err) {
+                console.error('PON status check failed:', err);
+                document.getElementById('ponStatus').textContent = 'Status unavailable';
+            }
+        }
+
+        function startPonTracking() {
+            const pon = getCookie('sip_ponNumber');
+            if (!pon || !isPortingOrder()) return;
+            document.getElementById('stepPort').style.display = 'flex';
+            document.getElementById('ponBox').style.display = 'block';
+            document.getElementById('ponId').textContent = pon;
+
+            const recorded = getOrderStepResult('port');
+            setStepState(document.getElementById('stepPortIcon'), 'done', null, null, null,
+                recorded && recorded.detail);
+
+            checkPonStatus();
+            ponTimer = setInterval(checkPonStatus, 30000);
+        }
+
+        // ============================================
+        // Phase A: espresso DID number order — the customer waits HERE, not on
+        // the review page. Polls until Completed, then distributes the numbers.
+        // ============================================
+        function setNumbersStep(state, label, detail) {
+            setStepState(document.getElementById('stepNumbersIcon'), state,
+                document.getElementById('stepNumbersLabel'), document.getElementById('stepNumbersDetail'),
+                label, detail);
+        }
+
+        async function waitForNumberOrder(trunksList) {
+            const didOrderNumber = getCookie('sip_didOrderNumber');
+            if (!didOrderNumber || !trunksNeedNumbers(trunksList)) {
+                setNumbersStep('done', 'Numbers ready', 'Your numbers are assigned');
+                return trunksList;
+            }
+
+            setNumbersStep('active', 'Ordering your numbers...', 'Order ' + didOrderNumber + ' — waiting for Iristel to assign numbers');
+
+            for (;;) {
+                const sr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/status`);
+                const sd = await sr.json().catch(() => null);
+                if (!sr.ok) throw new Error('Number order status failed: ' + ((sd && sd.error) || ('HTTP ' + sr.status)));
+                const orderStatus = String(sd.status || '');
+                console.log('DID order', didOrderNumber, 'status:', orderStatus);
+                if (/^completed$/i.test(orderStatus)) break;
+                if (/rejected|canceled/i.test(orderStatus)) {
+                    deleteCookie('sip_didOrderNumber');
+                    throw new Error('Number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase() + '. Please go back to Review and adjust your number requests.');
+                }
+                setNumbersStep('active', 'Ordering your numbers (' + (orderStatus || 'Processing') + ')...', 'Order ' + didOrderNumber);
+                await new Promise(r => setTimeout(r, 10000));
+            }
+
+            const dr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/details`);
+            const dd = await dr.json().catch(() => null);
+            if (!dr.ok || !dd) throw new Error('Could not retrieve the ordered numbers: ' + ((dd && dd.error) || ('HTTP ' + dr.status)));
+            const numbers = dd.numbers || [];
+            if (!numbers.length) throw new Error('Number order completed but returned no numbers. Please contact support with order ' + didOrderNumber + '.');
+            console.log('DID order delivered', numbers.length, 'numbers');
+
+            distributeOrderedNumbers(trunksList, numbers);
+            deleteCookie('sip_didOrderNumber');
+            setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered');
+            document.getElementById('detailNumber').textContent = getCookie('sip_primaryNumber') || '--';
+            return trunksList;
+        }
+
+        // ============================================
+        // Phase B: start UBoss provisioning (once numbers exist)
+        // ============================================
+        async function ensureUbossStarted(trunksList) {
+            let existing = getCookie('sip_provisionJobId');
+            if (existing) return existing;
+
+            const contactData = getProvisioningContactData();
+            const accountId = getCookie('iristel_account_id');
+            const provisionJobs = await startAllUbossProvisioning(contactData, trunksList, accountId,
+                (name, i, total) => {
+                    document.getElementById('stepProvisionDetail').textContent =
+                        'Starting provisioning for ' + name + ' (' + i + '/' + total + ')...';
+                });
+            if (provisionJobs.length === 0) {
+                throw new Error('No trunk has numbers to provision.');
+            }
+            setCookie('sip_provisionJobId', provisionJobs[0].jobId);
+            setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
+            deleteCookie('sip_provisionResult');
+            return provisionJobs[0].jobId;
+        }
+
+        function showOrchestrationError(err) {
+            console.error('Orchestration failed:', err);
+            const icon = document.getElementById('statusIcon');
+            icon.className = 'status-icon failed';
+            icon.innerHTML = ICON_X;
+            document.getElementById('statusTitle').textContent = 'Order Needs Attention';
+            document.getElementById('statusSubtitle').textContent = 'A step could not complete. Nothing is lost — refresh to retry, or contact support.';
+            document.getElementById('errorMessage').textContent = err.message;
+            document.getElementById('errorBox').style.display = 'block';
+            document.getElementById('btnRow').innerHTML =
+                '<button class="btn-secondary" onclick="window.location.reload()">Retry</button>' +
+                '<a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>';
+        }
+
         // Initialize
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             loadUserInfoBar();
 
             jobId = getCookie('sip_provisionJobId');
-            if (!jobId) {
+            const didOrderNumber = getCookie('sip_didOrderNumber');
+            const trunksList = loadTrunksFromCookie();
+            const hasWork = jobId || didOrderNumber || trunksList.some(t => t.numbers && t.numbers.length);
+
+            if (!hasWork) {
                 document.getElementById('statusTitle').textContent = 'No Provisioning Job Found';
                 document.getElementById('statusSubtitle').textContent = 'It looks like you haven\'t submitted an order yet. Please go back and complete the order process.';
                 document.getElementById('statusIcon').className = 'status-icon queued';
@@ -757,34 +946,26 @@
             // Steps 1 & 2 reflect the recorded outcome of the MIND calls
             renderRecordedSteps();
 
+            // Porting orders: show the port step + PON card and start tracking
+            startPonTracking();
+
             // Populate details
-            document.getElementById('detailJobId').textContent = jobId;
+            document.getElementById('detailJobId').textContent = jobId || 'Pending';
             document.getElementById('detailBusiness').textContent = getCookie('sip_businessName') || '--';
             document.getElementById('detailNumber').textContent = getCookie('sip_primaryNumber') || '--';
-
-            // Channel count from trunks
-            let channels = 1;
-            const trunksData = getCookie('sip_trunks');
-            if (trunksData) {
-                try {
-                    const trunksList = JSON.parse(trunksData);
-                    if (Array.isArray(trunksList) && trunksList.length > 0) {
-                        channels = trunksList[0].channels || 1;
-                    }
-                } catch (e) {}
-            }
-            document.getElementById('detailChannels').textContent = channels;
-
+            document.getElementById('detailChannels').textContent =
+                (trunksList[0] && trunksList[0].channels) || 1;
             document.getElementById('detailStarted').textContent = 'Checking...';
 
             // Already completed on an earlier visit — show the final state instantly
             // instead of replaying the staged progress. Submitting a new order clears
             // this, so a stored result always belongs to the job id above.
             const savedResult = getCookie('sip_provisionResult');
-            if (savedResult) {
+            if (jobId && savedResult) {
                 try {
                     const result = JSON.parse(savedResult);
                     if (statusIs(result, UBOSS_STATUS.COMPLETED)) {
+                        setNumbersStep('done', 'Numbers assigned', 'Your numbers are active');
                         showFinalCompleted(result);
                         // Guard against a reload that lands here before the welcome
                         // letter was ever requested — sendWelcomeEmail de-dupes by job id
@@ -794,7 +975,25 @@
                 } catch (e) {}
             }
 
-            // Start polling
+            try {
+                if (!jobId) {
+                    // Phase A: wait out the number order, then Phase B: start UBoss
+                    setStepState(document.getElementById('stepProvisionIcon'), 'waiting',
+                        document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
+                        'Configuring trunk on platform', 'Starts once your numbers are assigned');
+                    await waitForNumberOrder(trunksList);
+                    jobId = await ensureUbossStarted(trunksList);
+                    document.getElementById('detailJobId').textContent = jobId;
+                } else {
+                    setNumbersStep('done', 'Numbers assigned', 'Your numbers are active');
+                }
+            } catch (err) {
+                setNumbersStep('error', 'Number order problem', err.message);
+                showOrchestrationError(err);
+                return;
+            }
+
+            // Phase C: poll the UBoss job (existing flow)
             checkStatus();
             startPolling(5000);
         });

@@ -1,8 +1,9 @@
 // ============================================
 // OnlineOrdering server
 // ============================================
-// Serves the static ordering pages AND proxies the Iristel espresso DID
-// Ordering V3 SOAP API as JSON under /api/did/*.
+// Serves the static ordering pages AND proxies the Iristel espresso SOAP
+// APIs as JSON: DID Ordering v3 under /api/did/*, LNP (number porting) v4
+// under /api/lnp/*.
 //
 // The browser cannot talk to espresso directly: the endpoint sends no CORS
 // headers, speaks rpc/encoded SOAP, and the credentials must not ship in
@@ -27,6 +28,19 @@ const ESPRESSO_NS = `urn:${ESPRESSO_URL}`;
 const ESPRESSO_USER = process.env.ESPRESSO_USER || '';
 const ESPRESSO_PASS = process.env.ESPRESSO_PASS || '';
 
+// The routing profile decides where an ordered DID actually routes. Getting it
+// wrong fails silently — the number provisions fine but calls never land — so
+// it is pinned here rather than inferred from whatever the account lists first.
+// Note the environments differ: production carries "Profile 718524 DID E164",
+// the test environment only has "Test Profile".
+const ESPRESSO_DID_PROFILE = process.env.ESPRESSO_DID_PROFILE || '';
+const ESPRESSO_LNP_PROFILE = process.env.ESPRESSO_LNP_PROFILE || '';
+
+// LNP (Local Number Portability) lives on the v4 endpoint — same host and
+// credentials, different WSDL/namespace than the v3 DID ordering API.
+const ESPRESSO_LNP_URL = `https://connect.espressodid.com/cloud/public/v4/${ESPRESSO_MODE}`;
+const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
+
 const ROOT = __dirname;
 
 // ============================================
@@ -37,10 +51,10 @@ function xmlEscape(s) {
                     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function soapEnvelope(bodyXml) {
+function soapEnvelope(bodyXml, ns = ESPRESSO_NS) {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
-  xmlns:ns1="${ESPRESSO_NS}"
+  xmlns:ns1="${ns}"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
@@ -54,10 +68,10 @@ ${bodyXml}
 </SOAP-ENV:Envelope>`;
 }
 
-function soapPost(bodyXml) {
+function soapPost(bodyXml, url = ESPRESSO_URL, ns = ESPRESSO_NS) {
     return new Promise((resolve, reject) => {
-        const payload = soapEnvelope(bodyXml);
-        const req = https.request(ESPRESSO_URL, {
+        const payload = soapEnvelope(bodyXml, ns);
+        const req = https.request(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'text/xml; charset=utf-8',
@@ -149,13 +163,15 @@ function soapArray(node) {
 // ============================================
 // espresso call wrapper
 // ============================================
-async function espressoCall(methodBodyXml, methodName) {
+async function espressoCall(methodBodyXml, methodName, api = 'did') {
     if (!ESPRESSO_USER || !ESPRESSO_PASS) {
         const err = new Error('espresso credentials not configured (set ESPRESSO_USER / ESPRESSO_PASS)');
         err.status = 503;
         throw err;
     }
-    const raw = await soapPost(methodBodyXml);
+    const raw = api === 'lnp'
+        ? await soapPost(methodBodyXml, ESPRESSO_LNP_URL, ESPRESSO_LNP_NS)
+        : await soapPost(methodBodyXml);
     const doc = parseXml(raw);
     const body = doc && (doc.Body || doc.body);
     if (!body) throw new Error('Unparseable espresso response');
@@ -194,10 +210,14 @@ function getProfiles() {
 // requests: [{ratecenter, npa, quantity}] — prefix/country_prefix are deprecated
 // but required by the schema; the manual says their values are ignored.
 async function placeOrder(profile, requests) {
+    if (!profile) profile = ESPRESSO_DID_PROFILE;
+    const profiles = await getProfiles();
     if (!profile) {
-        const profiles = await getProfiles();
         if (!profiles.length) throw new Error('No routing profiles on this espresso account');
         profile = profiles[0];
+    } else if (!profiles.includes(profile)) {
+        // Refusing beats ordering numbers that route somewhere unintended
+        throw new Error(`Routing profile "${profile}" not found on this account. Available: ${profiles.join(', ')}`);
     }
     const items = requests.map(r => `
       <item xsi:type="ns1:didRequestArrayStructure">
@@ -255,6 +275,105 @@ function getOrderDetails(orderNumber) {
 }
 
 // ============================================
+// LNP (Local Number Portability) API operations — v4 endpoint
+// ============================================
+// 1 = portable, 0 = ratecenter supported but not yet open, -1 = not portable
+function lnpCheckPortability(npanxx) {
+    const body = `<ns1:lnpCheckNpaNxxPortability><npanxx xsi:type="xsd:string">${xmlEscape(npanxx)}</npanxx></ns1:lnpCheckNpaNxxPortability>`;
+    return espressoCall(body, 'lnpCheckNpaNxxPortability', 'lnp')
+        .then(r => ({ npanxx, portable: parseInt(r, 10) }));
+}
+
+function lnpGetProfiles() {
+    return espressoCall('<ns1:lnpGetRoutingProfiles/>', 'lnpGetRoutingProfiles', 'lnp')
+        .then(r => soapArray(r).map(x => ({ id: parseInt(x.id, 10), label: x.label || '' })));
+}
+
+// data: { numbers: [10-digit strings], existing_account_number, service_type?,
+//         current_provider_name?, desired_due_date, auth_date, end_user_name,
+//         house_number, street_name, street_type?, city, province_state,
+//         zip_code, comments?, losing_carrier_comments?, profile? (routing id) }
+async function lnpCreatePon(data) {
+    let profileId = parseInt(data.profile || ESPRESSO_LNP_PROFILE, 10) || null;
+    const profiles = await lnpGetProfiles();
+    if (!profileId) {
+        if (!profiles.length) throw new Error('No LNP routing profiles on this espresso account');
+        profileId = profiles[0].id;
+    } else if (!profiles.some(p => p.id === profileId)) {
+        // Same reasoning as placeOrder: a wrong profile misroutes silently
+        throw new Error(`LNP routing profile ${profileId} not found on this account. Available: `
+            + profiles.map(p => `${p.id} (${p.label})`).join(', '));
+    }
+
+    const str = (key, val) => `<${key} xsi:type="xsd:string">${xmlEscape(val == null ? '' : val)}</${key}>`;
+    const items = data.numbers.map(n => `
+        <item xsi:type="ns1:lnpSdStructure">
+          ${str('activity', 'Port')}
+          ${str('existing_account_number', data.existing_account_number)}
+          ${str('start_number', n)}
+          ${str('end_number', '')}
+        </item>`).join('');
+
+    const body = `<ns1:lnpCreatePons><data xsi:type="ns1:lnpCreatePonRequest"><pon_data xsi:type="ns1:lnpPonStructure">
+${str('service_type', data.service_type || 'Wireline')}
+${str('current_provider_name', data.current_provider_name)}
+${str('desired_due_date', data.desired_due_date)}
+${str('auth_date', data.auth_date)}
+${str('end_user_name', data.end_user_name)}
+${str('house_number', data.house_number)}
+${str('street_directional', data.street_directional)}
+${str('street_suffix', data.street_suffix)}
+${str('street_name', data.street_name)}
+${str('street_type', data.street_type)}
+${str('descriptive_location', '')}
+${str('floor', '')}
+${str('room', '')}
+${str('building', '')}
+${str('city', data.city)}
+${str('province_state', data.province_state)}
+${str('zip_code', data.zip_code)}
+${str('comments', data.comments)}
+${str('losing_carrier_comments', data.losing_carrier_comments)}
+<service_details SOAP-ENC:arrayType="ns1:lnpSdStructure[${data.numbers.length}]" xsi:type="ns1:lnpSdStructureArray">${items}
+</service_details>
+</pon_data>
+<routing xsi:type="ns1:lnpRoutingStructure">
+<default_routing_profile xsi:type="xsd:int">${parseInt(profileId, 10)}</default_routing_profile>
+<details SOAP-ENC:arrayType="ns1:lnpRoutingDetails[0]" xsi:type="ns1:lnpRoutingDetailsArray"/>
+</routing></data></ns1:lnpCreatePons>`;
+
+    const r = await espressoCall(body, 'lnpCreatePons', 'lnp');
+    const pons = soapArray(r);
+    if (!pons.length) throw new Error('LNP API returned no PON');
+    const first = pons[0];
+    return {
+        pon: first.pon,
+        status: first.last_processstatus || '',
+        dateLastUpdate: first.date_last_update || '',
+        routingProfile: parseInt(profileId, 10)
+    };
+}
+
+function lnpPonStatus(pon) {
+    const body = `<ns1:lnpPonLastStatus><pon xsi:type="xsd:string">${xmlEscape(pon)}</pon></ns1:lnpPonLastStatus>`;
+    return espressoCall(body, 'lnpPonLastStatus', 'lnp').then(r => {
+        const reason = r.status_reason || {};
+        return {
+            pon: r.pon || pon,
+            status: r.last_processstatus || '',
+            dateLastUpdate: r.date_last_update || '',
+            note: r.note || '',
+            statusReason: {
+                type: reason.type || '',
+                typeLabel: reason.type_label || '',
+                details: soapArray(reason.details).map(d =>
+                    typeof d === 'string' ? d : (d && (d.message || d.description)) || JSON.stringify(d))
+            }
+        };
+    });
+}
+
+// ============================================
 // HTTP layer
 // ============================================
 function sendJson(res, status, obj) {
@@ -297,6 +416,33 @@ async function handleApi(req, res, pathname) {
         if (m && req.method === 'GET') {
             return sendJson(res, 200, await getOrderDetails(decodeURIComponent(m[1])));
         }
+        m = pathname.match(/^\/api\/lnp\/portability\/(\d{6})$/);
+        if (m && req.method === 'GET') {
+            return sendJson(res, 200, await lnpCheckPortability(m[1]));
+        }
+        if (pathname === '/api/lnp/profiles' && req.method === 'GET') {
+            return sendJson(res, 200, { profiles: await lnpGetProfiles() });
+        }
+        if (pathname === '/api/lnp/pon' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            const numbers = (Array.isArray(body.numbers) ? body.numbers : [])
+                .map(n => String(n).replace(/\D/g, ''));
+            if (!numbers.length) return sendJson(res, 400, { error: 'numbers[] is required' });
+            if (numbers.some(n => n.length !== 10)) {
+                return sendJson(res, 400, { error: 'every number must be exactly 10 digits' });
+            }
+            for (const field of ['end_user_name', 'house_number', 'street_name', 'city',
+                                 'province_state', 'zip_code', 'auth_date', 'desired_due_date']) {
+                if (!body[field] || !String(body[field]).trim()) {
+                    return sendJson(res, 400, { error: `${field} is required` });
+                }
+            }
+            return sendJson(res, 200, await lnpCreatePon({ ...body, numbers }));
+        }
+        m = pathname.match(/^\/api\/lnp\/pon\/([^/]+)\/status$/);
+        if (m && req.method === 'GET') {
+            return sendJson(res, 200, await lnpPonStatus(decodeURIComponent(m[1])));
+        }
         sendJson(res, 404, { error: 'Unknown API route' });
     } catch (err) {
         console.error('[api]', pathname, '-', err.message);
@@ -336,6 +482,10 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
+    // Print the resolved config: a deploy pointed at the wrong environment or
+    // profile should be obvious from the log, not discovered via a bad order.
     console.log(`OnlineOrdering server on :${PORT} — espresso mode: ${ESPRESSO_MODE}` +
         (ESPRESSO_USER ? '' : ' (NO CREDENTIALS SET — /api/did/* will return 503)'));
+    console.log('  DID profile: ' + (ESPRESSO_DID_PROFILE || '(not pinned — will use the account\'s first profile)'));
+    console.log('  LNP profile: ' + (ESPRESSO_LNP_PROFILE || '(not pinned — will use the account\'s first profile)'));
 });

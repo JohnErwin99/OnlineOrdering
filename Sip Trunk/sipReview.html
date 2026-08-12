@@ -586,8 +586,24 @@
             </div>
             <div class="review-grid" style="margin-top: 16px;">
                 <div class="review-item">
-                    <div class="review-label">LOA Document</div>
-                    <div class="review-value" id="revLoaFile">--</div>
+                    <div class="review-label">End User Name</div>
+                    <div class="review-value" id="revPonEndUser">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Existing Account #</div>
+                    <div class="review-value" id="revPonAccount">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Authorization Date</div>
+                    <div class="review-value" id="revPonAuthDate">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Desired Due Date</div>
+                    <div class="review-value" id="revPonDueDate">--</div>
+                </div>
+                <div class="review-item">
+                    <div class="review-label">Service Address on File</div>
+                    <div class="review-value" id="revPonAddress">--</div>
                 </div>
             </div>
         </div>
@@ -705,6 +721,7 @@
     </div>
 
     <script src="../js/common.js"></script>
+    <script src="../js/sip-provisioning-common.js"></script>
     <script src="../js/sip-sipReview.js"></script>
 <script>
   var parentOrigins = [

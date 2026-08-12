@@ -1,2 +1,6 @@
 .claude/
 testAntigravity
+
+# espresso credentials — never commit
+.env.local
+.env

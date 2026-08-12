@@ -2,8 +2,9 @@
   "name": "online-ordering",
   "version": "1.0.0",
   "private": true,
-  "description": "Iristel online ordering — static pages plus espresso DID SOAP proxy",
+  "description": "Iristel online ordering — static pages plus espresso DID/LNP SOAP proxy",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "sh -c '. ./.env.local 2>/dev/null; node server.js'"
   }
 }

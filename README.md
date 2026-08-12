@@ -1,8 +1,8 @@
 # Iristel Online Ordering
 
 Static ordering pages plus a small Node server (`server.js`, no npm dependencies)
-that serves them and proxies the **espresso DID Ordering V3 SOAP API** as JSON
-under `/api/did/*`.
+that serves them and proxies the espresso SOAP APIs as JSON: **DID Ordering V3**
+under `/api/did/*` and **LNP (number porting) V4** under `/api/lnp/*`.
 
 ## Why a server?
 
@@ -11,12 +11,50 @@ instead of picked from stock. The espresso API is SOAP-only, sends no CORS
 headers, and needs credentials that must not ship in browser JS — so the browser
 talks to this server, and the server talks SOAP.
 
+## Configuration
+
+| Variable | Purpose |
+|---|---|
+| `ESPRESSO_USER` / `ESPRESSO_PASS` | espresso credentials (from Iristel) |
+| `ESPRESSO_MODE` | `test` (default) or `production` |
+| `ESPRESSO_DID_PROFILE` | Routing profile for DID orders |
+| `ESPRESSO_LNP_PROFILE` | Routing profile **id** for port requests |
+| `PORT` | Listen port (default 3000) |
+
+### The routing profile matters, and differs per environment
+
+The routing profile decides **where an ordered DID actually routes**. Get it
+wrong and the failure is silent: the number provisions successfully, the trunk
+builds normally, and calls never land. So the profile is pinned by env var, and
+the server refuses to place an order if the pinned profile isn't on the account
+rather than quietly falling back to another one.
+
+The two environments do **not** carry the same profiles:
+
+| | DID v3 (`ESPRESSO_DID_PROFILE`) | LNP v4 (`ESPRESSO_LNP_PROFILE`) |
+|---|---|---|
+| `test` | `Test Profile` | `2408` |
+| `production` | `Profile 718524 DID E164` | `2408` |
+
+Check what an account actually has with `GET /api/did/profiles` and
+`GET /api/lnp/profiles`.
+
 ## Run locally
 
 ```bash
-ESPRESSO_USER=yourUser ESPRESSO_PASS=yourPass node server.js
+cp .env.local.example .env.local   # fill in the password
+npm run dev                        # sources .env.local, then starts
 # open http://localhost:3000
 ```
+
+Or pass them inline:
+
+```bash
+ESPRESSO_USER=... ESPRESSO_PASS=... ESPRESSO_MODE=test \
+ESPRESSO_DID_PROFILE='Test Profile' ESPRESSO_LNP_PROFILE=2408 npm start
+```
+
+`.env.local` is git-ignored. **Never commit credentials.**
 
 ## Deploy on Render
 
@@ -24,12 +62,19 @@ The service must be a **Web Service** (not a Static Site):
 
 - Build command: *(none needed)*
 - Start command: `npm start`
-- Environment variables:
-  - `ESPRESSO_USER` / `ESPRESSO_PASS` — espresso DID API credentials (from Iristel)
-  - `ESPRESSO_MODE` — `test` (default) or `production`
+- Environment variables: all of the above, set in the Render dashboard
 
-Without credentials the pages still serve, but `/api/did/*` returns 503 and the
-number-selection page shows a catalog error.
+The startup log echoes the resolved mode and profiles, so a misconfigured deploy
+is visible immediately:
+
+```
+OnlineOrdering server on :3000 — espresso mode: production
+  DID profile: Profile 718524 DID E164
+  LNP profile: 2408
+```
+
+Without credentials the pages still serve, but `/api/did/*` and `/api/lnp/*`
+return 503 and the number-selection page shows a catalog error.
 
 ## API routes
 
@@ -40,11 +85,21 @@ number-selection page shows a catalog error.
 | `/api/did/order` | POST | Place a DID order — `{requests: [{ratecenter, npa, quantity}]}` |
 | `/api/did/order/:id/status` | GET | Order status (`Processing`/`Approved`/`Completed`/…) |
 | `/api/did/order/:id/details` | GET | Ranges + expanded individual numbers (Completed orders only) |
+| `/api/lnp/portability/:npanxx` | GET | LNP v4: is this NPA-NXX portable? (`1`/`0`/`-1`) |
+| `/api/lnp/profiles` | GET | LNP v4: routing profiles for porting |
+| `/api/lnp/pon` | POST | LNP v4: create a porting request (PON) — pon_data fields + `numbers[]` |
+| `/api/lnp/pon/:pon/status` | GET | LNP v4: last PON status incl. rejection reasons |
 
 ## Order flow
 
 1. **numberSelection** — customer picks rate center / NPA / quantity per trunk
-2. **sipReview** submit — MIND account → one DID order covering all trunks
-3. **provisioningStatus** — polls the DID order; on `Completed`, distributes the
-   assigned numbers across trunks and starts UbossRobot trunk provisioning,
-   then polls that job as before
+   (for ports these are *temporary* numbers used until the port completes)
+2. **siptrunkLOA** (ports only) — collects the PON data the LNP API needs
+   (end user, existing account, dates, service address) with a live
+   NPA-NXX portability check; no LOA file upload anymore
+3. **sipReview** submit — MIND account → one DID order covering all trunks
+   → (ports) PON created via `/api/lnp/pon` → redirect immediately
+4. **provisioningStatus** — the customer waits here: polls the DID order; on
+   `Completed`, distributes the assigned numbers across trunks and starts
+   UbossRobot trunk provisioning, then polls that job as before. Porting
+   orders also show a live PON status card (polls `/api/lnp/pon/:pon/status`)

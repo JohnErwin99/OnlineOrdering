@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIP Trunk - Letter of Authorization - Iristel</title>
+    <title>SIP Trunk - Port Request - Iristel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -201,6 +201,18 @@
             width: 18px;
             height: 18px;
         }
+
+        .port-badge {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+        .port-badge.ok { background: rgba(16, 185, 129, 0.12); color: var(--success-green); }
+        .port-badge.warn { background: rgba(245, 158, 11, 0.12); color: var(--warning-amber); }
+        .port-badge.bad { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+        .port-badge.checking { background: var(--medium-gray); color: var(--text-gray); }
 
         .upload-area {
             border: 2px dashed var(--medium-gray);
@@ -410,15 +422,15 @@
             </div>
 
             <div class="progress-container">
-                <div class="progress-text">Step 3 of 6 — Letter of Authorization</div>
+                <div class="progress-text">Step 3 of 6 — Port Request</div>
                 <div class="progress-bar">
                     <div class="progress-fill"></div>
                 </div>
             </div>
 
             <div class="content">
-                <h1 class="page-title">Letter of Authorization</h1>
-                <p class="page-subtitle">Authorize Iristel to port your existing phone numbers from your current provider.</p>
+                <h1 class="page-title">Port Request</h1>
+                <p class="page-subtitle">Authorize Iristel to port your existing phone numbers from your current provider. Your request is submitted electronically to the losing carrier.</p>
 
                 <div class="warning-box">
                     <p><strong>Important:</strong> To test your SIP trunk before the port completes, you'll need to select temporary numbers on the next screen. The porting process takes a minimum of <strong>5 business days</strong>.</p>
@@ -428,55 +440,106 @@
                     <!-- Numbers to Port -->
                     <div class="loa-card">
                         <h3 class="loa-header">Numbers to Port</h3>
-                        <p class="form-hint" style="margin-bottom: 20px;">Enter the phone numbers you want to transfer to Iristel. These numbers will be added to your trunk configuration and activated after the port completes.</p>
-                        
+                        <p class="form-hint" style="margin-bottom: 20px;">Enter the phone numbers you want to transfer to Iristel. Each number is checked against the porting network as you type.</p>
+
                         <div class="numbers-to-port" id="numbersContainer">
                             <div class="number-input-row">
-                                <input type="tel" placeholder="(514) 866 3425" class="port-number" maxlength="14" oninput="formatPhoneNumber(this)" required>
+                                <input type="tel" placeholder="(514) 866 3425" class="port-number" maxlength="14" oninput="formatPhoneNumber(this)" onblur="checkPortability(this)" required>
+                                <span class="port-badge" style="display:none;"></span>
                                 <button type="button" class="btn-remove" onclick="removeNumber(this)" style="visibility: hidden;">
                                     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
                                 </button>
                             </div>
                         </div>
-                        
+
                         <button type="button" class="btn-add-number" onclick="addNumber()">
                             <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"/></svg>
                             Add Another Number
                         </button>
                     </div>
 
-                    <!-- LOA Upload -->
+                    <!-- Port Request Details (sent to the losing carrier via the LNP API) -->
                     <div class="form-section">
-                        <h2 class="section-title">Upload Letter of Authorization</h2>
-                        
-                        <div class="info-box">
-                            <p>Download our LOA template, fill it out with your information, sign it, and upload it below. The LOA authorizes Iristel to request the port from your current provider.</p>
-                        </div>
-
-                        <button type="button" class="btn-download-template" onclick="downloadTemplate()">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-                            Download LOA Template
-                        </button>
-
-                        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-                            <svg class="upload-icon" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <path d="M24 32V16M24 16L18 22M24 16L30 22" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M40 32V36C40 38.2091 38.2091 40 36 40H12C9.79086 40 8 38.2091 8 36V32" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-                            </svg>
-                            <p class="upload-text">Click to upload or drag and drop</p>
-                            <p class="upload-hint">PDF, PNG, or JPG (max 10MB)</p>
-                        </div>
-                        <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" style="display: none;" onchange="handleFileUpload(this)">
-
-                        <div class="uploaded-file" id="uploadedFile" style="display: none;">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-                            <div class="uploaded-file-info">
-                                <div class="uploaded-file-name" id="fileName"></div>
-                                <div class="uploaded-file-size" id="fileSize"></div>
+                        <h2 class="section-title">Account with Current Provider</h2>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">End User / Business Name <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="ponEndUserName" required>
+                                <p class="form-hint">Exactly as it appears on your current provider's bill</p>
                             </div>
-                            <button type="button" class="btn-remove" onclick="removeFile()">
-                                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-                            </button>
+                            <div class="form-group">
+                                <label class="form-label">Existing Account Number <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="ponAccountNumber" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Authorization Date <span class="required">*</span></label>
+                                <input type="date" class="form-input" id="ponAuthDate" required>
+                                <p class="form-hint">The date you authorize Iristel to request the port</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Desired Due Date <span class="required">*</span></label>
+                                <input type="date" class="form-input" id="ponDueDate" required>
+                                <p class="form-hint">Porting takes a minimum of 5 business days</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Service Address -->
+                    <div class="form-section">
+                        <h2 class="section-title">Service Address on File</h2>
+                        <div class="info-box">
+                            <p>This must match the address your <strong>current provider</strong> has on file — a mismatch is the most common reason ports get rejected.</p>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 0 0 140px;">
+                                <label class="form-label">Street Number <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="ponHouseNumber" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Street Name <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="ponStreetName" required>
+                            </div>
+                            <div class="form-group" style="flex: 0 0 140px;">
+                                <label class="form-label">Street Type</label>
+                                <input type="text" class="form-input" id="ponStreetType" placeholder="St, Ave, Blvd...">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">City <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="ponCity" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Province <span class="required">*</span></label>
+                                <select class="form-input" id="ponProvince" required>
+                                    <option value="">Select...</option>
+                                    <option value="AB">Alberta</option>
+                                    <option value="BC">British Columbia</option>
+                                    <option value="MB">Manitoba</option>
+                                    <option value="NB">New Brunswick</option>
+                                    <option value="NL">Newfoundland</option>
+                                    <option value="NT">Northwest Territories</option>
+                                    <option value="NS">Nova Scotia</option>
+                                    <option value="NU">Nunavut</option>
+                                    <option value="ON">Ontario</option>
+                                    <option value="PE">Prince Edward Island</option>
+                                    <option value="QC">Quebec</option>
+                                    <option value="SK">Saskatchewan</option>
+                                    <option value="YT">Yukon</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 0 0 140px;">
+                                <label class="form-label">Postal Code <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="ponZipCode" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Comments for Your Current Provider</label>
+                                <input type="text" class="form-input" id="ponCarrierComments" placeholder="Optional">
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -502,8 +565,8 @@
                                 <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5z" clip-rule="evenodd"/></svg>
                             </div>
                             <div class="timeline-content">
-                                <h4>Submit LOA</h4>
-                                <p>Upload your signed Letter of Authorization</p>
+                                <h4>Submit Port Request</h4>
+                                <p>Sent electronically to your current provider</p>
                             </div>
                         </div>
                         <div class="timeline-item">
