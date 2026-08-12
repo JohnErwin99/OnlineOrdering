@@ -102,20 +102,37 @@ function pruneOrderStore() {
 }
 pruneOrderStore();
 
-// A stable fingerprint of "this customer ordering these numbers". The client
-// sends its own key when it has one; this is the fallback so protection does
-// not depend on the browser remembering anything.
-function orderKey(accountRef, requests) {
-    const shape = (requests || [])
-        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
-        .sort().join(';');
-    return `${accountRef || 'noacct'}::${shape}`;
+// Everything is keyed on the customer's EMAIL, because it is the only thing
+// that survives a new device, a cleared browser or an incognito window. An
+// account id does not: signing up again mints a new one, which would make a
+// repeat look like a different customer and get them billed twice.
+function normEmail(email) {
+    return String(email || '').trim().toLowerCase();
 }
 
-function recordOrder(key, record) {
-    orderStore[key] = { ...record, createdAt: Date.now() };
-    saveOrderStore();
+function stateGet(key) {
+    return orderStore[key] || null;
 }
+
+function stateSet(key, record) {
+    orderStore[key] = { ...record, createdAt: (orderStore[key] && orderStore[key].createdAt) || Date.now(), updatedAt: Date.now() };
+    saveOrderStore();
+    return orderStore[key];
+}
+
+function requestShape(requests) {
+    return (requests || [])
+        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
+        .sort().join(';');
+}
+
+// One namespace per step, so each is guarded independently
+const K = {
+    account:   email => `account:${normEmail(email)}`,
+    order:     (email, requests) => `order:${normEmail(email)}::${requestShape(requests)}`,
+    pon:       email => `pon:${normEmail(email)}`,
+    provision: (email, numbers) => `provision:${normEmail(email)}::${(numbers || []).slice().sort().join(',')}`
+};
 
 // ============================================
 // SOAP client (rpc/encoded, Credentials header)
@@ -617,6 +634,114 @@ async function chargeBalance(body) {
 }
 
 // ============================================
+// MIND ACCOUNT — create once per customer
+// ============================================
+// Guarded by email, not by the browser: a customer returning on a new device
+// would otherwise sign up again and end up with duplicate MIND accounts, and —
+// worse — a different account id, which would slip past the DID order guard and
+// bill them a second time.
+const MIND_API_KEY = process.env.MIND_API_KEY || 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
+
+async function createAccount(email, contact) {
+    const key = K.account(email);
+    const seen = stateGet(key);
+    if (seen && seen.accountId) {
+        console.log('[account] reusing', seen.accountId, 'for', normEmail(email));
+        return { accountId: seen.accountId, reused: true };
+    }
+
+    const requestBody = {
+        contact: {
+            fname: contact.fname, lname: contact.lname,
+            address1: contact.address1, city: contact.city,
+            province: contact.province, country: contact.country,
+            postalCode: contact.postalCode, emailAddress: contact.emailAddress || email,
+            phone: { mobile: contact.phone }
+        },
+        language: contact.language || 'en',
+        businessUnit: '1'
+    };
+
+    const r = await postJson(`${BILLING_API_URL}/accounts`, { 'iristelx-api-key': MIND_API_KEY }, requestBody);
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !data) {
+        const detail = data && Array.isArray(data.errors)
+            ? data.errors.map(e => e && e.message).filter(Boolean).join(' ') : '';
+        const err = new Error(((data && data.message) || `Account creation failed (HTTP ${r.status})`) + (detail ? ' — ' + detail : ''));
+        err.status = r.status >= 400 && r.status < 500 ? r.status : 502;
+        throw err;
+    }
+
+    const accountId = data.accountId || data.id || data.accountcode;
+    if (!accountId) throw new Error('Account created but no id returned');
+    stateSet(key, { accountId, email: normEmail(email) });
+    return { accountId, reused: false };
+}
+
+// ============================================
+// UBOSS PROVISIONING — never spawn a duplicate job
+// ============================================
+// UbossRobot does not resume: a retry restarts from step one. Once a previous
+// run got far enough to add the number to the pool, every later attempt fails
+// permanently with "Number(s) already exist in the number pool" — observed 10+
+// times on one number over two weeks, never recovering.
+//
+// So an accidental repeat (refresh, new device, re-submit) must NEVER start a
+// second job; it returns the existing one. Only an explicit, user-initiated
+// retry may start a fresh job, and it says so with force:true.
+const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
+const UBOSS_API_KEY = process.env.UBOSS_API_KEY || 'b1582d78d369685683e090ad37489937';
+
+function ubossJobStatus(jobId) {
+    return new Promise((resolve) => {
+        https.get(`${UBOSS_API_URL}/trunk-provisioning/${encodeURIComponent(jobId)}/status`,
+            { headers: { 'x-api-key': UBOSS_API_KEY }, timeout: 20000 }, res => {
+                let d = ''; res.on('data', c => d += c);
+                res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { resolve(null); } });
+            }).on('error', () => resolve(null)).on('timeout', function () { this.destroy(); resolve(null); });
+    });
+}
+
+async function startProvisioning(body) {
+    const { email, phoneNumbers, force } = body;
+    const key = K.provision(email, phoneNumbers);
+    const seen = stateGet(key);
+
+    if (seen && seen.jobId && !force) {
+        const live = await ubossJobStatus(seen.jobId);
+        const status = live && live.status;
+        console.log('[provision] existing job', seen.jobId, 'status', status, '— not starting another');
+        return { jobId: seen.jobId, reused: true, status: status || seen.status || 'Unknown' };
+    }
+
+    const requestBody = {
+        phoneNumbers: phoneNumbers,
+        resellerName: body.resellerName,
+        address: body.address,
+        city: body.city,
+        postcode: body.postcode,
+        notificationEmail: body.notificationEmail,
+        invoiceEmail: body.invoiceEmail,
+        accountRef: body.accountRef,
+        businessName: body.businessName,
+        channelCount: body.channelCount
+    };
+
+    const r = await postJson(`${UBOSS_API_URL}/trunk-provisioning`, { 'x-api-key': UBOSS_API_KEY }, requestBody);
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !data || !data.id) {
+        const err = new Error((data && data.message) || `Provisioning failed to start (HTTP ${r.status})`);
+        err.status = 502;
+        throw err;
+    }
+
+    stateSet(key, { jobId: data.id, email: normEmail(email), phoneNumbers, attempts: ((seen && seen.attempts) || 0) + 1 });
+    return { jobId: data.id, reused: false, sipAuthenticationPassword: data.sipAuthenticationPassword };
+}
+
+// ============================================
 // HTTP layer
 // ============================================
 function sendJson(res, status, obj) {
@@ -650,25 +775,56 @@ async function handleApi(req, res, pathname) {
                 if (!r.ratecenter || !r.npa) return sendJson(res, 400, { error: 'each request needs ratecenter and npa' });
             }
 
-            // Never place the same order twice. The key is the client's if it
-            // sent one, otherwise a fingerprint of account + requests, so this
-            // holds even when the browser has forgotten everything.
-            const key = body.idempotencyKey || orderKey(body.accountRef, requests);
-            const seen = orderStore[key];
+            // Never place the same order twice. Keyed on EMAIL so it holds
+            // across devices and cleared browsers, where an account id would
+            // change and let a duplicate through.
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            const key = K.order(body.email, requests);
+            const seen = stateGet(key);
             if (seen && seen.orderNumber) {
                 console.log('[order] duplicate suppressed for', key, '→', seen.orderNumber);
                 return sendJson(res, 200, { ...seen, duplicate: true });
             }
 
             const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef });
-            recordOrder(key, {
+            stateSet(key, {
                 orderNumber: result.orderNumber,
                 orderNumbers: result.orderNumbers,
                 profile: result.profile,
+                email: normEmail(body.email),
                 accountRef: body.accountRef || null,
                 requests: requests
             });
             return sendJson(res, 200, result);
+        }
+        if (pathname === '/api/account' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            if (!body.contact) return sendJson(res, 400, { error: 'contact is required' });
+            return sendJson(res, 200, await createAccount(body.email, body.contact));
+        }
+        if (pathname === '/api/provision' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            if (!Array.isArray(body.phoneNumbers) || !body.phoneNumbers.length) {
+                return sendJson(res, 400, { error: 'phoneNumbers[] is required' });
+            }
+            return sendJson(res, 200, await startProvisioning(body));
+        }
+        // Everything this server knows about a customer — lets any device pick
+        // an order back up instead of starting (and paying for) a new one.
+        if (pathname === '/api/session' && req.method === 'GET') {
+            const email = normEmail(new URL(req.url, 'http://x').searchParams.get('email'));
+            if (!email) return sendJson(res, 400, { error: 'email is required' });
+            const out = { email, account: null, order: null, pon: null, provisions: [] };
+            for (const [k, v] of Object.entries(orderStore)) {
+                if (!k.includes(`:${email}`)) continue;
+                if (k.startsWith('account:')) out.account = v;
+                else if (k.startsWith('order:')) out.order = v;
+                else if (k.startsWith('pon:')) out.pon = v;
+                else if (k.startsWith('provision:')) out.provisions.push(v);
+            }
+            return sendJson(res, 200, out);
         }
         if (pathname === '/api/payment/charge' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
@@ -713,7 +869,19 @@ async function handleApi(req, res, pathname) {
                     return sendJson(res, 400, { error: `${field} is required` });
                 }
             }
-            return sendJson(res, 200, await lnpCreatePon({ ...body, numbers }));
+            // A duplicate PON files a second port request with the losing
+            // carrier, which is disruptive and slow to unwind — so it is
+            // guarded by email like everything else.
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            const ponKey = K.pon(body.email);
+            const seenPon = stateGet(ponKey);
+            if (seenPon && seenPon.pon) {
+                console.log('[pon] duplicate suppressed for', ponKey, '→', seenPon.pon);
+                return sendJson(res, 200, { ...seenPon, duplicate: true });
+            }
+            const ponResult = await lnpCreatePon({ ...body, numbers });
+            stateSet(ponKey, { ...ponResult, email: normEmail(body.email), numbers });
+            return sendJson(res, 200, ponResult);
         }
         m = pathname.match(/^\/api\/lnp\/pon\/([^/]+)\/status$/);
         if (m && req.method === 'GET') {

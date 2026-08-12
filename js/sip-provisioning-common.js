@@ -108,11 +108,18 @@ function getProvisioningContactData() {
     };
 }
 
-async function startUbossProvisioning(contactData, phoneNumbers, accountId, channelCount) {
-    // Field order/names must match the UbossRobot trunk-provisioning contract.
-    // phoneNumbers: the first entry is the trunk number; any further entries
-    // are provisioned as channel numbers on the same trunk (bulk).
+// Started through our server, which refuses to spawn a second job for the same
+// customer + numbers. That matters more here than anywhere else: UbossRobot
+// does not resume — a retry restarts from step one, and once an earlier run
+// added the number to the pool, every later attempt fails forever with
+// "Number(s) already exist in the number pool". So an accidental repeat
+// (refresh, new device, re-submit) must reuse the existing job. Only a
+// deliberate "Try Again" passes force, and only that may start a new one.
+async function startUbossProvisioning(contactData, phoneNumbers, accountId, channelCount, options) {
+    const opts = options || {};
     const requestBody = {
+        email: (contactData && contactData.emailAddress)
+            || getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '',
         phoneNumbers: phoneNumbers.map(formatUbossPhone),
         resellerName: UBOSS_RESELLER_NAME,
         address: contactData.address1,
@@ -122,35 +129,34 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
         invoiceEmail: contactData.emailAddress,
         accountRef: accountId,
         businessName: getProvisioningBusinessName(),
-        channelCount: channelCount
+        channelCount: channelCount,
+        force: !!opts.force
     };
 
-    console.log('[UBoss] Start Provisioning — POST', `${UBOSS_API_URL}/trunk-provisioning`);
-    console.log('Request Body:', JSON.stringify(requestBody, null, 2));
+    console.log('[UBoss] Start Provisioning — POST /api/provision', opts.force ? '(forced retry)' : '');
 
-    const response = await fetch(`${UBOSS_API_URL}/trunk-provisioning`, {
+    const response = await fetch('/api/provision', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': UBOSS_API_KEY
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
     });
 
     const data = await response.json().catch(() => null);
-    console.log('UbossRobot Start Response:', data);
+    console.log('Provisioning Response:', data);
 
-    if (!response.ok) {
-        throw new Error(describeApiError(data,
-            `UbossRobot provisioning failed to start (HTTP ${response.status})`));
+    if (!response.ok || !data || !data.jobId) {
+        throw new Error((data && data.error)
+            || `UbossRobot provisioning failed to start (HTTP ${response.status})`);
     }
+    if (data.reused) console.log('Existing provisioning job reused — no duplicate started');
 
-    return data;
+    // Callers expect the UbossRobot shape
+    return { id: data.jobId, reused: data.reused, sipAuthenticationPassword: data.sipAuthenticationPassword };
 }
 
 // Start one UBoss job per trunk. Returns [{trunkName, jobId}]; throws with a
 // reconciliation message when a later trunk fails after earlier ones started.
-async function startAllUbossProvisioning(contactData, trunksList, accountId, onProgress) {
+async function startAllUbossProvisioning(contactData, trunksList, accountId, onProgress, options) {
     const provisionJobs = [];
     for (let i = 0; i < trunksList.length; i++) {
         const trunk = trunksList[i];
@@ -161,7 +167,7 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
 
         if (onProgress) onProgress(trunk.name || ('Trunk ' + (i + 1)), i + 1, trunksList.length);
         try {
-            const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, trunk.channels || 1);
+            const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, trunk.channels || 1, options);
             console.log('UbossRobot job started for', trunk.name, ':', ubossResult.id);
             provisionJobs.push({ trunkName: trunk.name || ('Trunk ' + (i + 1)), jobId: ubossResult.id });
         } catch (err) {

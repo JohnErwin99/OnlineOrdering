@@ -894,33 +894,22 @@
         // Phase B: start UBoss provisioning (once numbers exist)
         // ============================================
         async function ensureUbossStarted(trunksList) {
-            let existing = getCookie('sip_provisionJobId');
-            if (existing) {
-                // A job that terminally Failed must not be reused — polling it
-                // again only replays the same error, which is what made Retry
-                // look like it did nothing. Drop it so a fresh job is started.
-                let failed = false;
-                try {
-                    const r = await fetch(`${UBOSS_API_URL}/trunk-provisioning/${encodeURIComponent(existing)}/status`,
-                        { headers: { 'x-api-key': UBOSS_API_KEY } });
-                    const d = await r.json().catch(() => null);
-                    failed = r.ok && d && statusIs(d, UBOSS_STATUS.FAILED);
-                } catch (e) { /* unreachable — keep the job and let polling report */ }
+            const force = getCookie('sip_forceReprovision') === '1';
+            deleteCookie('sip_forceReprovision');
 
-                if (!failed) return existing;
-                console.log('Previous provisioning job', existing, 'failed — starting a new one');
-                deleteCookie('sip_provisionJobId');
-                deleteCookie('sip_provisionJobs');
-                deleteCookie('sip_provisionResult');
-            }
+            let existing = getCookie('sip_provisionJobId');
+            if (existing && !force) return existing;
 
             const contactData = getProvisioningContactData();
             const accountId = getCookie('iristel_account_id');
+            // The server decides whether this starts a new job or returns the
+            // existing one — the browser is not trusted with that call, since
+            // its state may be gone while the job is very much still there.
             const provisionJobs = await startAllUbossProvisioning(contactData, trunksList, accountId,
                 (name, i, total) => {
                     document.getElementById('stepProvisionDetail').textContent =
                         'Starting provisioning for ' + name + ' (' + i + '/' + total + ')...';
-                });
+                }, { force: force });
             if (provisionJobs.length === 0) {
                 throw new Error('No trunk has numbers to provision.');
             }
@@ -933,8 +922,13 @@
         // Discard the failed job and re-run the orchestration from scratch. The
         // numbers are already on the trunks, so this only re-does provisioning —
         // it never re-orders DIDs.
+        // A deliberate, user-initiated retry — the ONLY thing allowed to start a
+        // fresh UbossRobot job. Everything else reuses the existing one, because
+        // the robot restarts from step one and a number already in the pool
+        // makes every later attempt fail permanently.
         function retryProvisioning() {
             stopPolling();
+            setCookie('sip_forceReprovision', '1');
             deleteCookie('sip_provisionJobId');
             deleteCookie('sip_provisionJobs');
             deleteCookie('sip_provisionResult');

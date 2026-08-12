@@ -556,59 +556,42 @@
         // ============================================
         // STEP 1: Create business account in MIND
         // ============================================
+        // Created through our server so it is guarded by email: a customer
+        // returning on another device would otherwise sign up again, get a
+        // second MIND account, and — because the order guard keys off the
+        // account — be billed for a second set of numbers.
         async function createMindAccount(contactData) {
-            const requestBody = {
-                contact: {
-                    fname: contactData.fname,
-                    lname: contactData.lname,
-                    address1: contactData.address1,
-                    city: contactData.city,
-                    province: contactData.province,
-                    country: contactData.country,
-                    postalCode: contactData.postalCode,
-                    emailAddress: contactData.emailAddress,
-                    phone: {
-                        mobile: contactData.phone
-                    }
-                },
-                language: getCookie('iristel_user_language') || 'en',
-                businessUnit: '1'
-            };
-
-            console.log('[STEP 1] MIND Create Account — POST', MIND_API_URL + '/accounts');
-            console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
-            const response = await fetch(`${MIND_API_URL}/accounts`, {
+            console.log('[STEP 1] Create account — POST /api/account');
+            const response = await fetch('/api/account', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'iristelx-api-key': MIND_API_KEY
-                },
-                body: JSON.stringify(requestBody)
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: customerEmail(contactData),
+                    contact: { ...contactData, language: getCookie('iristel_user_language') || 'en' }
+                })
             });
 
-            const data = await response.json();
-            console.log('MIND Create Account Response:', data);
+            const data = await response.json().catch(() => null);
+            console.log('Create Account Response:', data);
 
-            if (!response.ok) {
-                throw new Error(describeApiError(data, `MIND account creation failed (HTTP ${response.status})`));
+            if (!response.ok || !data || !data.accountId) {
+                throw new Error((data && data.error) || `Account creation failed (HTTP ${response.status})`);
             }
-
-            return data.accountId || data.id || data.accountcode;
+            if (data.reused) console.log('Existing account reused — no duplicate created');
+            return data.accountId;
         }
 
         // ============================================
         // STEP 3b: Submit the porting request (PON) via the LNP API
         // ============================================
         // Creation is quick; the STATUS page owns tracking it afterwards.
-        // Same account ordering the same numbers = the same order. Deliberately
-        // derived from the request shape rather than random, so it is identical
-        // even if the customer starts over in a fresh browser.
-        function getOrderIdempotencyKey(accountId, requests) {
-            const shape = (requests || [])
-                .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
-                .sort().join(';');
-            return `${accountId || getCookie('iristel_account_id') || 'noacct'}::${shape}`;
+        // The email is what every server-side guard keys on — it is the only
+        // identifier that survives a new device or a cleared browser.
+        function customerEmail(contactData) {
+            return (contactData && contactData.emailAddress)
+                || getCookie('sip_billingEmail')
+                || getCookie('iristel_user_email')
+                || '';
         }
 
         // sip_ponNumber makes this idempotent across submit retries.
@@ -629,7 +612,7 @@
             const response = await fetch('/api/lnp/pon', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(ponData)
+                body: JSON.stringify({ ...ponData, email: customerEmail(getContactDataFromCookies()) })
             });
             const data = await response.json().catch(() => null);
             console.log('LNP Create PON Response:', data);
@@ -744,8 +727,8 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 requests: allRequests,
-                                accountRef: accountId || getCookie('iristel_account_id') || null,
-                                idempotencyKey: getOrderIdempotencyKey(accountId, allRequests)
+                                email: customerEmail(contactData),
+                                accountRef: accountId || getCookie('iristel_account_id') || null
                             })
                         });
                         const orderData = await orderResponse.json().catch(() => null);
