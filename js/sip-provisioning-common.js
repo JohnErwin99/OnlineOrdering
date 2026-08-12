@@ -9,7 +9,26 @@
 // ============================================
 const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
 const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
-const UBOSS_RESELLER_NAME = 'Iristel';
+
+// ============================================
+// TEMPORARY — TESTING ONLY. REVERT BEFORE LAUNCH.
+// ============================================
+// The correct value is 'Iristel'. UbossRobot looks the reseller up with
+// GetByRole(Link, Name=resellerName) using non-exact matching, so 'Iristel'
+// matches 6 links (IRISTEL, IRISTEL Home Phone, Iristel Kenya/Moldova/
+// Norway/Romania) and the job dies on a Playwright strict-mode violation.
+// Because 'IRISTEL' is a prefix of the other five, NO value can disambiguate
+// by substring — the robot needs Exact=true or a reseller id. All 5 jobs
+// ever sent with 'Iristel' failed this way; 0 of 34 'Demo Reseller' jobs did.
+//
+// 'Demo Reseller' is a sandbox reseller: it gets past the lookup so the rest
+// of the provisioning chain can be exercised, but it attaches the enterprise,
+// trunk and billing to the wrong parent. It CANNOT validate that a DID on
+// Profile 718524 routes to a customer's Broadsoft platform.
+//
+// Restore RESELLER_PRODUCTION below once UbossRobot fixes the lookup.
+const RESELLER_PRODUCTION = 'Iristel';
+const UBOSS_RESELLER_NAME = 'Demo Reseller';
 
 // Ported orders are flagged to the provisioning team by suffixing the business name
 // (isPortingOrder() lives in common.js so every page agrees on what a port is)
