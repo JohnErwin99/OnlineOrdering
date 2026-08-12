@@ -748,8 +748,11 @@
                     document.getElementById('errorBox').style.display = 'block';
                 }
 
+                // "Retry Check" only re-polls, which on a terminal failure just
+                // replays the same error — so offer a real retry that starts a
+                // new provisioning job.
                 document.getElementById('btnRow').innerHTML = `
-                    <button class="btn-secondary" onclick="refreshStatus()">Retry Check</button>
+                    <button class="btn-secondary" onclick="retryProvisioning()">Try Again</button>
                     <a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>
                 `;
             }
@@ -892,7 +895,24 @@
         // ============================================
         async function ensureUbossStarted(trunksList) {
             let existing = getCookie('sip_provisionJobId');
-            if (existing) return existing;
+            if (existing) {
+                // A job that terminally Failed must not be reused — polling it
+                // again only replays the same error, which is what made Retry
+                // look like it did nothing. Drop it so a fresh job is started.
+                let failed = false;
+                try {
+                    const r = await fetch(`${UBOSS_API_URL}/trunk-provisioning/${encodeURIComponent(existing)}/status`,
+                        { headers: { 'x-api-key': UBOSS_API_KEY } });
+                    const d = await r.json().catch(() => null);
+                    failed = r.ok && d && statusIs(d, UBOSS_STATUS.FAILED);
+                } catch (e) { /* unreachable — keep the job and let polling report */ }
+
+                if (!failed) return existing;
+                console.log('Previous provisioning job', existing, 'failed — starting a new one');
+                deleteCookie('sip_provisionJobId');
+                deleteCookie('sip_provisionJobs');
+                deleteCookie('sip_provisionResult');
+            }
 
             const contactData = getProvisioningContactData();
             const accountId = getCookie('iristel_account_id');
@@ -910,6 +930,17 @@
             return provisionJobs[0].jobId;
         }
 
+        // Discard the failed job and re-run the orchestration from scratch. The
+        // numbers are already on the trunks, so this only re-does provisioning —
+        // it never re-orders DIDs.
+        function retryProvisioning() {
+            stopPolling();
+            deleteCookie('sip_provisionJobId');
+            deleteCookie('sip_provisionJobs');
+            deleteCookie('sip_provisionResult');
+            window.location.reload();
+        }
+
         function showOrchestrationError(err) {
             console.error('Orchestration failed:', err);
             const icon = document.getElementById('statusIcon');
@@ -920,7 +951,7 @@
             document.getElementById('errorMessage').textContent = err.message;
             document.getElementById('errorBox').style.display = 'block';
             document.getElementById('btnRow').innerHTML =
-                '<button class="btn-secondary" onclick="window.location.reload()">Retry</button>' +
+                '<button class="btn-secondary" onclick="retryProvisioning()">Retry</button>' +
                 '<a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>';
         }
 
