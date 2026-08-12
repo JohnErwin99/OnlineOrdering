@@ -59,7 +59,12 @@ const ROOT = __dirname;
 // Render's disk is ephemeral, so this survives restarts but not redeploys;
 // placeOrder additionally asks espresso for recent matching orders as a
 // backstop. A real datastore is the pre-launch answer — tracked separately.
-const ORDER_STORE_PATH = process.env.ORDER_STORE_PATH || path.join(ROOT, '.order-store.json');
+// Render allows one disk per service, which is all this needs — both stores are
+// files in the same directory. Point STATE_DIR at the mount (e.g. /var/data)
+// and both land there; the individual paths remain overridable.
+const STATE_DIR = process.env.STATE_DIR || ROOT;
+const ORDER_STORE_PATH = process.env.ORDER_STORE_PATH
+    || path.join(STATE_DIR, STATE_DIR === ROOT ? '.order-store.json' : 'order-store.json');
 const ORDER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 let orderStore = {};
@@ -534,7 +539,8 @@ function lnpPonStatus(pon) {
 // key stays server-side, and the real HTTP status is visible.
 const BILLING_API_URL = 'https://api.iristelx.com';
 const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || 'b1582d78d369685683e090ad37489937';
-const CHARGE_STORE_PATH = process.env.CHARGE_STORE_PATH || path.join(ROOT, '.charge-store.json');
+const CHARGE_STORE_PATH = process.env.CHARGE_STORE_PATH
+    || path.join(STATE_DIR, STATE_DIR === ROOT ? '.charge-store.json' : 'charge-store.json');
 
 let chargeStore = {};
 try { chargeStore = JSON.parse(fs.readFileSync(CHARGE_STORE_PATH, 'utf8')); } catch (e) { chargeStore = {}; }
@@ -936,4 +942,6 @@ server.listen(PORT, () => {
         (ESPRESSO_USER ? '' : ' (NO CREDENTIALS SET — /api/did/* will return 503)'));
     console.log('  DID profile: ' + (ESPRESSO_DID_PROFILE || '(not pinned — will use the account\'s first profile)'));
     console.log('  LNP profile: ' + (ESPRESSO_LNP_PROFILE || '(not pinned — will use the account\'s first profile)'));
+    console.log('  state dir  : ' + STATE_DIR
+        + (STATE_DIR === ROOT ? '  ⚠ not a persistent disk — records are lost on redeploy' : ''));
 });

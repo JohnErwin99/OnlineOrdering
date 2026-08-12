@@ -67,16 +67,30 @@ The service must be a **Web Service** (not a Static Site):
 ### Persistent disk (required before real customers)
 
 Render wipes the filesystem on every redeploy, which would drop the order and
-charge records and reopen the double-charge window. Add a disk:
+charge records and reopen the double-charge window.
 
-**Dashboard → service → Disks → Add Disk**, mount path `/var/data`, then set:
+**One disk is enough** — Render allows only one per service, and that is all
+this needs, since both stores are files in the same directory.
+
+**Dashboard → service → Disks → Add Disk**, mount path `/var/data`, then set a
+single variable:
 
 ```
-ORDER_STORE_PATH  = /var/data/order-store.json
-CHARGE_STORE_PATH = /var/data/charge-store.json
+STATE_DIR = /var/data
 ```
 
-The server creates the files itself; only the mount has to exist.
+The server creates `order-store.json` and `charge-store.json` there itself; only
+the mount has to exist. (`ORDER_STORE_PATH` / `CHARGE_STORE_PATH` still override
+individually if you ever need them elsewhere.)
+
+The startup log tells you whether it took effect:
+
+```
+  state dir  : /var/data
+```
+
+If it instead says `⚠ not a persistent disk — records are lost on redeploy`,
+`STATE_DIR` isn't set and duplicate protection won't survive a deploy.
 
 Two Render constraints that come with a disk: the service can no longer run
 more than one instance, and zero-downtime deploys are disabled. Both are fine
