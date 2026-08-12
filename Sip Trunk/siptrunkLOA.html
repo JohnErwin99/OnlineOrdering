@@ -95,6 +95,20 @@
 
         .form-hint { font-size: 12px; color: var(--text-gray); margin-top: 6px; }
 
+        /* Live character-set validation. The LNP carrier system rejects the PON
+           outright on a disallowed character, and each field allows a different
+           set — so the customer is told while typing rather than at submit,
+           after payment, with a raw API error. */
+        .form-input.invalid { border-color: var(--magenta-glow); }
+        .field-error {
+            display: none;
+            font-size: 12px;
+            color: var(--magenta-glow);
+            margin-top: 6px;
+            line-height: 1.45;
+        }
+        .field-error.show { display: block; }
+
         .info-box {
             background-color: rgba(45, 212, 191, 0.08);
             border-left: 4px solid var(--tufts-blue);
@@ -466,10 +480,12 @@
                                 <label class="form-label">End User / Business Name <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponEndUserName" required>
                                 <p class="form-hint">Exactly as it appears on your current provider's bill</p>
+                                <p class="field-error" id="errPonEndUserName"></p>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Existing Account Number <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponAccountNumber" required>
+                                <p class="field-error" id="errPonAccountNumber"></p>
                             </div>
                         </div>
                         <div class="form-row">
@@ -496,20 +512,24 @@
                             <div class="form-group" style="flex: 0 0 140px;">
                                 <label class="form-label">Street Number <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponHouseNumber" required>
+                                <p class="field-error" id="errPonHouseNumber"></p>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Street Name <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponStreetName" required>
+                                <p class="field-error" id="errPonStreetName"></p>
                             </div>
                             <div class="form-group" style="flex: 0 0 140px;">
                                 <label class="form-label">Street Type</label>
-                                <input type="text" class="form-input" id="ponStreetType" placeholder="St, Ave, Blvd...">
+                                <input type="text" class="form-input" id="ponStreetType" placeholder="St, Ave, Blvd">
+                                <p class="field-error" id="errPonStreetType"></p>
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">City <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponCity" required>
+                                <p class="field-error" id="errPonCity"></p>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Province <span class="required">*</span></label>
@@ -533,12 +553,14 @@
                             <div class="form-group" style="flex: 0 0 140px;">
                                 <label class="form-label">Postal Code <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponZipCode" required>
+                                <p class="field-error" id="errPonZipCode"></p>
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label">Comments for Your Current Provider</label>
                                 <input type="text" class="form-input" id="ponCarrierComments" placeholder="Optional">
+                                <p class="field-error" id="errPonCarrierComments"></p>
                             </div>
                         </div>
                     </div>

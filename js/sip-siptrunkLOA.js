@@ -43,6 +43,66 @@
         }
 
         // ============================================
+        // PON FIELD CHARACTER RULES
+        // ============================================
+        // The carrier LNP system rejects the whole port request on a single
+        // disallowed character, and every field allows a different set — these
+        // were confirmed field by field against the live API. Accents and
+        // apostrophes are rejected everywhere, which matters for Canadian
+        // addresses ("Saint-Laurent", "Montréal", "O'Brien" all fail), so the
+        // customer is corrected while typing instead of after payment.
+        const PON_RULES = {
+            ponEndUserName:     { re: /^[a-zA-Z0-9 -]*$/,            desc: 'letters, numbers, spaces and hyphens' },
+            ponAccountNumber:   { re: /^[a-zA-Z0-9]*$/,              desc: 'letters and numbers only — no spaces or dashes' },
+            ponHouseNumber:     { re: /^[0-9]*$/,                    desc: 'digits only (put any unit or suite letter in the street name)' },
+            ponStreetName:      { re: /^[a-zA-Z0-9 ]*$/,             desc: 'letters, numbers and spaces' },
+            ponStreetType:      { re: /^[a-zA-Z0-9 ]*$/,             desc: 'letters and numbers — no periods (use "Blvd", not "Blvd.")' },
+            ponCity:            { re: /^[a-zA-Z0-9 ]*$/,             desc: 'letters, numbers and spaces' },
+            ponZipCode:         { re: /^[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d$|^$/, desc: 'a Canadian postal code, e.g. L3R 0B8' },
+            ponCarrierComments: { re: /^[a-zA-Z0-9 @/\\,;.#&]*$/,    desc: 'letters, numbers, spaces and @ / \\ , ; . # &' }
+        };
+
+        // Accents are the most common cause and the least obvious, so they get
+        // their own sentence rather than being lumped into "invalid character".
+        function describeBadChars(value, rule) {
+            const bad = [...new Set(value.split('').filter(ch => !rule.re.test(ch) && rule.re.source.indexOf('$|^$') === -1))];
+            const accented = /[^\x00-\x7F]/.test(value);
+            let msg = 'Your current provider only accepts ' + rule.desc + '.';
+            if (accented) msg += ' Accented letters are not accepted — please write them without accents.';
+            else if (bad.length) msg += ' Remove: ' + bad.map(c => c === ' ' ? 'space' : c).join(' ');
+            return msg;
+        }
+
+        function validatePonField(input) {
+            const rule = PON_RULES[input.id];
+            if (!rule) return true;
+            const err = document.getElementById('err' + input.id.charAt(0).toUpperCase() + input.id.slice(1));
+            const ok = rule.re.test(input.value);
+            input.classList.toggle('invalid', !ok);
+            if (err) {
+                err.textContent = ok ? '' : describeBadChars(input.value, rule);
+                err.classList.toggle('show', !ok);
+            }
+            return ok;
+        }
+
+        // Returns the first offending field, or null when everything passes
+        function firstInvalidPonField() {
+            for (const id of Object.keys(PON_RULES)) {
+                const el = document.getElementById(id);
+                if (el && !validatePonField(el)) return el;
+            }
+            return null;
+        }
+
+        function wirePonValidation() {
+            Object.keys(PON_RULES).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', () => validatePonField(el));
+            });
+        }
+
+        // ============================================
         // NPA-NXX portability check (LNP API via server proxy)
         // ============================================
         // input.dataset.portable: '1' portable, '0' not yet open, '-1' not portable,
@@ -151,6 +211,16 @@
                 return;
             }
 
+            // Character rules — the port request is rejected outright otherwise
+            const badField = firstInvalidPonField();
+            if (badField) {
+                badField.focus();
+                badField.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                showAlert('Please fix the highlighted field. ' + describeBadChars(badField.value, PON_RULES[badField.id]),
+                    'error', 'Character not accepted');
+                return;
+            }
+
             // Everything the LNP API needs to create the PON at order submit
             const ponData = {
                 numbers: numbers.map(n => n.replace(/\D/g, '')),
@@ -179,6 +249,7 @@
         // Load saved data / prefill
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
+            wirePonValidation();
 
             // Date defaults: auth today, due in 7 days (min 5 business days)
             const today = new Date();
@@ -212,16 +283,26 @@
                 setVal('ponCity', getCookie('sip_city'));
                 setVal('ponProvince', getCookie('sip_province'));
                 setVal('ponZipCode', getCookie('sip_postalCode'));
-                // Best-effort split of "123 Main" into number + street
+                // Best-effort split of "123 Main" into number + street. The street
+                // number field takes digits only, so a suffix like "675A" keeps
+                // its letter with the street name rather than being rejected.
                 const addr1 = (getCookie('sip_address1') || '').trim();
-                const m = addr1.match(/^(\d+[a-zA-Z]?)\s+(.*)$/);
+                const m = addr1.match(/^(\d+)([a-zA-Z]?)\s+(.*)$/);
                 if (m) {
                     setVal('ponHouseNumber', m[1]);
-                    setVal('ponStreetName', m[2]);
+                    setVal('ponStreetName', (m[2] ? m[2] + ' ' : '') + m[3]);
                 } else {
                     setVal('ponStreetName', addr1);
                 }
             }
+
+            // Prefilled values come from signup/business setup, which accept
+            // characters the carrier does not — flag them now rather than
+            // letting the customer discover it at submit.
+            Object.keys(PON_RULES).forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.value) validatePonField(el);
+            });
 
             // Restore the number rows
             const savedNumbers = getCookie('sip_portNumbers');
