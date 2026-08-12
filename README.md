@@ -64,6 +64,26 @@ The service must be a **Web Service** (not a Static Site):
 - Start command: `npm start`
 - Environment variables: all of the above, set in the Render dashboard
 
+### Persistent disk (required before real customers)
+
+Render wipes the filesystem on every redeploy, which would drop the order and
+charge records and reopen the double-charge window. Add a disk:
+
+**Dashboard → service → Disks → Add Disk**, mount path `/var/data`, then set:
+
+```
+ORDER_STORE_PATH  = /var/data/order-store.json
+CHARGE_STORE_PATH = /var/data/charge-store.json
+```
+
+The server creates the files itself; only the mount has to exist.
+
+Two Render constraints that come with a disk: the service can no longer run
+more than one instance, and zero-downtime deploys are disabled. Both are fine
+here — and single-instance is actually required anyway, since the stores are
+per-instance files. Sharing them across instances needs a real datastore, which
+is the proper pre-launch answer.
+
 The startup log echoes the resolved mode and profiles, so a misconfigured deploy
 is visible immediately:
 
@@ -107,7 +127,7 @@ front of the calls that spend money:
   browser. A repeat returns the original result with `duplicate: true`.
 - Records persist to disk (`ORDER_STORE_PATH`, `CHARGE_STORE_PATH`), so a
   restart does not reopen the window. **On Render, point these at a persistent
-  disk** — the default location is wiped on redeploy.
+  disk** — the default location is wiped on redeploy (see below).
 - A charge whose outcome was never learned (gateway 502) is recorded as
   `unknown` and every later attempt is refused with 409, because the card may
   already have been charged. A clean decline is retryable.

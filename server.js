@@ -69,11 +69,26 @@ try {
     orderStore = {};
 }
 
+// A store that cannot be written is a silently reopened double-charge window,
+// so the directory is created up front and failures are shouted about.
+function ensureStoreDir(p) {
+    try {
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        return true;
+    } catch (e) {
+        console.error('[store] cannot create directory for', p, '-', e.message);
+        return false;
+    }
+}
+
 function saveOrderStore() {
     try {
+        ensureStoreDir(ORDER_STORE_PATH);
         fs.writeFileSync(ORDER_STORE_PATH, JSON.stringify(orderStore), 'utf8');
     } catch (e) {
-        console.error('[store] could not persist:', e.message);
+        console.error('[store] ORDER RECORD NOT PERSISTED —', e.message,
+            '\n  Duplicate protection is degraded until this is fixed.',
+            '\n  On Render, add a disk and set ORDER_STORE_PATH inside its mount path.');
     }
 }
 
@@ -508,8 +523,14 @@ let chargeStore = {};
 try { chargeStore = JSON.parse(fs.readFileSync(CHARGE_STORE_PATH, 'utf8')); } catch (e) { chargeStore = {}; }
 
 function saveChargeStore() {
-    try { fs.writeFileSync(CHARGE_STORE_PATH, JSON.stringify(chargeStore), 'utf8'); }
-    catch (e) { console.error('[charge] could not persist:', e.message); }
+    try {
+        ensureStoreDir(CHARGE_STORE_PATH);
+        fs.writeFileSync(CHARGE_STORE_PATH, JSON.stringify(chargeStore), 'utf8');
+    } catch (e) {
+        console.error('[charge] CHARGE RECORD NOT PERSISTED —', e.message,
+            '\n  A restart could allow this balance to be charged again.',
+            '\n  On Render, add a disk and set CHARGE_STORE_PATH inside its mount path.');
+    }
 }
 
 function postJson(url, headers, body) {
