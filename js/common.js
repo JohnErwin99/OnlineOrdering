@@ -3,22 +3,77 @@
 // ============================================
 
 // ============================================
-// STORAGE FUNCTIONS (sessionStorage – works inside cross-origin iframes)
+// STORAGE
 // ============================================
+// Order state used to live in sessionStorage, which dies with the tab — a
+// customer who closed it after paying lost everything and, on restarting,
+// would order and be billed for a second set of numbers.
+//
+// localStorage survives the tab, but can be blocked in a cross-origin iframe
+// (this app embeds in Webflow), which is why sessionStorage was chosen
+// originally. So: prefer localStorage, fall back to sessionStorage, then to
+// memory. Whatever is available, the app behaves the same.
+//
+// This is only half the protection. Storage can always be cleared or the
+// customer can switch devices, so the guarantee that an order is never placed
+// twice lives on the server (idempotency in server.js), not here.
+const STORAGE_TTL_MS = 24 * 60 * 60 * 1000; // a stale half-order helps nobody
+const STORAGE_TS_KEY = '__iris_state_ts';
+
+const irisStore = (function () {
+    function usable(store) {
+        try {
+            const probe = '__iris_probe';
+            store.setItem(probe, '1');
+            store.removeItem(probe);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+    try {
+        if (typeof localStorage !== 'undefined' && usable(localStorage)) return localStorage;
+    } catch (e) {}
+    try {
+        if (typeof sessionStorage !== 'undefined' && usable(sessionStorage)) return sessionStorage;
+    } catch (e) {}
+    // Last resort: in-memory, same API surface. Lasts only for this page.
+    const mem = {};
+    return {
+        getItem: k => (k in mem ? mem[k] : null),
+        setItem: (k, v) => { mem[k] = String(v); },
+        removeItem: k => { delete mem[k]; },
+        clear: () => { Object.keys(mem).forEach(k => delete mem[k]); }
+    };
+})();
+
+// Persisting across tab close means a half-finished order from last week can
+// resurface and confuse the flow, so state expires.
+(function expireStaleState() {
+    try {
+        const ts = parseInt(irisStore.getItem(STORAGE_TS_KEY), 10);
+        if (ts && Date.now() - ts > STORAGE_TTL_MS) {
+            console.log('[storage] state older than 24h — clearing');
+            irisStore.clear();
+        }
+    } catch (e) {}
+})();
+
 function getCookie(name) {
-    return sessionStorage.getItem(name);
+    return irisStore.getItem(name);
 }
 
 function setCookie(name, value) {
-    sessionStorage.setItem(name, value);
+    irisStore.setItem(name, value);
+    try { irisStore.setItem(STORAGE_TS_KEY, String(Date.now())); } catch (e) {}
 }
 
 function deleteCookie(name) {
-    sessionStorage.removeItem(name);
+    irisStore.removeItem(name);
 }
 
 function clearAllCookies() {
-    sessionStorage.clear();
+    irisStore.clear();
 }
 
 // ============================================

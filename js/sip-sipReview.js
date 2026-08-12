@@ -170,9 +170,8 @@
         // ============================================
         const MIND_API_URL = 'https://api.iristelx.com';
         const MIND_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
-        // The payment route authenticates on x-api-key, not the iristelx-api-key the
-        // rest of MIND takes — same pair sipTrunkPayment.js uses to tokenize the card.
-        const PAYMENT_API_KEY = 'b1582d78d369685683e090ad37489937';
+        // The payment key is deliberately NOT here — charges go through
+        // /api/payment/charge so the credential never reaches the browser.
 
         // ============================================
         // TRUNK (Broadworks) API Configuration — DEPRECATED
@@ -393,7 +392,6 @@
         // honours it: re-pricing rebuilds the footer, and a fresh button would invite
         // exactly the second charge we can't rule out.
         const UNRECONCILED_NOTICE = 'Payment service unavailable — do not retry, contact support.';
-        const GATEWAY_ERRORS = [502, 503, 504];
         let unreconciledCharge = null;
 
         function unknownOutcome(detail) {
@@ -453,47 +451,43 @@
                     reference: reference
                 };
 
-                console.log('[CHARGE BALANCE] POST', `${MIND_API_URL}/bot/${accountCode}/payment`);
-                console.log('Request:', JSON.stringify(requestBody, null, 2));
+                // Charged through our server, not straight to the billing API: it
+                // de-duplicates the charge, keeps the payment key off the client,
+                // and can read the real HTTP status (a gateway 502 reaches the
+                // browser without CORS headers, so from here it was unreadable).
+                console.log('[CHARGE BALANCE] POST /api/payment/charge');
 
                 let response;
                 try {
-                    response = await fetch(`${MIND_API_URL}/bot/${accountCode}/payment`, {
+                    response = await fetch('/api/payment/charge', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-api-key': PAYMENT_API_KEY
-                        },
-                        body: JSON.stringify(requestBody)
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            accountCode: accountCode,
+                            amount: amount.toFixed(2),
+                            creditCard: requestBody.creditCard,
+                            idempotencyKey: accountCode + '::' + amount.toFixed(2)
+                        })
                     });
                 } catch (networkErr) {
-                    // fetch() only rejects before a response is readable: the connection
-                    // failed, or the browser refused what came back. The API's gateway
-                    // serves its own error pages without CORS headers, so an upstream
-                    // failure surfaces here as "Failed to fetch" rather than as a status.
-                    throw unknownOutcome(networkErr.message);
+                    // Our own server is unreachable — the charge never left here
+                    throw new Error('Could not reach the payment service: ' + networkErr.message);
                 }
 
-                // Read as text first. A gateway error page is HTML, and parsing it as
-                // JSON reports a syntax error instead of the failure that happened.
-                const raw = await response.text();
-                let data = null;
-                try {
-                    data = JSON.parse(raw);
-                } catch (_) {
-                    // Left null — handled below as an unreadable response.
-                }
-
-                // The payment service answers in JSON, successes and errors alike.
-                // Anything else came from in front of it and says nothing about
-                // whether the charge ran.
-                if (!data || GATEWAY_ERRORS.includes(response.status)) {
-                    console.error('Unreadable payment response:', response.status, raw.slice(0, 200));
-                    throw unknownOutcome(`HTTP ${response.status}`);
-                }
+                const data = await response.json().catch(() => null);
 
                 if (!response.ok) {
-                    throw new Error(describeApiError(data, `Payment failed (HTTP ${response.status})`));
+                    // 502 = the server tried but could not learn the outcome, so the
+                    // card may have been charged. 409 = a previous attempt already
+                    // ended that way. Both must not be retried.
+                    if (response.status === 502 || response.status === 409) {
+                        throw unknownOutcome((data && data.error) || `HTTP ${response.status}`);
+                    }
+                    throw new Error((data && data.error) || `Payment failed (HTTP ${response.status})`);
+                }
+
+                if (data && data.duplicate) {
+                    console.log('Balance already charged under reference', data.reference, '— not charged again');
                 }
 
                 // Update the paid amount cookie
@@ -607,6 +601,16 @@
         // STEP 3b: Submit the porting request (PON) via the LNP API
         // ============================================
         // Creation is quick; the STATUS page owns tracking it afterwards.
+        // Same account ordering the same numbers = the same order. Deliberately
+        // derived from the request shape rather than random, so it is identical
+        // even if the customer starts over in a fresh browser.
+        function getOrderIdempotencyKey(accountId, requests) {
+            const shape = (requests || [])
+                .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
+                .sort().join(';');
+            return `${accountId || getCookie('iristel_account_id') || 'noacct'}::${shape}`;
+        }
+
         // sip_ponNumber makes this idempotent across submit retries.
         async function submitPortRequest() {
             const existing = getCookie('sip_ponNumber');
@@ -731,10 +735,18 @@
                     if (!didOrderNumber) {
                         updateStatusMessage('Placing your number order...');
                         const allRequests = trunksList.flatMap(t => t.requests || []);
+                        // The account and a stable key let the server recognise a
+                        // repeat of THIS order and return the original instead of
+                        // billing a second one — protection that survives the
+                        // browser losing its state entirely.
                         const orderResponse = await fetch('/api/did/order', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ requests: allRequests })
+                            body: JSON.stringify({
+                                requests: allRequests,
+                                accountRef: accountId || getCookie('iristel_account_id') || null,
+                                idempotencyKey: getOrderIdempotencyKey(accountId, allRequests)
+                            })
                         });
                         const orderData = await orderResponse.json().catch(() => null);
                         if (!orderResponse.ok || !orderData || !orderData.orderNumber) {
@@ -742,7 +754,8 @@
                         }
                         didOrderNumber = orderData.orderNumber;
                         setCookie('sip_didOrderNumber', didOrderNumber);
-                        console.log('DID order placed:', didOrderNumber);
+                        console.log('DID order placed:', didOrderNumber,
+                            orderData.duplicate ? '(existing order re-used — not billed again)' : '');
                     } else {
                         console.log('Resuming DID order:', didOrderNumber);
                     }

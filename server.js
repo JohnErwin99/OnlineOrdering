@@ -44,6 +44,65 @@ const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 const ROOT = __dirname;
 
 // ============================================
+// ORDER STORE — idempotency + support visibility
+// ============================================
+// Browser state can always be lost: the tab closes, storage is cleared, the
+// customer switches device, or Submit is double-clicked. Any of those would
+// otherwise place a SECOND billable DID order or a second card charge. The
+// browser cannot be the thing that guarantees "only once", so the guarantee
+// lives here, in front of the calls that spend money.
+//
+// Records are also the only trace of an order outside the customer's tab —
+// without them, "I paid and got nothing" is unanswerable by support.
+//
+// Persisted to disk so a restart doesn't reopen the double-charge window.
+// Render's disk is ephemeral, so this survives restarts but not redeploys;
+// placeOrder additionally asks espresso for recent matching orders as a
+// backstop. A real datastore is the pre-launch answer — tracked separately.
+const ORDER_STORE_PATH = process.env.ORDER_STORE_PATH || path.join(ROOT, '.order-store.json');
+const ORDER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+let orderStore = {};
+try {
+    orderStore = JSON.parse(fs.readFileSync(ORDER_STORE_PATH, 'utf8'));
+} catch (e) {
+    orderStore = {};
+}
+
+function saveOrderStore() {
+    try {
+        fs.writeFileSync(ORDER_STORE_PATH, JSON.stringify(orderStore), 'utf8');
+    } catch (e) {
+        console.error('[store] could not persist:', e.message);
+    }
+}
+
+function pruneOrderStore() {
+    const cutoff = Date.now() - ORDER_TTL_MS;
+    let dropped = 0;
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!v || !v.createdAt || v.createdAt < cutoff) { delete orderStore[k]; dropped++; }
+    }
+    if (dropped) saveOrderStore();
+}
+pruneOrderStore();
+
+// A stable fingerprint of "this customer ordering these numbers". The client
+// sends its own key when it has one; this is the fallback so protection does
+// not depend on the browser remembering anything.
+function orderKey(accountRef, requests) {
+    const shape = (requests || [])
+        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
+        .sort().join(';');
+    return `${accountRef || 'noacct'}::${shape}`;
+}
+
+function recordOrder(key, record) {
+    orderStore[key] = { ...record, createdAt: Date.now() };
+    saveOrderStore();
+}
+
+// ============================================
 // SOAP client (rpc/encoded, Credentials header)
 // ============================================
 function xmlEscape(s) {
@@ -209,7 +268,64 @@ function getProfiles() {
 
 // requests: [{ratecenter, npa, quantity}] — prefix/country_prefix are deprecated
 // but required by the schema; the manual says their values are ignored.
-async function placeOrder(profile, requests) {
+// Duplicate detection against espresso is ADVISORY ONLY, never blocking.
+//
+// didGetOrders returns every order on the espresso *company* account, not the
+// orders of one customer — there is no per-customer filter. "TORONTO 647 x1"
+// is the most ordinary request imaginable, so two unrelated customers ordering
+// it the same day look identical here. Blocking on that would refuse a
+// legitimate order, which is worse than the duplicate it would prevent.
+//
+// So this only logs a warning for support to notice. The real guarantee is the
+// persisted order store plus the client's idempotency key. To close the
+// redeploy gap properly, point ORDER_STORE_PATH at a Render persistent disk.
+const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
+
+function sameRequestShape(a, b) {
+    const norm = list => (list || [])
+        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
+        .sort().join(';');
+    return norm(a) === norm(b);
+}
+
+async function findRecentMatchingOrder(requests) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const from = new Date(now.getTime() - DUPLICATE_WINDOW_MS);
+
+    const body = `<ns1:didGetOrders>`
+        + `<startDate xsi:type="xsd:string">${fmt(from)}</startDate>`
+        + `<endDate xsi:type="xsd:string">${fmt(now)}</endDate></ns1:didGetOrders>`;
+    let recent;
+    try {
+        recent = soapArray(await espressoCall(body, 'didGetOrders'));
+    } catch (e) {
+        // 491 "no did requests between those dates" is the normal empty case
+        return null;
+    }
+    for (const o of recent) {
+        const reqs = soapArray(o.requests).map(r => ({
+            ratecenter: r.ratecenter, npa: r.npa, quantity: r.quantity
+        }));
+        // The order number comes back as `code`
+        if (sameRequestShape(reqs, requests)) return String(o.code || '');
+    }
+    return null;
+}
+
+async function placeOrder(profile, requests, opts) {
+    // Advisory only — see the note above on why this cannot block
+    try {
+        const similar = await findRecentMatchingOrder(requests);
+        if (similar) {
+            console.warn('[order] NOTE: espresso already has a recent order with the same shape:', similar,
+                '— proceeding anyway (company-wide feed, cannot tell customers apart).',
+                'accountRef:', (opts && opts.accountRef) || 'unknown');
+        }
+    } catch (e) { /* never let the advisory check block a real order */ }
+
     if (!profile) profile = ESPRESSO_DID_PROFILE;
     const profiles = await getProfiles();
     if (!profile) {
@@ -374,6 +490,112 @@ function lnpPonStatus(pon) {
 }
 
 // ============================================
+// PAYMENT — charge proxy with idempotency
+// ============================================
+// The browser used to POST the charge to the billing API directly, which meant
+// (a) nothing stopped the same balance being charged twice if state was lost,
+// (b) the payment key shipped in client JS, and (c) a gateway 502 arrives
+// without CORS headers, so the browser could not even read the status and had
+// to treat every failure as "outcome unknown".
+//
+// Routing it here fixes all three: charges are recorded and de-duplicated, the
+// key stays server-side, and the real HTTP status is visible.
+const BILLING_API_URL = 'https://api.iristelx.com';
+const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || 'b1582d78d369685683e090ad37489937';
+const CHARGE_STORE_PATH = process.env.CHARGE_STORE_PATH || path.join(ROOT, '.charge-store.json');
+
+let chargeStore = {};
+try { chargeStore = JSON.parse(fs.readFileSync(CHARGE_STORE_PATH, 'utf8')); } catch (e) { chargeStore = {}; }
+
+function saveChargeStore() {
+    try { fs.writeFileSync(CHARGE_STORE_PATH, JSON.stringify(chargeStore), 'utf8'); }
+    catch (e) { console.error('[charge] could not persist:', e.message); }
+}
+
+function postJson(url, headers, body) {
+    return new Promise((resolve, reject) => {
+        const payload = JSON.stringify(body);
+        const req = https.request(url, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+            timeout: 45000
+        }, res => {
+            let data = '';
+            res.on('data', c => data += c);
+            res.on('end', () => resolve({ status: res.statusCode, raw: data }));
+        });
+        req.on('timeout', () => req.destroy(new Error('payment gateway timeout')));
+        req.on('error', reject);
+        req.end(payload);
+    });
+}
+
+async function chargeBalance(body) {
+    const { accountCode, amount, creditCard } = body;
+    // Same account + same amount = the same charge, so a repeat is recognised
+    // even from a browser that has forgotten everything.
+    const key = body.idempotencyKey || `${accountCode}::${Number(amount).toFixed(2)}`;
+
+    const seen = chargeStore[key];
+    if (seen && seen.outcome === 'success') {
+        console.log('[charge] duplicate suppressed for', key, '→', seen.reference);
+        return { ...seen, duplicate: true };
+    }
+    // A previous attempt whose outcome we never learned: the card may already
+    // have been charged, so refuse rather than risk a second one.
+    if (seen && seen.outcome === 'unknown') {
+        const err = new Error('A previous payment attempt for this amount did not return a result '
+            + `(reference ${seen.reference}). Do not retry — contact support to confirm whether it went through.`);
+        err.status = 409; err.reference = seen.reference;
+        throw err;
+    }
+
+    const reference = (seen && seen.reference) || ('IRS-BAL-' + Date.now().toString(36).toUpperCase());
+    chargeStore[key] = { reference, outcome: 'pending', amount, accountCode, createdAt: Date.now() };
+    saveChargeStore();
+
+    let result;
+    try {
+        result = await postJson(`${BILLING_API_URL}/bot/${accountCode}/payment`,
+            { 'x-api-key': PAYMENT_API_KEY },
+            { amount: Number(amount).toFixed(2), creditCard, reference });
+    } catch (netErr) {
+        chargeStore[key] = { ...chargeStore[key], outcome: 'unknown', detail: netErr.message };
+        saveChargeStore();
+        const err = new Error(`Payment service unreachable (${netErr.message}). Reference ${reference} — do not retry, contact support.`);
+        err.status = 502; err.reference = reference;
+        throw err;
+    }
+
+    let data = null;
+    try { data = JSON.parse(result.raw); } catch (e) { /* gateway HTML, not JSON */ }
+
+    // A gateway error says nothing about whether the charge ran upstream
+    if (!data || [502, 503, 504].includes(result.status)) {
+        chargeStore[key] = { ...chargeStore[key], outcome: 'unknown', detail: `HTTP ${result.status}` };
+        saveChargeStore();
+        console.error('[charge] unreadable response', result.status, result.raw.slice(0, 200));
+        const err = new Error(`Payment service unavailable (HTTP ${result.status}). Reference ${reference} — do not retry, contact support.`);
+        err.status = 502; err.reference = reference;
+        throw err;
+    }
+
+    if (result.status < 200 || result.status >= 300) {
+        // A clean decline: the charge definitively did not happen, so allow a retry
+        delete chargeStore[key];
+        saveChargeStore();
+        const detail = Array.isArray(data.errors) ? data.errors.map(e => e && e.message).filter(Boolean).join(' ') : '';
+        const err = new Error((data.message || `Payment failed (HTTP ${result.status})`) + (detail ? ' — ' + detail : ''));
+        err.status = 402;
+        throw err;
+    }
+
+    chargeStore[key] = { ...chargeStore[key], outcome: 'success', chargedAt: Date.now() };
+    saveChargeStore();
+    return { reference, amount: Number(amount).toFixed(2), result: data };
+}
+
+// ============================================
 // HTTP layer
 // ============================================
 function sendJson(res, status, obj) {
@@ -406,7 +628,40 @@ async function handleApi(req, res, pathname) {
             for (const r of requests) {
                 if (!r.ratecenter || !r.npa) return sendJson(res, 400, { error: 'each request needs ratecenter and npa' });
             }
-            return sendJson(res, 200, await placeOrder(body.profile, requests));
+
+            // Never place the same order twice. The key is the client's if it
+            // sent one, otherwise a fingerprint of account + requests, so this
+            // holds even when the browser has forgotten everything.
+            const key = body.idempotencyKey || orderKey(body.accountRef, requests);
+            const seen = orderStore[key];
+            if (seen && seen.orderNumber) {
+                console.log('[order] duplicate suppressed for', key, '→', seen.orderNumber);
+                return sendJson(res, 200, { ...seen, duplicate: true });
+            }
+
+            const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef });
+            recordOrder(key, {
+                orderNumber: result.orderNumber,
+                orderNumbers: result.orderNumbers,
+                profile: result.profile,
+                accountRef: body.accountRef || null,
+                requests: requests
+            });
+            return sendJson(res, 200, result);
+        }
+        if (pathname === '/api/payment/charge' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.accountCode || !body.amount || !body.creditCard) {
+                return sendJson(res, 400, { error: 'accountCode, amount and creditCard are required' });
+            }
+            return sendJson(res, 200, await chargeBalance(body));
+        }
+        // Support/debug view of what this server has recorded
+        if (pathname === '/api/did/orders/recorded' && req.method === 'GET') {
+            pruneOrderStore();
+            return sendJson(res, 200, {
+                orders: Object.entries(orderStore).map(([key, v]) => ({ key, ...v }))
+            });
         }
         let m = pathname.match(/^\/api\/did\/order\/([^/]+)\/status$/);
         if (m && req.method === 'GET') {
@@ -446,7 +701,11 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 404, { error: 'Unknown API route' });
     } catch (err) {
         console.error('[api]', pathname, '-', err.message);
-        sendJson(res, err.status || 500, { error: err.message });
+        // Carry the payment reference through: on an unknown outcome it is the
+        // only handle support has on a charge that may have gone through.
+        const payload = { error: err.message };
+        if (err.reference) payload.reference = err.reference;
+        sendJson(res, err.status || 500, payload);
     }
 }
 

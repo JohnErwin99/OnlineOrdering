@@ -89,6 +89,37 @@ return 503 and the number-selection page shows a catalog error.
 | `/api/lnp/profiles` | GET | LNP v4: routing profiles for porting |
 | `/api/lnp/pon` | POST | LNP v4: create a porting request (PON) — pon_data fields + `numbers[]` |
 | `/api/lnp/pon/:pon/status` | GET | LNP v4: last PON status incl. rejection reasons |
+| `/api/payment/charge` | POST | Charge a balance — idempotent, keeps the payment key server-side |
+| `/api/did/orders/recorded` | GET | Support view of orders this server has placed |
+
+## Never charging or ordering twice
+
+A customer can close the tab, clear storage, switch device, or double-click
+Submit. Any of those used to place a **second billable DID order** or a second
+card charge, because the only record lived in the browser.
+
+The browser cannot be what guarantees "only once", so the guarantee sits in
+front of the calls that spend money:
+
+- **`/api/did/order`** and **`/api/payment/charge`** are idempotent. The key is
+  the client's `idempotencyKey`, or a fingerprint of account + request shape —
+  deliberately derived rather than random, so it is the same even from a fresh
+  browser. A repeat returns the original result with `duplicate: true`.
+- Records persist to disk (`ORDER_STORE_PATH`, `CHARGE_STORE_PATH`), so a
+  restart does not reopen the window. **On Render, point these at a persistent
+  disk** — the default location is wiped on redeploy.
+- A charge whose outcome was never learned (gateway 502) is recorded as
+  `unknown` and every later attempt is refused with 409, because the card may
+  already have been charged. A clean decline is retryable.
+
+Browser state now prefers `localStorage` (falling back to `sessionStorage`, then
+memory — a cross-origin iframe may block the first), and expires after 24h so a
+stale half-order cannot resurface.
+
+**Known limitation:** espresso's `didGetOrders` is not per-customer — it returns
+every order on the company account — so it can only *warn* about a similar
+recent order, never block. Two customers ordering `TORONTO 647 x1` on the same
+day are indistinguishable there. The persisted store is the real protection.
 
 ## Order flow
 
