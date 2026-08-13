@@ -17,9 +17,35 @@ talks to this server, and the server talks SOAP.
 |---|---|
 | `ESPRESSO_USER` / `ESPRESSO_PASS` | espresso credentials (from Iristel) |
 | `ESPRESSO_MODE` | `test` (default) or `production` |
+| `ESPRESSO_LNP_MODE` | Porting environment — defaults to `ESPRESSO_MODE` |
 | `ESPRESSO_DID_PROFILE` | Routing profile for DID orders |
 | `ESPRESSO_LNP_PROFILE` | Routing profile **id** for port requests |
 | `PORT` | Listen port (default 3000) |
+
+### Porting has its own mode, and usually should
+
+A DID order placed by mistake costs a number. A **port request** placed by
+mistake starts a real number transfer: the customer's current provider is
+notified, and unwinding it means cancelling a port.
+
+So set `ESPRESSO_LNP_MODE=test` on any environment where the port-in flow can
+be reached but real ports are not intended — a live demo, in particular:
+
+```
+ESPRESSO_MODE     = production   # numbers are ordered for real
+ESPRESSO_LNP_MODE = test         # ports stay in the sandbox
+```
+
+The startup log states both plainly, so a live site that can file real ports
+says so:
+
+```
+  DID orders : production  ← orders are real and billed
+  LNP ports  : test  (sandbox — safe to demo)
+```
+
+Unlike DID ordering, the LNP profile (`2408`) exists in **both** environments,
+so no profile change is needed when switching.
 
 ### The routing profile matters, and differs per environment
 

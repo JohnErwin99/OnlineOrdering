@@ -38,7 +38,17 @@ const ESPRESSO_LNP_PROFILE = process.env.ESPRESSO_LNP_PROFILE || '';
 
 // LNP (Local Number Portability) lives on the v4 endpoint — same host and
 // credentials, different WSDL/namespace than the v3 DID ordering API.
-const ESPRESSO_LNP_URL = `https://connect.espressodid.com/cloud/public/v4/${ESPRESSO_MODE}`;
+// Porting has its own mode, defaulting to whatever DID ordering uses.
+//
+// A DID order that goes out by mistake costs a number. A PON that goes out by
+// mistake starts a real number transfer: the customer's current provider is
+// notified and unwinding it means cancelling a port. So the two are separable —
+// ESPRESSO_LNP_MODE=test keeps porting in the sandbox while numbers are ordered
+// for real, which is what you want while demoing on a live site.
+const ESPRESSO_LNP_MODE = process.env.ESPRESSO_LNP_MODE === 'production' ? 'production'
+    : process.env.ESPRESSO_LNP_MODE === 'test' ? 'test'
+    : ESPRESSO_MODE;
+const ESPRESSO_LNP_URL = `https://connect.espressodid.com/cloud/public/v4/${ESPRESSO_LNP_MODE}`;
 const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 
 const ROOT = __dirname;
@@ -1052,6 +1062,12 @@ server.listen(PORT, () => {
     // profile should be obvious from the log, not discovered via a bad order.
     console.log(`OnlineOrdering server on :${PORT} — espresso mode: ${ESPRESSO_MODE}` +
         (ESPRESSO_USER ? '' : ' (NO CREDENTIALS SET — /api/did/* will return 503)'));
+    console.log('  DID orders : ' + ESPRESSO_MODE
+        + (ESPRESSO_MODE === 'production' ? '  ← orders are real and billed' : ''));
+    console.log('  LNP ports  : ' + ESPRESSO_LNP_MODE
+        + (ESPRESSO_LNP_MODE === 'production'
+            ? '  ⚠ PORT REQUESTS ARE REAL — they notify the losing carrier'
+            : '  (sandbox — safe to demo)'));
     console.log('  DID profile: ' + (ESPRESSO_DID_PROFILE || '(not pinned — will use the account\'s first profile)'));
     console.log('  LNP profile: ' + (ESPRESSO_LNP_PROFILE || '(not pinned — will use the account\'s first profile)'));
     console.log('  state dir  : ' + STATE_DIR
