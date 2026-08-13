@@ -567,6 +567,44 @@
             }
         }
 
+        // A resumed order can arrive with trunks that carry no numbers: the
+        // snapshot is taken when the order is placed, before Iristel has
+        // assigned anything, and the browser that later received them is gone.
+        // Recover them rather than showing "--" for a number that exists.
+        //
+        // The provision record is preferred — it is exactly what was sent to
+        // UBoss — and the DID order is the fallback for orders that never got
+        // as far as provisioning.
+        async function recoverNumbersIfMissing(trunksList, session) {
+            if (!trunksNeedNumbers(trunksList)) return trunksList;
+
+            let numbers = [];
+            const provisioned = (session && session.provisions) || [];
+            if (provisioned.length) {
+                numbers = provisioned.flatMap(p => (p.phoneNumbers || [])
+                    .map(n => String(n).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1')));
+            }
+
+            if (!numbers.length) {
+                const order = getCookie('sip_didOrderNumber')
+                    || (session && session.order && session.order.orderNumber);
+                if (!order) return trunksList;
+                try {
+                    const r = await fetch(`/api/did/order/${encodeURIComponent(order)}/details`);
+                    const d = await r.json().catch(() => null);
+                    if (r.ok && d && d.numbers) numbers = d.numbers;
+                } catch (e) {
+                    console.warn('Could not recover the ordered numbers:', e.message);
+                }
+            }
+
+            if (!numbers.length) return trunksList;
+            distributeOrderedNumbers(trunksList, numbers);
+            saveTrunksToServer(trunksList);
+            console.log('Recovered', numbers.length, 'number(s) for the resumed order');
+            return trunksList;
+        }
+
         // The primary-number cookie is written when numbers are distributed, so
         // it is missing on a resumed order. Fall back to the trunks themselves.
         function displayPrimaryNumber(trunksList) {
@@ -1079,7 +1117,15 @@
                     jobId = await ensureUbossStarted(trunksList);
                     document.getElementById('detailJobId').textContent = jobId;
                 } else {
-                    setNumbersStep('done', 'Numbers assigned', 'Your numbers are active');
+                    // Provisioning already ran, so the numbers exist — but a
+                    // resumed browser may not know them. Recover before saying
+                    // they are assigned, otherwise the step claims success
+                    // while the number shows as "--".
+                    await recoverNumbersIfMissing(trunksList, session);
+                    const known = displayPrimaryNumber(trunksList);
+                    document.getElementById('detailNumber').textContent = known || '--';
+                    setNumbersStep('done', 'Numbers assigned',
+                        known ? 'Your numbers are active' : 'Assigned to your account');
                 }
             } catch (err) {
                 setNumbersStep('error', 'Number order problem', err.message);
