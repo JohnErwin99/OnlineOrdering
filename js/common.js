@@ -77,6 +77,91 @@ function clearAllCookies() {
 }
 
 // ============================================
+// SESSION RESUME
+// ============================================
+// Local storage is not the source of truth for anything that costs money. The
+// server records each spend-or-provision step against the customer's email, so
+// a browser that has forgotten everything — or a different device entirely —
+// can pick the order back up instead of paying for it twice.
+//
+// Only IN-FLIGHT orders resume. A finished order is deliberately not resumable:
+// a customer returning next week is buying a second trunk, not revisiting the
+// first, and must be allowed to order and be charged normally.
+function currentCustomerEmail() {
+    return getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '';
+}
+
+async function fetchServerSession(email) {
+    const addr = (email || currentCustomerEmail() || '').trim();
+    if (!addr) return null;
+    try {
+        const r = await fetch('/api/session?email=' + encodeURIComponent(addr));
+        if (!r.ok) return null;
+        return await r.json();
+    } catch (e) {
+        console.warn('Session lookup failed (continuing without it):', e.message);
+        return null;
+    }
+}
+
+// Copies whatever the server knows into local storage. Never overwrites a
+// value the browser already has — local edits in progress win.
+function applyServerSession(session) {
+    if (!session) return false;
+    let restored = false;
+    const put = (k, v) => { if (v && !getCookie(k)) { setCookie(k, String(v)); restored = true; } };
+
+    if (session.account && session.account.accountId) {
+        put('iristel_account_id', session.account.accountId);
+    }
+    if (session.order) {
+        put('sip_didOrderNumber', session.order.orderNumber);
+        if (session.order.businessName) put('sip_businessName', session.order.businessName);
+        if (Array.isArray(session.order.trunks) && session.order.trunks.length && !getCookie('sip_trunks')) {
+            setCookie('sip_trunks', JSON.stringify(session.order.trunks));
+            restored = true;
+        }
+    }
+    if (session.pon && session.pon.pon) put('sip_ponNumber', session.pon.pon);
+    if (session.provisions && session.provisions.length) {
+        put('sip_provisionJobId', session.provisions[0].jobId);
+        if (!getCookie('sip_provisionJobs')) {
+            setCookie('sip_provisionJobs', JSON.stringify(
+                session.provisions.map(p => ({ trunkName: p.trunkName || 'Trunk', jobId: p.jobId }))));
+            restored = true;
+        }
+    }
+    if (restored) console.log('Restored in-progress order from the server for', session.email);
+    return restored;
+}
+
+// Convenience for page load: look up, restore, and say whether the customer has
+// an order already under way.
+async function resumeSession(email) {
+    const session = await fetchServerSession(email);
+    if (!session) return null;
+    applyServerSession(session);
+    return session;
+}
+
+// Tells the server the order finished, which releases the duplicate guards so
+// the customer's next purchase is treated as new rather than as a repeat.
+async function markOrderComplete(email) {
+    const addr = (email || currentCustomerEmail() || '').trim();
+    if (!addr) return;
+    try {
+        await fetch('/api/session/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: addr })
+        });
+        console.log('Order closed out server-side — a future purchase will be treated as new');
+    } catch (e) {
+        console.warn('Could not close the order out:', e.message);
+    }
+}
+
+// ============================================
 // ACCOUNT DATA FROM COOKIES
 // ============================================
 function getContactDataFromCookies() {

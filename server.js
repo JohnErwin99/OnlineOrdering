@@ -115,14 +115,47 @@ function normEmail(email) {
     return String(email || '').trim().toLowerCase();
 }
 
-function stateGet(key) {
-    return orderStore[key] || null;
+// Records are ACTIVE while an order is in flight and DONE once it has been
+// fully provisioned. The distinction matters: an active record suppresses
+// duplicates (a refresh or a new device must not order or charge twice), but a
+// done one must not — a customer coming back next week to buy a second trunk
+// is placing a genuinely new order and has to be allowed to.
+function stateGet(key, opts) {
+    const rec = orderStore[key] || null;
+    if (!rec) return null;
+    if (opts && opts.activeOnly && rec.status === 'done') return null;
+    return rec;
 }
 
 function stateSet(key, record) {
-    orderStore[key] = { ...record, createdAt: (orderStore[key] && orderStore[key].createdAt) || Date.now(), updatedAt: Date.now() };
+    orderStore[key] = {
+        status: 'active',
+        ...record,
+        createdAt: (orderStore[key] && orderStore[key].createdAt) || Date.now(),
+        updatedAt: Date.now()
+    };
     saveOrderStore();
     return orderStore[key];
+}
+
+// Closes out everything in flight for a customer once provisioning succeeds.
+// The MIND account is deliberately left active — that should always be reused,
+// never recreated.
+function markSessionDone(email) {
+    const e = normEmail(email);
+    let closed = 0;
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.includes(`:${e}`) || k.startsWith('account:')) continue;
+        if (v && v.status !== 'done') {
+            orderStore[k] = { ...v, status: 'done', doneAt: Date.now() };
+            closed++;
+        }
+    }
+    if (closed) {
+        saveOrderStore();
+        console.log('[session]', e, '— closed', closed, 'record(s); a new order is now allowed');
+    }
+    return closed;
 }
 
 function requestShape(requests) {
@@ -578,7 +611,19 @@ async function chargeBalance(body) {
     const { accountCode, amount, creditCard } = body;
     // Same account + same amount = the same charge, so a repeat is recognised
     // even from a browser that has forgotten everything.
+    //
+    // Scoped to the customer's CURRENT order: once an order is provisioned the
+    // record is closed out, so buying a second trunk at the same price later is
+    // charged normally instead of being mistaken for a duplicate and given away.
     const key = body.idempotencyKey || `${accountCode}::${Number(amount).toFixed(2)}`;
+
+    if (body.email && chargeStore[key] && chargeStore[key].outcome === 'success'
+        && await sessionAlreadyProvisioned(body.email)) {
+        console.log('[charge] previous order is provisioned — this is a new purchase, not a duplicate');
+        markSessionDone(body.email);
+        delete chargeStore[key];
+        saveChargeStore();
+    }
 
     const seen = chargeStore[key];
     if (seen && seen.outcome === 'success') {
@@ -709,6 +754,21 @@ function ubossJobStatus(jobId) {
     });
 }
 
+// True when every provisioning job on file for this customer has completed —
+// i.e. the previous order is finished and a new one is legitimate.
+async function sessionAlreadyProvisioned(email) {
+    const e = normEmail(email);
+    const jobs = Object.entries(orderStore)
+        .filter(([k, v]) => k.startsWith('provision:') && k.includes(`:${e}`) && v && v.jobId && v.status !== 'done')
+        .map(([, v]) => v);
+    if (!jobs.length) return false;
+    for (const j of jobs) {
+        const live = await ubossJobStatus(j.jobId);
+        if (!live || String(live.status || '').toLowerCase() !== 'completed') return false;
+    }
+    return true;
+}
+
 async function startProvisioning(body) {
     const { email, phoneNumbers, force } = body;
     const key = K.provision(email, phoneNumbers);
@@ -743,7 +803,12 @@ async function startProvisioning(body) {
         throw err;
     }
 
-    stateSet(key, { jobId: data.id, email: normEmail(email), phoneNumbers, attempts: ((seen && seen.attempts) || 0) + 1 });
+    stateSet(key, {
+        jobId: data.id, email: normEmail(email), phoneNumbers,
+        trunkName: body.trunkName || null,
+        channelCount: body.channelCount || null,
+        attempts: ((seen && seen.attempts) || 0) + 1
+    });
     return { jobId: data.id, reused: false, sipAuthenticationPassword: data.sipAuthenticationPassword };
 }
 
@@ -786,7 +851,13 @@ async function handleApi(req, res, pathname) {
             // change and let a duplicate through.
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             const key = K.order(body.email, requests);
-            const seen = stateGet(key);
+            let seen = stateGet(key, { activeOnly: true });
+            // Backstop: if the client never told us it finished, ask UbossRobot.
+            // A previous order that actually provisioned must not block this one.
+            if (seen && await sessionAlreadyProvisioned(body.email)) {
+                markSessionDone(body.email);
+                seen = null;
+            }
             if (seen && seen.orderNumber) {
                 console.log('[order] duplicate suppressed for', key, '→', seen.orderNumber);
                 return sendJson(res, 200, { ...seen, duplicate: true });
@@ -799,7 +870,12 @@ async function handleApi(req, res, pathname) {
                 profile: result.profile,
                 email: normEmail(body.email),
                 accountRef: body.accountRef || null,
-                requests: requests
+                requests: requests,
+                // Snapshot of the trunk layout so a customer returning on
+                // another device can be put back where they were, rather than
+                // rebuilding it by hand (or ordering again).
+                trunks: Array.isArray(body.trunks) ? body.trunks : null,
+                businessName: body.businessName || null
             });
             return sendJson(res, 200, result);
         }
@@ -817,20 +893,36 @@ async function handleApi(req, res, pathname) {
             }
             return sendJson(res, 200, await startProvisioning(body));
         }
-        // Everything this server knows about a customer — lets any device pick
-        // an order back up instead of starting (and paying for) a new one.
+        // What is still IN FLIGHT for a customer, so another device can pick the
+        // order back up instead of starting (and paying for) a new one. A
+        // finished order is not resumable — coming back later means a new order.
         if (pathname === '/api/session' && req.method === 'GET') {
             const email = normEmail(new URL(req.url, 'http://x').searchParams.get('email'));
             if (!email) return sendJson(res, 400, { error: 'email is required' });
-            const out = { email, account: null, order: null, pon: null, provisions: [] };
+            const out = { email, account: null, order: null, pon: null, provisions: [], resumable: false };
             for (const [k, v] of Object.entries(orderStore)) {
                 if (!k.includes(`:${email}`)) continue;
-                if (k.startsWith('account:')) out.account = v;
+                if (k.startsWith('account:')) out.account = v;      // always reusable
+                else if (v && v.status === 'done') continue;         // finished — not resumable
                 else if (k.startsWith('order:')) out.order = v;
                 else if (k.startsWith('pon:')) out.pon = v;
                 else if (k.startsWith('provision:')) out.provisions.push(v);
             }
+            // An order whose provisioning already succeeded is finished, even if
+            // nothing told us so — close it out rather than offering a resume.
+            if (out.order && await sessionAlreadyProvisioned(email)) {
+                markSessionDone(email);
+                out.order = null; out.pon = null; out.provisions = [];
+            }
+            out.resumable = !!(out.order || out.provisions.length);
             return sendJson(res, 200, out);
+        }
+        // The status page reports a successful provisioning here, which closes
+        // the order out so the customer's next purchase is treated as new.
+        if (pathname === '/api/session/complete' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            return sendJson(res, 200, { closed: markSessionDone(body.email) });
         }
         if (pathname === '/api/payment/charge' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');

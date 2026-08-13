@@ -692,6 +692,11 @@
                 const completedData = data;
                 setCookie('sip_provisionResult', JSON.stringify(completedData));
 
+                // Close the order out server-side. Until this happens the
+                // duplicate guards stay armed, which would stop this customer
+                // ever buying a second trunk at the same price.
+                markOrderComplete();
+
                 sendWelcomeEmail()
                     .then(() => {
                         setStepState(stepEmailIcon, 'done');
@@ -952,6 +957,11 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', async function() {
             loadUserInfoBar();
+
+            // Local storage may have been cleared, or this may be a different
+            // device — pull anything the server still has in flight before
+            // deciding there is nothing to show.
+            await resumeSession();
 
             jobId = getCookie('sip_provisionJobId');
             const didOrderNumber = getCookie('sip_didOrderNumber');

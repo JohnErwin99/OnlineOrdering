@@ -420,6 +420,21 @@ async function submitForm() {
     console.log('All contact data stored in cookies (account ID: 7142292)');
 
     setLoading(false);
+
+    // This is where a customer returning on a new device lands, so it is the
+    // right place to notice they already have an order under way and put them
+    // back on it — otherwise they would walk the whole flow again and be
+    // stopped only by the server-side duplicate guards.
+    const resumed = await resumeSession(document.getElementById('email').value.trim());
+    if (resumed && resumed.resumable) {
+        showResponse('success', 'Welcome back!',
+            'You already have an order in progress. Taking you to it...');
+        setTimeout(() => {
+            window.location.href = 'Sip Trunk/provisioningStatus.html';
+        }, 2000);
+        return;
+    }
+
     showResponse('success', 'Account Created!', 'Your account has been created successfully. You will be redirected shortly.');
 
     // Redirect after delay

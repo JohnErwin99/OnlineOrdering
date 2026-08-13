@@ -466,7 +466,11 @@
                             accountCode: accountCode,
                             amount: amount.toFixed(2),
                             creditCard: requestBody.creditCard,
-                            idempotencyKey: accountCode + '::' + amount.toFixed(2)
+                            idempotencyKey: accountCode + '::' + amount.toFixed(2),
+                            // Lets the server tell a duplicate from a genuine
+                            // second purchase: once an order is provisioned the
+                            // guard is released, so buying again is charged.
+                            email: customerEmail(getContactDataFromCookies())
                         })
                     });
                 } catch (networkErr) {
@@ -728,7 +732,11 @@
                             body: JSON.stringify({
                                 requests: allRequests,
                                 email: customerEmail(contactData),
-                                accountRef: accountId || getCookie('iristel_account_id') || null
+                                accountRef: accountId || getCookie('iristel_account_id') || null,
+                                // Snapshot so another device can rebuild the
+                                // order rather than the customer redoing it
+                                trunks: trunksList,
+                                businessName: getCookie('sip_businessName') || null
                             })
                         });
                         const orderData = await orderResponse.json().catch(() => null);
