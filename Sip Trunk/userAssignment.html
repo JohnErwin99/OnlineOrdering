@@ -396,21 +396,6 @@
 
     <script src="../js/common.js"></script>
     <script src="../js/sip-userAssignment.js"></script>
-<script>
-  var parentOrigins = [
-    'https://iristel.webflow.io'
-    // add your live domain here once attached, e.g. 'https://www.iristel.com'
-  ];
-  function postHeight() {
-    var h = document.documentElement.scrollHeight;
-    parentOrigins.forEach(function (origin) {
-      parent.postMessage({ type: 'resize-iframe', height: h }, origin);
-    });
-  }
-  window.addEventListener('load', postHeight);
-  window.addEventListener('resize', postHeight);
-  new ResizeObserver(postHeight).observe(document.body);
-</script>
 <script src="../js/iris-bridge.js"></script>
 </body>
 </html>

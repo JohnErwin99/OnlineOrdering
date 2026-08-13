@@ -467,3 +467,66 @@ function formatExpiry(input) {
     if (val.length >= 3) val = val.substring(0, 2) + ' / ' + val.substring(2);
     input.value = val;
 }
+
+// ============================================
+// IFRAME AUTO-RESIZE (embedded in Webflow)
+// ============================================
+// Reports the document height to the parent so the iframe can grow with the
+// content instead of scrolling inside a fixed box.
+//
+// The layout actively fights this. `.left-panel` is a flex item with
+// `overflow-y: auto`, which sets its min-height to 0 — so it scrolls
+// internally and the document height never exceeds the viewport, no matter
+// how much content is added. `.container { min-height: 100vh }` pins it to
+// the iframe's current height for the same reason 100vh does. Standalone
+// that is the intended two-column design, so the override applies only when
+// embedded.
+(function irisIframeResize() {
+    if (typeof window === 'undefined' || window.self === window.top) return;
+
+    document.documentElement.setAttribute('data-embedded', 'true');
+
+    function applyEmbeddedLayout() {
+        if (document.getElementById('irisEmbedStyle') || !document.head) return;
+        const style = document.createElement('style');
+        style.id = 'irisEmbedStyle';
+        // Let content flow into the document so scrollHeight reflects it.
+        // Deliberately does NOT touch bounded lists (.numbers-grid,
+        // .terms-text) — those are meant to scroll and do not pin the page.
+        style.textContent =
+            'html[data-embedded] , html[data-embedded] body { height: auto !important; overflow: visible !important; }' +
+            'html[data-embedded] .container { min-height: 0 !important; }' +
+            'html[data-embedded] .left-panel, html[data-embedded] .right-panel { overflow: visible !important; }';
+        document.head.appendChild(style);
+    }
+
+    let last = 0;
+    function send() {
+        const h = Math.max(
+            document.documentElement.scrollHeight,
+            document.body ? document.body.scrollHeight : 0
+        );
+        if (Math.abs(h - last) > 2) {
+            last = h;
+            parent.postMessage({ type: 'resize-iframe', height: h }, '*');
+        }
+    }
+
+    function start() {
+        applyEmbeddedLayout();
+        send();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+    window.addEventListener('load', send);
+    window.addEventListener('resize', send);
+    if (window.ResizeObserver) {
+        new ResizeObserver(send).observe(document.documentElement);
+    }
+    // Catches late fonts, images and async renders that no event covers
+    setInterval(send, 500);
+})();
