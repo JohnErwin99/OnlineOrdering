@@ -144,6 +144,22 @@ async function resumeSession(email) {
     return session;
 }
 
+// Pushes the trunk layout (now carrying assigned numbers) back to the order
+// record, so a customer resuming elsewhere sees their number immediately.
+async function saveTrunksToServer(trunks, email) {
+    const addr = (email || currentCustomerEmail() || '').trim();
+    if (!addr || !Array.isArray(trunks) || !trunks.length) return;
+    try {
+        await fetch('/api/session/trunks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: addr, trunks: trunks })
+        });
+    } catch (e) {
+        console.warn('Could not save trunks to the server:', e.message);
+    }
+}
+
 // Tells the server the order finished, which releases the duplicate guards so
 // the customer's next purchase is treated as new rather than as a repeat.
 async function markOrderComplete(email) {

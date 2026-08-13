@@ -919,6 +919,26 @@ async function handleApi(req, res, pathname) {
         }
         // The status page reports a successful provisioning here, which closes
         // the order out so the customer's next purchase is treated as new.
+        // The trunk snapshot is taken when the order is placed, before Iristel
+        // has assigned anything, so it carries requests but no numbers. Once
+        // they arrive the status page sends them back here — otherwise a
+        // resumed order shows an empty number until espresso is re-queried.
+        if (pathname === '/api/session/trunks' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            const email = normEmail(body.email);
+            if (!email) return sendJson(res, 400, { error: 'email is required' });
+            if (!Array.isArray(body.trunks)) return sendJson(res, 400, { error: 'trunks[] is required' });
+
+            let updated = 0;
+            for (const [k, v] of Object.entries(orderStore)) {
+                if (!k.startsWith('order:') || !k.includes(`:${email}`)) continue;
+                if (v && v.status === 'done') continue;
+                orderStore[k] = { ...v, trunks: body.trunks, updatedAt: Date.now() };
+                updated++;
+            }
+            if (updated) saveOrderStore();
+            return sendJson(res, 200, { updated });
+        }
         if (pathname === '/api/session/complete' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });

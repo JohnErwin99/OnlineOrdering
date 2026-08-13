@@ -541,6 +541,39 @@
         // Steps 1 & 2 — rendered from what submitOrder actually recorded.
         // No result recorded means we cannot claim the step succeeded.
         // ============================================
+        // A resumed order has no local step record — that lived in the browser
+        // that placed it. Without this, work the customer already paid for and
+        // completed shows as still pending, which reads like it was lost.
+        // Rebuilt only from what the server actually recorded.
+        function seedStepsFromSession(session) {
+            if (!session) return;
+
+            if (session.account && session.account.accountId && !getOrderStepResult('account')) {
+                setOrderStepResult('account', 'done',
+                    'Business account ' + session.account.accountId + ' created');
+            }
+
+            // An order is only placed after the service step, so a recorded
+            // order is proof that step succeeded.
+            if (session.order && session.order.orderNumber && !getOrderStepResult('service')) {
+                const plan = getCookie('iristel_selected_plan_name')
+                    || getCookie('iristel_selected_plan') || 'SIP Trunk';
+                setOrderStepResult('service', 'done', plan + ' active on your account');
+            }
+        }
+
+        // The primary-number cookie is written when numbers are distributed, so
+        // it is missing on a resumed order. Fall back to the trunks themselves.
+        function displayPrimaryNumber(trunksList) {
+            const saved = getCookie('sip_primaryNumber');
+            if (saved) return saved;
+            for (const t of (trunksList || [])) {
+                if (t.primaryNumber) return t.primaryNumber;
+                if (t.numbers && t.numbers.length) return t.numbers[0];
+            }
+            return '';
+        }
+
         function renderRecordedSteps() {
             const steps = [
                 { key: 'account', icon: 'stepAccountIcon', label: 'stepAccountLabel', detail: 'stepAccountDetail',
@@ -889,9 +922,12 @@
             console.log('DID order delivered', numbers.length, 'numbers');
 
             distributeOrderedNumbers(trunksList, numbers);
+            // Send the assigned numbers back so a resume on another device
+            // shows them straight away instead of an empty field.
+            saveTrunksToServer(trunksList);
             deleteCookie('sip_didOrderNumber');
             setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered');
-            document.getElementById('detailNumber').textContent = getCookie('sip_primaryNumber') || '--';
+            document.getElementById('detailNumber').textContent = displayPrimaryNumber(trunksList) || '--';
             return trunksList;
         }
 
@@ -961,7 +997,7 @@
             // Local storage may have been cleared, or this may be a different
             // device — pull anything the server still has in flight before
             // deciding there is nothing to show.
-            await resumeSession();
+            const session = await resumeSession();
 
             jobId = getCookie('sip_provisionJobId');
             const didOrderNumber = getCookie('sip_didOrderNumber');
@@ -977,6 +1013,10 @@
                 document.getElementById('btnRow').innerHTML = '<button class="btn-primary" onclick="window.location.href=\'sipReview.html\'">Go to Review</button>';
                 return;
             }
+
+            // A resumed order carries no local step record — rebuild what the
+            // server knows so finished work shows as finished, not pending.
+            seedStepsFromSession(session);
 
             // Steps 1 & 2 reflect the recorded outcome of the MIND calls
             renderRecordedSteps();
