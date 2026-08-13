@@ -599,6 +599,25 @@ function saveChargeStore() {
     }
 }
 
+function getJson(url, headers) {
+    return new Promise((resolve, reject) => {
+        const req = https.get(url, { headers: { ...headers, accept: 'application/json' }, timeout: 45000 },
+            res => {
+                let data = '';
+                res.on('data', c => data += c);
+                res.on('end', () => {
+                    if (res.statusCode < 200 || res.statusCode >= 300) {
+                        return reject(new Error(`HTTP ${res.statusCode}`));
+                    }
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { reject(new Error('unparseable response')); }
+                });
+            });
+        req.on('timeout', () => req.destroy(new Error('request timeout')));
+        req.on('error', reject);
+    });
+}
+
 function postJson(url, headers, body) {
     return new Promise((resolve, reject) => {
         const payload = JSON.stringify(body);
@@ -703,12 +722,67 @@ async function chargeBalance(body) {
 // bill them a second time.
 const MIND_API_KEY = process.env.MIND_API_KEY || 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
 
-async function createAccount(email, contact) {
+// Asks MIND directly whether this email already has an account. MIND ignores
+// query filters and returns every account, so the match is done here.
+//
+// This is the authoritative check, and the one that matters once real
+// customers arrive: our own records can be wiped by a redeploy, and an account
+// may have been created before this server existed or outside the flow
+// entirely. Without it, a customer whose order failed would sign up again and
+// end up with a second MIND account.
+async function findMindAccountByEmail(email) {
+    const target = normEmail(email);
+    if (!target) return null;
+    try {
+        const r = await getJson(`${BILLING_API_URL}/accounts`, { 'iristelx-api-key': MIND_API_KEY });
+        const list = (r && r.accounts) || [];
+        const matches = list.filter(a =>
+            a && a.contact && normEmail(a.contact.emailAddress) === target);
+        if (!matches.length) return null;
+        // Prefer an active account, then the most recently created
+        matches.sort((a, b) =>
+            (String(b.status) === 'ACTIVE') - (String(a.status) === 'ACTIVE')
+            || String(b.createdOn || '').localeCompare(String(a.createdOn || '')));
+        if (matches.length > 1) {
+            console.warn('[account]', matches.length, 'MIND accounts share', target,
+                '— using', matches[0].accountId);
+        }
+        return matches[0];
+    } catch (e) {
+        // A lookup failure must not block signup; the store still guards the
+        // common case, and creating one extra account beats a dead end.
+        console.warn('[account] MIND lookup failed (continuing):', e.message);
+        return null;
+    }
+}
+
+async function createAccount(email, contact, knownAccountId) {
     const key = K.account(email);
     const seen = stateGet(key);
     if (seen && seen.accountId) {
         console.log('[account] reusing', seen.accountId, 'for', normEmail(email));
         return { accountId: seen.accountId, reused: true };
+    }
+
+    // The browser already had an account id — from an earlier order, or from
+    // signup. Adopt it rather than creating a second MIND account, and record
+    // it so a later resume on another device knows the account exists. Without
+    // this the mapping only ever got written when WE created the account, so a
+    // returning customer's account step looked like it had never happened.
+    if (knownAccountId) {
+        console.log('[account] adopting existing', knownAccountId, 'for', normEmail(email));
+        stateSet(key, { accountId: String(knownAccountId), email: normEmail(email), adopted: true });
+        return { accountId: String(knownAccountId), reused: true, adopted: true };
+    }
+
+    // Nothing local — ask MIND before creating. This is what stops a customer
+    // whose first order failed from getting a second account when they start
+    // over from signup.
+    const existing = await findMindAccountByEmail(email);
+    if (existing && existing.accountId) {
+        console.log('[account] found existing MIND account', existing.accountId, 'for', normEmail(email));
+        stateSet(key, { accountId: String(existing.accountId), email: normEmail(email), foundInMind: true });
+        return { accountId: String(existing.accountId), reused: true, foundInMind: true };
     }
 
     const requestBody = {
@@ -899,7 +973,7 @@ async function handleApi(req, res, pathname) {
             const body = JSON.parse(await readBody(req) || '{}');
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             if (!body.contact) return sendJson(res, 400, { error: 'contact is required' });
-            return sendJson(res, 200, await createAccount(body.email, body.contact));
+            return sendJson(res, 200, await createAccount(body.email, body.contact, body.accountId));
         }
         if (pathname === '/api/provision' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');

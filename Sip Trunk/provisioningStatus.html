@@ -548,9 +548,14 @@
         function seedStepsFromSession(session) {
             if (!session) return;
 
-            if (session.account && session.account.accountId && !getOrderStepResult('account')) {
-                setOrderStepResult('account', 'done',
-                    'Business account ' + session.account.accountId + ' created');
+            // The order carries the account it was placed against, which covers
+            // orders recorded before the account mapping was stored — and any
+            // order is proof the account existed at the time.
+            const accountId = (session.account && session.account.accountId)
+                || (session.order && session.order.accountRef);
+            if (accountId && !getOrderStepResult('account')) {
+                setOrderStepResult('account', 'done', 'Business account ' + accountId + ' created');
+                if (!getCookie('iristel_account_id')) setCookie('iristel_account_id', accountId);
             }
 
             // An order is only placed after the service step, so a recorded

@@ -564,14 +564,17 @@
         // returning on another device would otherwise sign up again, get a
         // second MIND account, and — because the order guard keys off the
         // account — be billed for a second set of numbers.
-        async function createMindAccount(contactData) {
+        async function createMindAccount(contactData, knownAccountId) {
             console.log('[STEP 1] Create account — POST /api/account');
             const response = await fetch('/api/account', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email: customerEmail(contactData),
-                    contact: { ...contactData, language: getCookie('iristel_user_language') || 'en' }
+                    contact: { ...contactData, language: getCookie('iristel_user_language') || 'en' },
+                    // Hand over an id the browser already has so the server can
+                    // record the mapping instead of creating a second account
+                    accountId: knownAccountId || undefined
                 })
             });
 
@@ -672,16 +675,19 @@
                 let accountId = getCookie('iristel_account_id');
 
                 try {
-                    if (!accountId) {
-                        updateStatusMessage('Creating account...');
-                        accountId = await createMindAccount(contactData);
-                        setCookie('iristel_account_id', accountId);
-                        console.log('MIND Account created:', accountId);
-                        setOrderStepResult('account', 'done', 'Business account ' + accountId + ' created');
-                    } else {
-                        console.log('Using existing MIND account:', accountId);
-                        setOrderStepResult('account', 'done', 'Using existing account ' + accountId);
-                    }
+                    // Always go through the server, even when the browser
+                    // already knows the account. Skipping the call meant the
+                    // email-to-account mapping was never recorded, so a resume
+                    // on a fresh browser showed the account step as pending
+                    // work that had in fact been done long ago.
+                    const hadAccount = !!accountId;
+                    updateStatusMessage(hadAccount ? 'Checking your account...' : 'Creating account...');
+                    accountId = await createMindAccount(contactData, accountId);
+                    setCookie('iristel_account_id', accountId);
+                    console.log(hadAccount ? 'Using existing MIND account:' : 'MIND Account created:', accountId);
+                    setOrderStepResult('account', 'done', hadAccount
+                        ? 'Using existing account ' + accountId
+                        : 'Business account ' + accountId + ' created');
                 } catch (err) {
                     setOrderStepResult('account', 'error', err.message);
                     throw err;

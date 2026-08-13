@@ -259,148 +259,56 @@ async function submitForm() {
     setLoading(true);
 
     // ============================================
-    // API CALL COMMENTED OUT - Using hardcoded account ID for now
+    // MIND ACCOUNT
     // ============================================
-
-    /*
-    // Remove spaces from postal code for API
+    // Resolved through our server, never by POSTing /accounts from here.
+    // The server reuses an account that already exists for this email —
+    // checking its own records first, then asking MIND directly — so a
+    // customer whose first order failed and who starts again from signup
+    // gets their original account instead of a second one.
+    //
+    // TEST ONLY: accountId pins every signup to the shared test account.
+    // Delete that line to go live; the server then finds or creates the
+    // customer's real account, and nothing else here changes.
+    const signupEmail = document.getElementById('email').value.trim();
     const postalCodeValue = document.getElementById('postalCode').value.trim().replace(/\s/g, '');
 
-    const requestBody = {
-        contact: {
-            fname: document.getElementById('firstName').value.trim(),
-            lname: document.getElementById('lastName').value.trim(),
-            address1: document.getElementById('address1').value.trim(),
-            city: document.getElementById('city').value.trim(),
-            province: document.getElementById('province').value,
-            country: document.getElementById('country').value,
-            postalCode: postalCodeValue,
-            emailAddress: document.getElementById('email').value.trim(),
-            phone: {
-                mobile: document.getElementById('phone').value.trim()
-            }
-        },
-        language: document.getElementById('language').value,
-        businessUnit: "1"
-    };
-
-    // Log request for debugging (remove in production)
-    console.log('=== API REQUEST ===');
-    console.log('Endpoint:', API_BASE_URL + API_ENDPOINT);
-    console.log('Request Body:', JSON.stringify(requestBody, null, 2));
-
+    let resolvedAccountId = null;
     try {
-        const response = await fetch(API_BASE_URL + API_ENDPOINT, {
+        const acctResp = await fetch('/api/account', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'iristelx-api-key': API_KEY
-            },
-            body: JSON.stringify(requestBody)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: signupEmail,
+                contact: {
+                    fname: document.getElementById('firstName').value.trim(),
+                    lname: document.getElementById('lastName').value.trim(),
+                    address1: document.getElementById('address1').value.trim(),
+                    city: document.getElementById('city').value.trim(),
+                    province: document.getElementById('province').value,
+                    country: document.getElementById('country').value,
+                    postalCode: postalCodeValue,
+                    emailAddress: signupEmail,
+                    phone: document.getElementById('phone').value.trim(),
+                    language: document.getElementById('language').value
+                },
+                accountId: '7142292'   // TEST ONLY — remove at launch
+            })
         });
-
-        // Parse response
-        const responseText = await response.text();
-        let data;
-
-        try {
-            data = responseText ? JSON.parse(responseText) : null;
-        } catch (parseError) {
-            data = { message: responseText };
-        }
-
-        console.log('=== API RESPONSE ===');
-        console.log('Status:', response.status);
-        console.log('Data:', JSON.stringify(data, null, 2));
-
-        setLoading(false);
-
-        if (response.ok) {
-            // SUCCESS
-
-            // Store all contact data in cookies for use across signup flow
-            setCookie('iristel_user_email', document.getElementById('email').value.trim(), 7);
-            setCookie('iristel_user_fname', document.getElementById('firstName').value.trim(), 7);
-            setCookie('iristel_user_lname', document.getElementById('lastName').value.trim(), 7);
-            setCookie('iristel_user_phone', document.getElementById('phone').value.trim(), 7);
-            setCookie('iristel_user_address1', document.getElementById('address1').value.trim(), 7);
-            setCookie('iristel_user_city', document.getElementById('city').value.trim(), 7);
-            setCookie('iristel_user_province', document.getElementById('province').value, 7);
-            setCookie('iristel_user_country', document.getElementById('country').value, 7);
-            setCookie('iristel_user_postalCode', document.getElementById('postalCode').value.trim(), 7);
-            setCookie('iristel_user_language', document.getElementById('language').value, 7);
-
-            // Store account ID from response if available
-            if (data && (data.accountId || data.id || data.accountcode)) {
-                const accountId = data.accountId || data.id || data.accountcode;
-                setCookie('iristel_account_id', accountId, 7);
-                console.log('Account ID stored:', accountId);
-            }
-
-            console.log('All contact data stored in cookies');
-
-            showResponse('success', 'Account Created!', 'Your account has been created successfully. You will be redirected shortly.');
-
-            // Clear form
-            document.getElementById('signupForm').reset();
-
-            // Reset password strength bars
-            ['strength1', 'strength2', 'strength3', 'strength4'].forEach(id => {
-                document.getElementById(id).className = 'strength-bar';
-            });
-
-            // Redirect after delay
-            setTimeout(() => {
-                window.location.href = 'Sip Trunk/sipTrunkSelection.html';
-                console.log('Redirect to next step');
-            }, 2000);
-
+        const acctData = await acctResp.json().catch(() => null);
+        if (acctResp.ok && acctData && acctData.accountId) {
+            resolvedAccountId = acctData.accountId;
+            console.log('Account resolved:', resolvedAccountId,
+                acctData.foundInMind ? '(existing MIND account reused)'
+                : acctData.reused ? '(reused)' : '(created)');
         } else {
-            // ERROR - Handle validation errors from API
-            if (data && data.errors && Array.isArray(data.errors)) {
-                showResponse('error', data.message || 'Validation Error', 'Please fix the following issues:', data.errors);
-
-                // Map API field names to form field IDs
-                const fieldMap = {
-                    'contact.fname': 'firstName',
-                    'contact.lname': 'lastName',
-                    'contact.emailAddress': 'email',
-                    'contact.phone': 'phone',
-                    'contact.phone.mobile': 'phone',
-                    'contact.address1': 'address1',
-                    'contact.city': 'city',
-                    'contact.province': 'province',
-                    'contact.country': 'country',
-                    'contact.postalCode': 'postalCode',
-                    'language': 'language',
-                    'businessUnit': 'businessUnit'
-                };
-
-                // Highlight specific fields with errors
-                data.errors.forEach(error => {
-                    const fieldId = fieldMap[error.param];
-                    if (fieldId) {
-                        showFieldError(fieldId, error.message);
-                    }
-                });
-            } else {
-                showResponse('error', 'Error', data?.message || `Request failed with status ${response.status}`);
-            }
+            console.error('Account resolve failed:', acctData);
         }
-
-    } catch (error) {
-        setLoading(false);
-        console.error('API Error:', error);
-
-        showResponse('error', 'Connection Error',
-            'Unable to connect to the server. This could be due to:\n' +
-            '• Network connectivity issues\n' +
-            '• CORS blocking the request\n' +
-            '• Server is temporarily unavailable\n\n' +
-            'Please try again later or contact support at 1-833-IRISTEL.'
-        );
+    } catch (err) {
+        // Signup should not dead-end on this; the review step resolves the
+        // account again before anything is ordered or charged.
+        console.error('Account resolve error:', err);
     }
-    */
 
     // Store all contact data in cookies for use across signup flow
     setCookie('iristel_user_email', document.getElementById('email').value.trim(), 7);
@@ -414,10 +322,12 @@ async function submitForm() {
     setCookie('iristel_user_postalCode', document.getElementById('postalCode').value.trim(), 7);
     setCookie('iristel_user_language', document.getElementById('language').value, 7);
 
-    // Hardcoded account ID
-    setCookie('iristel_account_id', '7142292', 7);
-
-    console.log('All contact data stored in cookies (account ID: 7142292)');
+    if (resolvedAccountId) {
+        setCookie('iristel_account_id', resolvedAccountId, 7);
+        console.log('All contact data stored in cookies (account ID: ' + resolvedAccountId + ')');
+    } else {
+        console.log('All contact data stored in cookies (account unresolved — review step will retry)');
+    }
 
     setLoading(false);
 
