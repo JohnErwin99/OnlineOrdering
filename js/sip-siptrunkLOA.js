@@ -95,6 +95,36 @@
             return null;
         }
 
+        // Test defaults so the port flow can be walked without typing the whole
+        // form each time. Only ever fills fields that are still empty, so real
+        // input and business-setup prefill both win.
+        //
+        // The numbers to port are deliberately NOT filled — they decide what
+        // actually gets requested from a carrier, so they stay a conscious act.
+        //
+        // Every value here is known to satisfy the carrier character rules
+        // above. That is not automatic: the business-setup default address
+        // ("625 President-Kennedy Ave") would be rejected outright, because
+        // street names allow no hyphens.
+        const PORT_TEST_DEFAULTS = {
+            ponEndUserName:     'Erwin Test Corp',
+            ponAccountNumber:   'TESTACCT0001',
+            ponHouseNumber:     '675',
+            ponStreetName:      'Cochrane',
+            ponStreetType:      'Drive',
+            ponCity:            'Markham',
+            ponProvince:        'ON',
+            ponZipCode:         'L3R 0B8',
+            ponCarrierComments: 'API test. Please disregard.'
+        };
+
+        function prefillPortTestDefaults() {
+            for (const [id, val] of Object.entries(PORT_TEST_DEFAULTS)) {
+                const el = document.getElementById(id);
+                if (el && !el.value) el.value = val;
+            }
+        }
+
         function wirePonValidation() {
             Object.keys(PON_RULES).forEach(id => {
                 const el = document.getElementById(id);
@@ -311,6 +341,9 @@
                     setVal('ponStreetName', addr1);
                 }
             }
+
+            // Anything still blank gets a known-good test value
+            prefillPortTestDefaults();
 
             // Prefilled values come from signup/business setup, which accept
             // characters the carrier does not — flag them now rather than
