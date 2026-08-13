@@ -994,10 +994,24 @@
         document.addEventListener('DOMContentLoaded', async function() {
             loadUserInfoBar();
 
+            // Read before the resume: the server still holds the job we are
+            // deliberately abandoning, and restoring it would silently undo the
+            // retry. ensureUbossStarted consumes the flag later.
+            const forcingRetry = getCookie('sip_forceReprovision') === '1';
+
             // Local storage may have been cleared, or this may be a different
             // device — pull anything the server still has in flight before
             // deciding there is nothing to show.
             const session = await resumeSession();
+
+            if (forcingRetry) {
+                // Try Again cleared these locally; the resume just put them
+                // back. Drop them again so a new job is actually started and
+                // the page stops showing the job it is replacing.
+                deleteCookie('sip_provisionJobId');
+                deleteCookie('sip_provisionJobs');
+                deleteCookie('sip_provisionResult');
+            }
 
             jobId = getCookie('sip_provisionJobId');
             const didOrderNumber = getCookie('sip_didOrderNumber');
