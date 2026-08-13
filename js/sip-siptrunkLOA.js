@@ -247,9 +247,25 @@
         }
 
         // Load saved data / prefill
+        // Says plainly when a port request is simulated. Only the sandbox case
+        // is surfaced: in production this is the real flow and a banner would
+        // just alarm a genuine customer.
+        async function showSandboxBannerIfTestMode() {
+            try {
+                const r = await fetch('/api/config');
+                if (!r.ok) return;
+                const cfg = await r.json();
+                if (cfg.lnpMode && cfg.lnpMode !== 'production') {
+                    document.getElementById('sandboxBanner').classList.add('show');
+                    console.log('[LNP] sandbox mode — port requests are simulated');
+                }
+            } catch (e) { /* no banner rather than a wrong one */ }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
             wirePonValidation();
+            showSandboxBannerIfTestMode();
 
             // Date defaults: auth today, due in 7 days (min 5 business days)
             const today = new Date();

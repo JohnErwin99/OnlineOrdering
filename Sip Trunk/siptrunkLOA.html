@@ -119,6 +119,23 @@
         .info-box p { font-size: 14px; color: var(--rich-black); line-height: 1.5; }
         .info-box strong { color: var(--tufts-blue); }
 
+        /* Shown only when porting is pointed at the espresso sandbox, so nobody
+           believes a simulated port request actually reached a carrier. In
+           production this stays hidden — a real customer should not be told
+           anything unusual is happening. */
+        .sandbox-banner {
+            display: none;
+            background: #FFF7E6;
+            border: 1px solid var(--warning-amber);
+            border-left-width: 4px;
+            border-radius: 0 6px 6px 0;
+            padding: 14px 18px;
+            margin-bottom: 24px;
+        }
+        .sandbox-banner.show { display: block; }
+        .sandbox-banner p { font-size: 14px; color: var(--rich-black); line-height: 1.5; }
+        .sandbox-banner strong { color: #B45309; }
+
         .warning-box {
             background-color: rgba(245, 158, 11, 0.08);
             border-left: 4px solid var(--warning-amber);
@@ -445,6 +462,12 @@
             <div class="content">
                 <h1 class="page-title">Port Request</h1>
                 <p class="page-subtitle">Authorize Iristel to port your existing phone numbers from your current provider. Your request is submitted electronically to the losing carrier.</p>
+
+                <div class="sandbox-banner" id="sandboxBanner">
+                    <p><strong>Test mode — this port request is simulated.</strong>
+                       It is sent to the espresso sandbox and will <strong>not</strong> reach
+                       your current provider. Nothing will be ported.</p>
+                </div>
 
                 <div class="warning-box">
                     <p><strong>Important:</strong> To test your SIP trunk before the port completes, you'll need to select temporary numbers on the next screen. The porting process takes a minimum of <strong>5 business days</strong>.</p>

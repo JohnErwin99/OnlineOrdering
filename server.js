@@ -842,6 +842,12 @@ function readBody(req) {
 
 async function handleApi(req, res, pathname) {
     try {
+        // Which environment each API is pointed at. Deliberately carries no
+        // credentials — it exists so the port-in page can tell the customer
+        // (or whoever is demoing) that a request is simulated rather than real.
+        if (pathname === '/api/config' && req.method === 'GET') {
+            return sendJson(res, 200, { didMode: ESPRESSO_MODE, lnpMode: ESPRESSO_LNP_MODE });
+        }
         if (pathname === '/api/did/catalog' && req.method === 'GET') {
             return sendJson(res, 200, { catalog: await getCatalog() });
         }
