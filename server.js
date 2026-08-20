@@ -875,7 +875,9 @@ async function startProvisioning(body) {
         city: body.city,
         postcode: body.postcode,
         notificationEmail: body.notificationEmail,
-        invoiceEmail: body.invoiceEmail,
+        // Invoices go to the company's ordering mailbox, never the customer —
+        // hardcoded so the browser can't redirect them.
+        invoiceEmail: 'Onlineordering@iristel.com',
         accountRef: body.accountRef,
         businessName: body.businessName,
         channelCount: body.channelCount,
