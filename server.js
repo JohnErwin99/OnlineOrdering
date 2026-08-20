@@ -875,7 +875,10 @@ async function startProvisioning(body) {
         invoiceEmail: body.invoiceEmail,
         accountRef: body.accountRef,
         businessName: body.businessName,
-        channelCount: body.channelCount
+        channelCount: body.channelCount,
+        // UbossRobot sends the welcome letter to notificationEmail itself once
+        // the job completes — replaces the manual POST /email/{jobId} step.
+        sendWelcomeLetterToNotificationEmail: body.sendWelcomeLetterToNotificationEmail !== false
     };
 
     const r = await postJson(`${UBOSS_API_URL}/trunk-provisioning`, { 'x-api-key': UBOSS_API_KEY }, requestBody);

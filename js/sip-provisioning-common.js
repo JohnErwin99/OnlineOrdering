@@ -130,6 +130,9 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
         accountRef: accountId,
         businessName: getProvisioningBusinessName(),
         channelCount: channelCount,
+        // UbossRobot emails the welcome letter to notificationEmail as soon as
+        // the job completes — no separate POST /email/{jobId} call is needed.
+        sendWelcomeLetterToNotificationEmail: true,
         force: !!opts.force
     };
 
