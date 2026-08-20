@@ -10,29 +10,11 @@
 const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
 const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
 
-// ============================================
-// TEMPORARY — TESTING ONLY. REVERT BEFORE LAUNCH.
-// ============================================
-// The correct value is 'Iristel'. UbossRobot looks the reseller up with
-// GetByRole(Link, Name=resellerName) using non-exact matching, so 'Iristel'
-// matches 6 links (IRISTEL, IRISTEL Home Phone, Iristel Kenya/Moldova/
-// Norway/Romania) and the job dies on a Playwright strict-mode violation.
-// Because 'IRISTEL' is a prefix of the other five, NO value can disambiguate
-// by substring — the robot needs Exact=true or a reseller id. All 5 jobs
-// ever sent with 'Iristel' failed this way; 0 of 34 'Demo Reseller' jobs did.
-//
-// 'Demo Reseller' is a sandbox reseller: it gets past the lookup so the rest
-// of the provisioning chain can be exercised, but it attaches the enterprise,
-// trunk and billing to the wrong parent. It CANNOT validate that a DID on
-// Profile 718524 routes to a customer's Broadsoft platform.
-//
-// Restore RESELLER_PRODUCTION below once UbossRobot fixes the lookup.
-const RESELLER_PRODUCTION = 'Iristel';
-const UBOSS_RESELLER_NAME = 'Demo Reseller';
-
-// Ported orders are flagged to the provisioning team by suffixing the business name
-// (isPortingOrder() lives in common.js so every page agrees on what a port is)
-const PORTING_SUFFIX = ' - PI';
+// resellerName is the customer's business name from the order form — each
+// customer is provisioned under their own reseller, named after their company.
+// (History: this was hardcoded, first to 'Iristel' — which died on
+// UbossRobot's non-exact reseller lookup matching 6 'Iristel*' links — then
+// to the 'Demo Reseller' sandbox. Now it always follows the order.)
 
 // Vanity letter-to-digit mapping (standard phone keypad)
 const VANITY_MAP = {
@@ -84,13 +66,12 @@ function describeApiError(data, fallback) {
     return data.message + ' — ' + details.join(' ');
 }
 
-// Porting orders go to UbossRobot as "<Business Name> - PI"
+// The business name as entered on the order. Mandatory — resellerName and
+// businessName both carry it. (The old " - PI" porting suffix is gone; ports
+// are no longer flagged through the business name.)
 function getProvisioningBusinessName() {
-    const name = (getCookie('sip_businessName') || '').trim();
-    if (!isPortingOrder() || !name || name.endsWith(PORTING_SUFFIX)) {
-        return name;
-    }
-    return name + PORTING_SUFFIX;
+    // Strip the legacy suffix in case an in-flight order's cookie still has it
+    return (getCookie('sip_businessName') || '').trim().replace(/ - PI$/, '');
 }
 
 // Contact data as both pages need it — SIP cookies first, signup fallback
@@ -121,7 +102,7 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
         email: (contactData && contactData.emailAddress)
             || getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '',
         phoneNumbers: phoneNumbers.map(formatUbossPhone),
-        resellerName: UBOSS_RESELLER_NAME,
+        resellerName: getProvisioningBusinessName(),
         address: contactData.address1,
         city: contactData.city,
         postcode: contactData.postalCode,

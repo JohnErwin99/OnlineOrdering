@@ -11,7 +11,7 @@
             'premium': 'Premium'
         };
 
-        // PORTING_SUFFIX / UBoss config / formatToE164 / describeApiError now live
+        // UBoss config / formatToE164 / describeApiError now live
         // in sip-provisioning-common.js, shared with provisioningStatus.html.
 
         function setText(id, value) {

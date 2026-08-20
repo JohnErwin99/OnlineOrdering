@@ -867,7 +867,10 @@ async function startProvisioning(body) {
 
     const requestBody = {
         phoneNumbers: phoneNumbers,
-        resellerName: body.resellerName,
+        // ALWAYS the customer's business name — each customer provisions under
+        // their own reseller. Never trust the browser's resellerName: a cached
+        // page may still send an old hardcoded value ('Demo Reseller'/'Iristel').
+        resellerName: body.businessName,
         address: body.address,
         city: body.city,
         postcode: body.postcode,
@@ -983,6 +986,11 @@ async function handleApi(req, res, pathname) {
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             if (!Array.isArray(body.phoneNumbers) || !body.phoneNumbers.length) {
                 return sendJson(res, 400, { error: 'phoneNumbers[] is required' });
+            }
+            // The business name doubles as the reseller name — a job without it
+            // would provision under a blank reseller, so refuse up front.
+            if (!body.businessName || !String(body.businessName).trim()) {
+                return sendJson(res, 400, { error: 'businessName is required' });
             }
             return sendJson(res, 200, await startProvisioning(body));
         }
