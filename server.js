@@ -717,7 +717,11 @@ async function chargeBalance(body) {
         throw err;
     }
 
-    chargeStore[key] = { ...chargeStore[key], outcome: 'success', chargedAt: Date.now() };
+    // Keep the gateway's own response: MIND returning 2xx is what we call
+    // success, but whether a real card capture happened (and under which
+    // Moneris transaction id) is only knowable from this payload.
+    console.log('[charge] success', reference, accountCode, amount, '— gateway said:', result.raw.slice(0, 500));
+    chargeStore[key] = { ...chargeStore[key], outcome: 'success', chargedAt: Date.now(), gatewayResponse: data };
     saveChargeStore();
     return { reference, amount: Number(amount).toFixed(2), result: data };
 }
