@@ -649,10 +649,10 @@
                 return;
             }
 
-            // Verify card was saved — unless the TEST promo is applied, which
-            // zeroes the charge and bypasses payment entirely (no card needed).
-            const promoApplied = getAppliedPromo();
-            if (!promoApplied && !getCookie('iristel_payment_token')) {
+            // Verify card was saved. A promo zeroes the CHARGE, never the card
+            // requirement — every order must have a payment method on file,
+            // even when $0 is charged.
+            if (!getCookie('iristel_payment_token')) {
                 showAlert('No payment card on file. Please go back and save a card first.', 'error', 'No card on file');
                 if (window.IrisBridge) window.IrisBridge.error('No payment card on file. Please go back and save a card first.');
                 return;
