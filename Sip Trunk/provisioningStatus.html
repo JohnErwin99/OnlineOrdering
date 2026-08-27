@@ -246,6 +246,32 @@
 
         .email-notice strong { color: var(--tufts-blue); }
 
+        /* Countdown under the subtitle */
+        .eta-timer {
+            font-size: 14px;
+            color: var(--tufts-blue);
+            font-weight: 500;
+            margin: -18px auto 30px;
+        }
+
+        /* "Safe to navigate away" notice — neutral cousin of .email-notice */
+        .nav-away-notice {
+            background: var(--light-gray);
+            border-left: 4px solid var(--medium-gray);
+            padding: 14px 20px;
+            border-radius: 0 8px 8px 0;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .nav-away-notice p {
+            font-size: 13px;
+            color: var(--text-gray);
+            line-height: 1.5;
+        }
+
+        .nav-away-notice strong { color: var(--rich-black); }
+
         /* Buttons */
         .btn-primary {
             background: var(--tufts-blue);
@@ -321,6 +347,7 @@
 
             <h1 class="status-title" id="statusTitle">Provisioning Your Trunk...</h1>
             <p class="status-subtitle" id="statusSubtitle">Your SIP trunk is being configured. This usually takes a few minutes. You can stay on this page or come back later.</p>
+            <p class="eta-timer" id="etaTimer" style="display:none;"></p>
 
             <!-- Progress Steps -->
             <div class="provision-steps" id="provisionSteps">
@@ -331,7 +358,7 @@
                     </div>
                     <div class="step-content">
                         <div class="step-label" id="stepAccountLabel">Account created</div>
-                        <div class="step-detail" id="stepAccountDetail">Business account set up in billing system</div>
+                        <div class="step-detail" id="stepAccountDetail">Your business account is ready</div>
                     </div>
                 </div>
                 <div class="provision-step" id="stepService">
@@ -366,8 +393,8 @@
                         <svg class="spinner" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1z" clip-rule="evenodd"/></svg>
                     </div>
                     <div class="step-content">
-                        <div class="step-label" id="stepProvisionLabel">Configuring trunk on platform...</div>
-                        <div class="step-detail" id="stepProvisionDetail">Setting up enterprise, users, and trunk group</div>
+                        <div class="step-label" id="stepProvisionLabel">Configuring your trunk...</div>
+                        <div class="step-detail" id="stepProvisionDetail">Setting up your service</div>
                     </div>
                 </div>
                 <div class="provision-step" id="stepEmail">
@@ -381,10 +408,15 @@
                 </div>
             </div>
 
+            <!-- Safe to navigate away — shown while provisioning is in flight -->
+            <div class="nav-away-notice" id="navAwayNotice">
+                <p><strong>You don't need to wait here.</strong> It's safe to close this page or navigate away — setup continues in the background and your login details will be emailed to you. You can return to this page anytime to check progress.</p>
+            </div>
+
             <!-- Details -->
             <div class="details-box" id="detailsBox">
                 <div class="detail-row">
-                    <span class="detail-label">Job ID</span>
+                    <span class="detail-label">Order Reference</span>
                     <span class="detail-value mono" id="detailJobId">--</span>
                 </div>
                 <div class="detail-row">
@@ -485,6 +517,70 @@
         let emailSending = false;
 
         // ============================================
+        // Customer-facing copy — the robot's internals stay out of the UI.
+        // Raw step text ("Step 07: Add trunk group to enterprise") and raw
+        // error messages (Playwright stack fragments) go to the console only.
+        // ============================================
+        const GENERIC_ERROR_COPY = 'Something needs attention on our side — our team has been notified. ' +
+            'Your order is saved and nothing is lost.';
+
+        // The robot reports e.g. "Step 03: Create enterprise". Map the step
+        // number to a customer-friendly phase instead of echoing it.
+        function friendlyStep(currentStep) {
+            const m = /^Step\s*(\d+)/i.exec(currentStep || '');
+            if (!m) return 'Configuring your service...';
+            const n = parseInt(m[1], 10);
+            if (n <= 3) return 'Reserving your number...';
+            if (n <= 8) return 'Building your trunk...';
+            if (n <= 12) return 'Applying your configuration...';
+            return 'Finishing up...';
+        }
+
+        // ============================================
+        // Countdown — anchored to when the job actually started, so a reload
+        // resumes the countdown instead of restarting it.
+        // ============================================
+        const ETA_TOTAL_MS = 5 * 60 * 1000;
+        let etaTimerHandle = null;
+
+        function etaStartTime(data) {
+            const saved = parseInt(getCookie('sip_provisionStartedAt'), 10);
+            if (saved) return saved;
+            const fromApi = data && data.createdAt ? Date.parse(data.createdAt) : NaN;
+            const start = isNaN(fromApi) ? Date.now() : fromApi;
+            setCookie('sip_provisionStartedAt', String(start));
+            return start;
+        }
+
+        function startEta(data) {
+            const el = document.getElementById('etaTimer');
+            const startedAt = etaStartTime(data);
+            const tick = () => {
+                const left = ETA_TOTAL_MS - (Date.now() - startedAt);
+                if (left <= 0) {
+                    el.textContent = 'Taking a little longer than usual — no action needed, we’re still working on it.';
+                } else {
+                    const mins = Math.floor(left / 60000);
+                    const secs = Math.floor((left % 60000) / 1000);
+                    el.textContent = 'Estimated time remaining: ~' + mins + ':' + String(secs).padStart(2, '0');
+                }
+            };
+            tick();
+            el.style.display = 'block';
+            if (!etaTimerHandle) etaTimerHandle = setInterval(tick, 1000);
+        }
+
+        function stopEta() {
+            if (etaTimerHandle) { clearInterval(etaTimerHandle); etaTimerHandle = null; }
+            document.getElementById('etaTimer').style.display = 'none';
+            deleteCookie('sip_provisionStartedAt');
+        }
+
+        function showNavAwayNotice(show) {
+            document.getElementById('navAwayNotice').style.display = show ? 'block' : 'none';
+        }
+
+        // ============================================
         // Welcome letter email — POST /uboss-robot/email/{id}
         // MANUAL FALLBACK ONLY. Jobs are started with
         // sendWelcomeLetterToNotificationEmail: true, so UbossRobot emails the
@@ -534,7 +630,8 @@
                 setStepState(document.getElementById('stepEmailIcon'), 'done');
             } catch (err) {
                 console.error('Resend failed:', err);
-                document.getElementById('errorMessage').textContent = 'Could not send the confirmation email — ' + err.message;
+                document.getElementById('errorMessage').textContent =
+                    'We could not send the confirmation email just now. Please try again in a moment, or contact support.';
                 btn.disabled = false;
                 btn.textContent = original;
             }
@@ -688,9 +785,12 @@
             if (data.createdAt) {
                 document.getElementById('detailStarted').textContent = formatTime(new Date(data.createdAt));
             }
-            // The API reports which robot step it is on, e.g. "Step 01: Add phone number to number pool"
+            // The API reports which robot step it is on, e.g. "Step 01: Add
+            // phone number to number pool" — show the customer phrasing, keep
+            // the raw text in the console for support.
             if (data.currentStep && !statusIs(data, UBOSS_STATUS.COMPLETED)) {
-                document.getElementById('stepProvisionDetail').textContent = data.currentStep;
+                console.log('[UBoss] currentStep:', data.currentStep);
+                document.getElementById('stepProvisionDetail').textContent = friendlyStep(data.currentStep);
             }
             if (data.completedAt) {
                 document.getElementById('detailCompletedRow').style.display = 'flex';
@@ -710,6 +810,8 @@
 
         // Show final completed state instantly (no staged delay) — used when reloading page
         function showFinalCompleted(data) {
+            stopEta();
+            showNavAwayNotice(false);
             const icon = document.getElementById('statusIcon');
             const stepProvisionIcon = document.getElementById('stepProvisionIcon');
             const stepProvisionLabel = document.getElementById('stepProvisionLabel');
@@ -723,7 +825,7 @@
             document.getElementById('statusTitle').textContent = 'Trunk Provisioned!';
             document.getElementById('statusSubtitle').textContent = 'Your SIP trunk has been successfully configured and is ready to use.';
 
-            setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Enterprise, users, and trunk group created');
+            setStepState(stepProvisionIcon, 'done', stepProvisionLabel, stepProvisionDetail, 'Trunk configured', 'Your service is set up and ready');
             setStepState(stepEmailIcon, 'done');
 
             // SIP credentials (incl. the authentication password) are delivered by the
@@ -750,6 +852,8 @@
                 subtitle.textContent = 'Your trunk is in the queue and will be configured shortly.';
                 setStepState(stepProvisionIcon, 'waiting', stepProvisionLabel, stepProvisionDetail, 'Waiting in queue...', 'Will begin shortly');
                 setStepState(stepEmailIcon, 'waiting');
+                startEta(data);
+                showNavAwayNotice(true);
                 stopPolling();
                 startPolling(5000);
 
@@ -758,8 +862,10 @@
                 icon.innerHTML = ICON_SPIN;
                 title.textContent = 'Provisioning Your Trunk...';
                 subtitle.textContent = 'Your SIP trunk is being configured on the platform. This usually takes a few minutes.';
-                setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring trunk on platform...', 'Setting up enterprise, users, and trunk group');
+                setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring your trunk...', 'Setting up your service');
                 setStepState(stepEmailIcon, 'waiting');
+                startEta(data);
+                showNavAwayNotice(true);
 
             } else if (statusIs(data, UBOSS_STATUS.COMPLETED)) {
                 stopPolling();
@@ -790,8 +896,9 @@
                 document.getElementById('emailNotice').style.display = 'none';
                 document.getElementById('statusSubtitle').textContent =
                     'Your trunk is configured, but one follow-up step did not complete.';
+                if (data.errorMessage) console.error('[UBoss] partial-failure detail:', data.errorMessage);
                 document.getElementById('errorMessage').textContent =
-                    data.errorMessage || 'A follow-up step did not complete.';
+                    'A follow-up step did not complete. ' + GENERIC_ERROR_COPY;
                 document.getElementById('errorBox').style.display = 'block';
                 document.getElementById('btnRow').innerHTML =
                     '<button class="btn-secondary" onclick="resendWelcomeEmail(this)">Resend Email</button>' +
@@ -806,11 +913,12 @@
 
                 setStepState(stepProvisionIcon, 'error', stepProvisionLabel, stepProvisionDetail, 'Configuration failed', 'An error occurred during provisioning');
                 setStepState(stepEmailIcon, 'waiting');
+                stopEta();
+                showNavAwayNotice(false);
 
-                if (data.errorMessage) {
-                    document.getElementById('errorMessage').textContent = data.errorMessage;
-                    document.getElementById('errorBox').style.display = 'block';
-                }
+                if (data.errorMessage) console.error('[UBoss] failure detail:', data.errorMessage);
+                document.getElementById('errorMessage').textContent = GENERIC_ERROR_COPY;
+                document.getElementById('errorBox').style.display = 'block';
 
                 // "Retry Check" only re-polls, which on a terminal failure just
                 // replays the same error — so offer a real retry that starts a
@@ -983,6 +1091,7 @@
             setCookie('sip_provisionJobId', provisionJobs[0].jobId);
             setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
             deleteCookie('sip_provisionResult');
+            setCookie('sip_provisionStartedAt', String(Date.now()));
             return provisionJobs[0].jobId;
         }
 
@@ -999,17 +1108,20 @@
             deleteCookie('sip_provisionJobId');
             deleteCookie('sip_provisionJobs');
             deleteCookie('sip_provisionResult');
+            deleteCookie('sip_provisionStartedAt');
             window.location.reload();
         }
 
         function showOrchestrationError(err) {
             console.error('Orchestration failed:', err);
+            stopEta();
+            showNavAwayNotice(false);
             const icon = document.getElementById('statusIcon');
             icon.className = 'status-icon failed';
             icon.innerHTML = ICON_X;
             document.getElementById('statusTitle').textContent = 'Order Needs Attention';
             document.getElementById('statusSubtitle').textContent = 'A step could not complete. Nothing is lost — refresh to retry, or contact support.';
-            document.getElementById('errorMessage').textContent = err.message;
+            document.getElementById('errorMessage').textContent = GENERIC_ERROR_COPY;
             document.getElementById('errorBox').style.display = 'block';
             document.getElementById('btnRow').innerHTML =
                 '<button class="btn-secondary" onclick="retryProvisioning()">Retry</button>' +
@@ -1050,6 +1162,7 @@
                 document.getElementById('statusIcon').className = 'status-icon queued';
                 document.getElementById('provisionSteps').style.display = 'none';
                 document.getElementById('detailsBox').style.display = 'none';
+                showNavAwayNotice(false);
                 document.getElementById('btnRow').innerHTML = '<button class="btn-primary" onclick="window.location.href=\'sipReview.html\'">Go to Review</button>';
                 return;
             }
@@ -1111,7 +1224,7 @@
                         known ? 'Your numbers are active' : 'Assigned to your account');
                 }
             } catch (err) {
-                setNumbersStep('error', 'Number order problem', err.message);
+                setNumbersStep('error', 'Number order problem', 'We hit a snag ordering your numbers');
                 showOrchestrationError(err);
                 return;
             }
