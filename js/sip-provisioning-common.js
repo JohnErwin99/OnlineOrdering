@@ -10,11 +10,9 @@
 const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
 const UBOSS_API_KEY = 'b1582d78d369685683e090ad37489937';
 
-// resellerName is the customer's business name from the order form — each
-// customer is provisioned under their own reseller, named after their company.
-// (History: this was hardcoded, first to 'Iristel' — which died on
-// UbossRobot's non-exact reseller lookup matching 6 'Iristel*' links — then
-// to the 'Demo Reseller' sandbox. Now it always follows the order.)
+// The reseller is decided by the SERVER (Demo Reseller in test, IRISTEL in
+// production) — the browser doesn't send one. Keeping it server-side means a
+// cached page can never file a job under the wrong reseller.
 
 // Vanity letter-to-digit mapping (standard phone keypad)
 const VANITY_MAP = {
@@ -66,9 +64,8 @@ function describeApiError(data, fallback) {
     return data.message + ' — ' + details.join(' ');
 }
 
-// The business name as entered on the order. Mandatory — resellerName and
-// businessName both carry it. (The old " - PI" porting suffix is gone; ports
-// are no longer flagged through the business name.)
+// The business name as entered on the order — mandatory. (The old " - PI"
+// porting suffix is gone; ports are no longer flagged through the name.)
 function getProvisioningBusinessName() {
     // Strip the legacy suffix in case an in-flight order's cookie still has it
     return (getCookie('sip_businessName') || '').trim().replace(/ - PI$/, '');
@@ -102,7 +99,6 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
         email: (contactData && contactData.emailAddress)
             || getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '',
         phoneNumbers: phoneNumbers.map(formatUbossPhone),
-        resellerName: getProvisioningBusinessName(),
         address: contactData.address1,
         city: contactData.city,
         postcode: contactData.postalCode,

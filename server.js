@@ -60,6 +60,15 @@ const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 const SAFE_UBOSS_NUMBERS = process.env.SAFE_UBOSS_NUMBERS === '1'
     || (ESPRESSO_MODE === 'test' && process.env.SAFE_UBOSS_NUMBERS !== '0');
 
+// The reseller every provisioning job is filed under. Environment-fixed:
+// the 'Demo Reseller' sandbox in test, the real IRISTEL reseller in
+// production. Overridable with UBOSS_RESELLER_NAME. NOTE: 'IRISTEL' only
+// works once the UBoss team fixes the robot's non-exact reseller lookup
+// ('IRISTEL' currently matches 6 links and dies on a strict-mode violation);
+// all completed jobs to date used 'Demo Reseller'.
+const UBOSS_RESELLER_NAME = process.env.UBOSS_RESELLER_NAME
+    || (ESPRESSO_MODE === 'test' ? 'Demo Reseller' : 'IRISTEL');
+
 const ROOT = __dirname;
 
 // ============================================
@@ -946,10 +955,10 @@ async function startProvisioning(body) {
 
     const requestBody = {
         phoneNumbers: phoneNumbers,
-        // ALWAYS the customer's business name — each customer provisions under
-        // their own reseller. Never trust the browser's resellerName: a cached
-        // page may still send an old hardcoded value ('Demo Reseller'/'Iristel').
-        resellerName: body.businessName,
+        // Fixed per environment, never taken from the browser: 'IRISTEL' in
+        // production, the 'Demo Reseller' sandbox in test. (Customers do NOT
+        // get their own reseller — that was briefly the case and is reverted.)
+        resellerName: UBOSS_RESELLER_NAME,
         address: body.address,
         city: body.city,
         postcode: body.postcode,
