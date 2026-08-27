@@ -51,15 +51,6 @@ const ESPRESSO_LNP_MODE = process.env.ESPRESSO_LNP_MODE === 'production' ? 'prod
 const ESPRESSO_LNP_URL = `https://connect.espressodid.com/cloud/public/v4/${ESPRESSO_LNP_MODE}`;
 const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 
-// UBoss's database currently accepts only numbers from +1-204-555-1382 upward
-// (confirmed by the UBoss team; ticket open on their side). When this flag is
-// on, the numbers espresso delivers are swapped for sequentially allocated
-// ones from that range before anything downstream sees them — the espresso
-// order itself still runs end-to-end. Defaults ON in test mode, OFF in
-// production; override either way with SAFE_UBOSS_NUMBERS=1/0.
-const SAFE_UBOSS_NUMBERS = process.env.SAFE_UBOSS_NUMBERS === '1'
-    || (ESPRESSO_MODE === 'test' && process.env.SAFE_UBOSS_NUMBERS !== '0');
-
 // The reseller every provisioning job is filed under. Environment-fixed:
 // the 'Demo Reseller' sandbox in test, the real IRISTEL reseller in
 // production. Overridable with UBOSS_RESELLER_NAME. NOTE: 'IRISTEL' only
@@ -164,76 +155,6 @@ function stateSet(key, record) {
     };
     saveOrderStore();
     return orderStore[key];
-}
-
-// ============================================
-// UBOSS-SAFE NUMBER ALLOCATOR (test/demo only — see SAFE_UBOSS_NUMBERS)
-// ============================================
-// Numbers are handed out sequentially from the floor and NEVER reused: a
-// number that ever went through UBoss provisioning is permanently in its
-// number pool, and re-provisioning it fails forever.
-// Mostapha's UBoss-safe range starts at 2045551382, but 1381 and 1383 are
-// already burned by earlier tests, so allocation starts at 1384. Numbers ever
-// sent to a UBoss job are permanently in its pool and must never be handed
-// out again (per /all-trunk-provisioning, 2026-08-27) — reuse fails with
-// "already exist in the number pool". Known burned numbers ABOVE the floor:
-const SAFE_NUMBER_FLOOR = 2045551384;
-const BURNED_NUMBERS = new Set([2045551399, 2045551499]);
-
-function allocateSafeNumbers(count) {
-    const rec = orderStore['safe-number-cursor'];
-    let next = Math.max((rec && parseInt(rec.next, 10)) || 0, SAFE_NUMBER_FLOOR);
-    // Belt and braces: never allocate at or below anything already provisioned,
-    // even if the cursor record was lost (pruned store, restored backup...).
-    for (const [k, v] of Object.entries(orderStore)) {
-        if (!v) continue;
-        const used = []
-            .concat(k.startsWith('provision:') && Array.isArray(v.phoneNumbers) ? v.phoneNumbers : [])
-            .concat(Array.isArray(v.safeNumbers) ? v.safeNumbers : []);
-        for (const p of used) {
-            const n = parseInt(String(p).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1'), 10);
-            if (n >= SAFE_NUMBER_FLOOR && n + 1 > next) next = n + 1;
-        }
-    }
-    const nums = [];
-    while (nums.length < count) {
-        if (!BURNED_NUMBERS.has(next)) nums.push(String(next));
-        next++;
-    }
-    // Written directly (not stateSet) so createdAt is refreshed on every
-    // allocation — the age-based prune must never drop the cursor, or the
-    // range would restart and reuse a number.
-    orderStore['safe-number-cursor'] = { next: next, createdAt: Date.now(), updatedAt: Date.now() };
-    saveOrderStore();
-    return nums;
-}
-
-// Swap espresso's delivered numbers for allocated safe ones, idempotently:
-// the allocation is stored on the order record, so every later call (refresh,
-// another device, recovery) returns the same numbers.
-function substituteSafeNumbers(orderNumber, details) {
-    let key = null, record = null;
-    for (const [k, v] of Object.entries(orderStore)) {
-        if (k.startsWith('order:') && v && v.orderNumber === orderNumber) { key = k; record = v; break; }
-    }
-    if (record && Array.isArray(record.safeNumbers) && record.safeNumbers.length) {
-        return { ...details, numbers: record.safeNumbers, substituted: true };
-    }
-
-    const wanted = (details.numbers && details.numbers.length)
-        || (record && (record.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0))
-        || 1;
-    const safe = allocateSafeNumbers(wanted);
-    console.log('[safe-numbers] order', orderNumber, ': espresso', JSON.stringify(details.numbers),
-        '→ substituted', JSON.stringify(safe));
-    if (key) {
-        orderStore[key] = { ...record, safeNumbers: safe, espressoNumbers: details.numbers, updatedAt: Date.now() };
-        saveOrderStore();
-    } else {
-        // No order record (shouldn't happen) — still make the swap idempotent
-        stateSet('order:safe:' + orderNumber, { orderNumber, safeNumbers: safe, espressoNumbers: details.numbers });
-    }
-    return { ...details, numbers: safe, substituted: true };
 }
 
 // Closes out everything in flight for a customer once provisioning succeeds.
@@ -953,30 +874,8 @@ async function startProvisioning(body) {
         return { jobId: seen.jobId, reused: true, status: status || seen.status || 'Unknown' };
     }
 
-    // LAST LINE OF DEFENCE for the UBoss-safe range: the details endpoint
-    // substitutes numbers at delivery time, but a session whose numbers were
-    // distributed before that (old deploy, stale cookies, saved trunks
-    // snapshot) carries the raw espresso numbers all the way here. In test
-    // mode, never let an out-of-range number reach UBoss — swap it for a
-    // fresh allocation, reusing a previous swap for the same request.
-    let ubossNumbers = phoneNumbers;
-    if (SAFE_UBOSS_NUMBERS) {
-        const isSafe = n => {
-            const d = parseInt(String(n).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1'), 10);
-            return d >= SAFE_NUMBER_FLOOR && d < 2045560000 && !BURNED_NUMBERS.has(d);
-        };
-        if (seen && Array.isArray(seen.ubossNumbers) && seen.ubossNumbers.length === phoneNumbers.length) {
-            ubossNumbers = seen.ubossNumbers; // same request, same swap
-        } else if (!phoneNumbers.every(isSafe)) {
-            const safe = allocateSafeNumbers(phoneNumbers.filter(n => !isSafe(n)).length);
-            let i = 0;
-            ubossNumbers = phoneNumbers.map(n => isSafe(n) ? n : '+1-' + safe[i++]);
-            console.log('[safe-numbers] provision:', JSON.stringify(phoneNumbers), '→', JSON.stringify(ubossNumbers));
-        }
-    }
-
     const requestBody = {
-        phoneNumbers: ubossNumbers,
+        phoneNumbers: phoneNumbers,
         // Fixed per environment, never taken from the browser: 'IRISTEL' in
         // production, the 'Demo Reseller' sandbox in test. (Customers do NOT
         // get their own reseller — that was briefly the case and is reverted.)
@@ -1006,12 +905,7 @@ async function startProvisioning(body) {
     }
 
     stateSet(key, {
-        // phoneNumbers = what actually went to UBoss (the allocator scans
-        // these, and recovery shows them); originalNumbers = what the client
-        // sent, kept when a test-mode swap happened.
-        jobId: data.id, email: normEmail(email), phoneNumbers: ubossNumbers,
-        ubossNumbers: ubossNumbers,
-        originalNumbers: ubossNumbers === phoneNumbers ? undefined : phoneNumbers,
+        jobId: data.id, email: normEmail(email), phoneNumbers,
         trunkName: body.trunkName || null,
         channelCount: body.channelCount || null,
         attempts: ((seen && seen.attempts) || 0) + 1
@@ -1182,12 +1076,7 @@ async function handleApi(req, res, pathname) {
         }
         m = pathname.match(/^\/api\/did\/order\/([^/]+)\/details$/);
         if (m && req.method === 'GET') {
-            const orderNumber = decodeURIComponent(m[1]);
-            const details = await getOrderDetails(orderNumber);
-            // Test/demo: swap in UBoss-safe numbers (see SAFE_UBOSS_NUMBERS)
-            return sendJson(res, 200, SAFE_UBOSS_NUMBERS
-                ? substituteSafeNumbers(orderNumber, details)
-                : details);
+            return sendJson(res, 200, await getOrderDetails(decodeURIComponent(m[1])));
         }
         m = pathname.match(/^\/api\/lnp\/portability\/(\d{6})$/);
         if (m && req.method === 'GET') {
@@ -1277,9 +1166,6 @@ server.listen(PORT, () => {
         (ESPRESSO_USER ? '' : ' (NO CREDENTIALS SET — /api/did/* will return 503)'));
     console.log('  DID orders : ' + ESPRESSO_MODE
         + (ESPRESSO_MODE === 'production' ? '  ← orders are real and billed' : ''));
-    console.log('  UBoss nums : ' + (SAFE_UBOSS_NUMBERS
-        ? `substituted from ${SAFE_NUMBER_FLOOR} up (UBoss-safe demo range)`
-        : 'as delivered by espresso'));
     console.log('  LNP ports  : ' + ESPRESSO_LNP_MODE
         + (ESPRESSO_LNP_MODE === 'production'
             ? '  ⚠ PORT REQUESTS ARE REAL — they notify the losing carrier'
