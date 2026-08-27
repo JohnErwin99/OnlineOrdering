@@ -953,8 +953,30 @@ async function startProvisioning(body) {
         return { jobId: seen.jobId, reused: true, status: status || seen.status || 'Unknown' };
     }
 
+    // LAST LINE OF DEFENCE for the UBoss-safe range: the details endpoint
+    // substitutes numbers at delivery time, but a session whose numbers were
+    // distributed before that (old deploy, stale cookies, saved trunks
+    // snapshot) carries the raw espresso numbers all the way here. In test
+    // mode, never let an out-of-range number reach UBoss — swap it for a
+    // fresh allocation, reusing a previous swap for the same request.
+    let ubossNumbers = phoneNumbers;
+    if (SAFE_UBOSS_NUMBERS) {
+        const isSafe = n => {
+            const d = parseInt(String(n).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1'), 10);
+            return d >= SAFE_NUMBER_FLOOR && d < 2045560000 && !BURNED_NUMBERS.has(d);
+        };
+        if (seen && Array.isArray(seen.ubossNumbers) && seen.ubossNumbers.length === phoneNumbers.length) {
+            ubossNumbers = seen.ubossNumbers; // same request, same swap
+        } else if (!phoneNumbers.every(isSafe)) {
+            const safe = allocateSafeNumbers(phoneNumbers.filter(n => !isSafe(n)).length);
+            let i = 0;
+            ubossNumbers = phoneNumbers.map(n => isSafe(n) ? n : '+1-' + safe[i++]);
+            console.log('[safe-numbers] provision:', JSON.stringify(phoneNumbers), '→', JSON.stringify(ubossNumbers));
+        }
+    }
+
     const requestBody = {
-        phoneNumbers: phoneNumbers,
+        phoneNumbers: ubossNumbers,
         // Fixed per environment, never taken from the browser: 'IRISTEL' in
         // production, the 'Demo Reseller' sandbox in test. (Customers do NOT
         // get their own reseller — that was briefly the case and is reverted.)
@@ -984,7 +1006,12 @@ async function startProvisioning(body) {
     }
 
     stateSet(key, {
-        jobId: data.id, email: normEmail(email), phoneNumbers,
+        // phoneNumbers = what actually went to UBoss (the allocator scans
+        // these, and recovery shows them); originalNumbers = what the client
+        // sent, kept when a test-mode swap happened.
+        jobId: data.id, email: normEmail(email), phoneNumbers: ubossNumbers,
+        ubossNumbers: ubossNumbers,
+        originalNumbers: ubossNumbers === phoneNumbers ? undefined : phoneNumbers,
         trunkName: body.trunkName || null,
         channelCount: body.channelCount || null,
         attempts: ((seen && seen.attempts) || 0) + 1

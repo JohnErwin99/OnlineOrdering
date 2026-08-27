@@ -246,12 +246,20 @@
 
         .email-notice strong { color: var(--tufts-blue); }
 
-        /* Countdown under the subtitle */
+        /* Countdown under the subtitle (overtime message) */
         .eta-timer {
             font-size: 14px;
             color: var(--tufts-blue);
             font-weight: 500;
             margin: -18px auto 30px;
+        }
+
+        /* Countdown rendered inside the status circle, replacing the spinner */
+        .status-icon .eta-text {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--tufts-blue);
+            font-variant-numeric: tabular-nums;
         }
 
         /* "Safe to navigate away" notice — neutral cousin of .email-notice */
@@ -339,10 +347,9 @@
 
         <div class="status-card" id="statusCard">
             <!-- Status Icon -->
+            <!-- The circle shows the provisioning countdown (startEta), not a spinner -->
             <div class="status-icon running" id="statusIcon">
-                <svg class="spinner" viewBox="0 0 20 20" fill="currentColor">
-                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
-                </svg>
+                <span class="eta-text">5:00</span>
             </div>
 
             <h1 class="status-title" id="statusTitle">Provisioning Your Trunk...</h1>
@@ -552,21 +559,28 @@
             return start;
         }
 
+        // The countdown REPLACES the spinning-arrows icon: the status circle
+        // shows M:SS ticking down from 5:00 while work is in flight. Past
+        // zero it switches to a clock and an "taking more time than usual"
+        // line. Terminal states call stopEta() and then own the icon again.
         function startEta(data) {
             const el = document.getElementById('etaTimer');
+            const icon = document.getElementById('statusIcon');
             const startedAt = etaStartTime(data);
             const tick = () => {
                 const left = ETA_TOTAL_MS - (Date.now() - startedAt);
                 if (left <= 0) {
-                    el.textContent = 'Taking a little longer than usual — no action needed, we’re still working on it.';
+                    icon.innerHTML = ICON_CLOCK;
+                    el.textContent = 'Taking more time than usual — no action needed, we’re still working on it.';
+                    el.style.display = 'block';
                 } else {
                     const mins = Math.floor(left / 60000);
                     const secs = Math.floor((left % 60000) / 1000);
-                    el.textContent = 'Estimated time remaining: ~' + mins + ':' + String(secs).padStart(2, '0');
+                    icon.innerHTML = '<span class="eta-text">' + mins + ':' + String(secs).padStart(2, '0') + '</span>';
+                    el.style.display = 'none';
                 }
             };
             tick();
-            el.style.display = 'block';
             if (!etaTimerHandle) etaTimerHandle = setInterval(tick, 1000);
         }
 
@@ -847,7 +861,7 @@
 
             if (statusIs(data, UBOSS_STATUS.QUEUED)) {
                 icon.className = 'status-icon queued';
-                icon.innerHTML = '<svg class="spinner" viewBox="0 0 20 20" fill="currentColor">' + ICON_CLOCK.match(/<path[^/]*\/>/)[0] + '</svg>';
+                // The circle shows the countdown (startEta), not a spinner
                 title.textContent = 'Queued for Provisioning';
                 subtitle.textContent = 'Your trunk is in the queue and will be configured shortly.';
                 setStepState(stepProvisionIcon, 'waiting', stepProvisionLabel, stepProvisionDetail, 'Waiting in queue...', 'Will begin shortly');
@@ -859,7 +873,7 @@
 
             } else if (statusIs(data, UBOSS_STATUS.RUNNING)) {
                 icon.className = 'status-icon running';
-                icon.innerHTML = ICON_SPIN;
+                // The circle shows the countdown (startEta), not a spinner
                 title.textContent = 'Provisioning Your Trunk...';
                 subtitle.textContent = 'Your SIP trunk is being configured on the platform. This usually takes a few minutes.';
                 setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring your trunk...', 'Setting up your service');
@@ -1104,6 +1118,8 @@
         // makes every later attempt fail permanently.
         function retryProvisioning() {
             stopPolling();
+            // A fresh attempt restarts the countdown from 5:00
+            deleteCookie('sip_provisionStartedAt');
             setCookie('sip_forceReprovision', '1');
             deleteCookie('sip_provisionJobId');
             deleteCookie('sip_provisionJobs');
@@ -1202,6 +1218,10 @@
                     }
                 } catch (e) {}
             }
+
+            // The countdown covers the whole wait — number ordering included —
+            // so it starts now, not when the UBoss job begins reporting.
+            startEta(null);
 
             try {
                 if (!jobId) {
