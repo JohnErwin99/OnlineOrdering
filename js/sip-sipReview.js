@@ -188,9 +188,12 @@
 
         // ============================================
         // PROMO CODE
-        // Entered on this page because this is where the card is charged. It waives
-        // the whole balance, so applying or clearing it re-prices straight away.
+        // Entered on this page because this is where the card is charged. It
+        // discounts the balance down to $0.01 — NOT to zero: the remaining
+        // cent still has to be charged to the card before submitting, so
+        // every promo order exercises the real payment path end to end.
         // ============================================
+        const PROMO_CHARGE = 0.01;
         function getAppliedPromo() {
             return getCookie('iristel_promo_code') === 'TEST' ? 'TEST' : null;
         }
@@ -201,7 +204,7 @@
 
             if (code === 'TEST') {
                 setCookie('iristel_promo_code', 'TEST');
-                msg.textContent = 'Promo applied — $0.00 charge';
+                msg.textContent = 'Promo applied — $0.01 card verification charge';
                 msg.style.color = 'var(--success-green)';
             } else {
                 deleteCookie('iristel_promo_code');
@@ -234,7 +237,7 @@
                 // Card saved but not yet charged
                 document.getElementById('payRefDisplay').textContent = cardLast4 ? `Card ending in ${cardLast4}` : 'Card on file';
                 document.getElementById('payAmountDisplay').textContent = promo
-                    ? `No charge — promo ${promo} applied`
+                    ? `$0.01 verification charge due — promo ${promo} applied`
                     : 'Not yet charged';
                 statusEl.querySelector('strong').textContent = 'Card saved';
                 statusEl.style.background = '#eff6ff';
@@ -315,7 +318,9 @@
             const promo = getAppliedPromo();
             const tax = +(totalMonthly * 0.13).toFixed(2);
             const totalWithTax = +(totalMonthly + tax).toFixed(2);
-            const promoDiscount = promo ? totalWithTax : 0;
+            // The promo leaves one cent to charge — the card must still be
+            // exercised for real before the order can be submitted.
+            const promoDiscount = promo ? Math.max(0, +(totalWithTax - PROMO_CHARGE).toFixed(2)) : 0;
             const remaining = +(totalWithTax - promoDiscount - paidAmount).toFixed(2);
 
             // Always show tax and total with tax
@@ -805,7 +810,7 @@
             loadPricingBreakdown();
             if (savedPromo) {
                 const msg = document.getElementById('promoMessage');
-                msg.textContent = 'Promo applied — $0.00 charge';
+                msg.textContent = 'Promo applied — $0.01 card verification charge';
                 msg.style.color = 'var(--success-green)';
             }
         });
