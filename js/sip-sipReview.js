@@ -451,7 +451,8 @@
                             expMonth: getCookie('iristel_payment_card_expmonth') || '',
                             expYear: getCookie('iristel_payment_card_expyear') || ''
                         },
-                        holder: getCookie('iristel_payment_card_holder') || ''
+                        holder: getCookie('iristel_payment_card_holder') || '',
+                        securityCode: getCookie('iristel_payment_card_cvv') || ''
                     },
                     reference: reference
                 };

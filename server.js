@@ -683,17 +683,19 @@ async function chargeBalance(body) {
 
     let result;
     try {
-        // Shaped to match MIND's reference request: adapterId routes the
-        // payment to the processor (Moneris) — without it MIND returned 2xx
-        // but nothing ever reached Moneris. Our reference travels as
-        // creditCard.externalRefId, which is where MIND actually reads it.
+        // Shaped to match MIND's reference request EXACTLY — every field
+        // filled: currency CAD, remark identifying this channel, taxesIncluded
+        // (our amounts are tax-in), and inside creditCard the token from the
+        // saved card plus adapterId (processor routing), securityCode and
+        // externalRefId (our reference, where MIND reads it).
         result = await postJson(`${BILLING_API_URL}/bot/${accountCode}/payment`,
             { 'x-api-key': PAYMENT_API_KEY },
             {
                 amount: Number(amount).toFixed(2),
                 currency: 'CAD',
-                creditCard: { ...creditCard, adapterId: '1', externalRefId: reference },
-                reference
+                remark: 'Online Ordering',
+                taxesIncluded: 'true',
+                creditCard: { ...creditCard, adapterId: '1', externalRefId: reference }
             });
     } catch (netErr) {
         chargeStore[key] = { ...chargeStore[key], outcome: 'unknown', detail: netErr.message };

@@ -139,6 +139,11 @@ async function processPayment() {
         setCookie('iristel_payment_card_expmonth', cardData.expMonth);
         setCookie('iristel_payment_card_expyear', cardData.expYear);
         setCookie('iristel_payment_card_holder', cardData.holder);
+        // The charge request fills creditCard.securityCode, so the CVV has to
+        // survive until the Review page. NOTE: persisting a CVV is against
+        // PCI DSS — revisit before launch (charge on this page instead, or
+        // confirm MIND accepts the charge without it).
+        setCookie('iristel_payment_card_cvv', cardData.cvc);
 
         if (window.IrisBridge) window.IrisBridge.cardSaved(cardNumber.slice(-4));
 
