@@ -409,7 +409,7 @@
         async function chargeRemainingBalance(amount) {
             const btn = document.getElementById('chargeBalanceBtn');
             const token = getCookie('iristel_payment_token');
-            const accountCode = getCookie('iristel_account_id') || '96595869';
+            const accountCode = getCookie('iristel_account_id') || '7142292';
 
             if (!token) {
                 showAlert('No saved card found. Please go back to the payment step.', 'error', 'No card on file');
