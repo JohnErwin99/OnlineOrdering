@@ -6,6 +6,13 @@
 const BILLING_API_URL = 'https://api.iristelx.com';
 const BILLING_API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
 
+// TEST ONLY — account 96595869 (Test Residential 2) lives on a different
+// business unit (VPNCA) that the main key cannot see; it has its own key.
+const ACCOUNT_API_KEYS = { '96595869': 'zKq6Pjme9NjdiDaQTJ8p5ovtIHAO1Vjn' };
+function billingKeyFor(accountCode) {
+    return ACCOUNT_API_KEYS[String(accountCode)] || BILLING_API_KEY;
+}
+
 // ============================================
 // HELPERS
 // ============================================
@@ -61,7 +68,7 @@ async function addCard(accountCode, cardData) {
         method: 'PATCH',
         headers: {
             'Content-Type': 'application/json',
-            'iristelx-api-key': BILLING_API_KEY
+            'iristelx-api-key': billingKeyFor(accountCode)
         },
         body: JSON.stringify(requestBody)
     });
@@ -102,7 +109,7 @@ async function processPayment() {
     document.getElementById('loadingOverlay').classList.add('active');
 
     try {
-        const accountCode = getCookie('iristel_account_id') || '7142292';
+        const accountCode = getCookie('iristel_account_id') || '96595869';
 
         // Extract card data from form
         const cardNumber = document.getElementById('cardNumber').value.replace(/\s/g, '');

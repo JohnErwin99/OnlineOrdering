@@ -292,7 +292,7 @@ async function submitForm() {
                     phone: document.getElementById('phone').value.trim(),
                     language: document.getElementById('language').value
                 },
-                accountId: '7142292'   // TEST ONLY — remove at launch
+                accountId: '96595869'   // TEST ONLY — remove at launch
             })
         });
         const acctData = await acctResp.json().catch(() => null);
@@ -387,15 +387,17 @@ function prefillTestData() {
 }
 */
 
-// TEST MODE — Fetch account 7142292 from API and prefill form fields
+// TEST MODE — Fetch account 96595869 from API and prefill form fields
 async function prefillTestData() {
     try {
-        console.log('Fetching account 7142292 to prefill form...');
-        const response = await fetch(`${API_BASE_URL}/accounts/7142292`, {
+        console.log('Fetching account 96595869 to prefill form...');
+        const response = await fetch(`${API_BASE_URL}/accounts/96595869`, {
             method: 'GET',
             headers: {
                 'accept': 'application/json',
-                'iristelx-api-key': API_KEY
+                // TEST ONLY — this account is on the VPNCA business unit,
+                // which the main key cannot see; it has its own key.
+                'iristelx-api-key': 'zKq6Pjme9NjdiDaQTJ8p5ovtIHAO1Vjn'
             }
         });
 
@@ -427,7 +429,7 @@ async function prefillTestData() {
             if (el && value) el.value = value;
         }
 
-        console.log('Form prefilled from account 7142292');
+        console.log('Form prefilled from account 96595869');
     } catch (error) {
         console.error('Failed to prefill from API, using fallback:', error);
         // Fallback if API fails

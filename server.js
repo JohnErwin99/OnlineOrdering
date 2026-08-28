@@ -591,6 +591,13 @@ function lnpPonStatus(pon) {
 // key stays server-side, and the real HTTP status is visible.
 const BILLING_API_URL = 'https://api.iristelx.com';
 const PAYMENT_API_KEY = process.env.PAYMENT_API_KEY || 'b1582d78d369685683e090ad37489937';
+
+// TEST ONLY — account 96595869 (Test Residential 2) is on the VPNCA business
+// unit, invisible to the main keys; its calls need this key instead.
+const ACCOUNT_API_KEYS = { '96595869': 'zKq6Pjme9NjdiDaQTJ8p5ovtIHAO1Vjn' };
+function paymentKeyFor(accountCode) {
+    return ACCOUNT_API_KEYS[String(accountCode)] || PAYMENT_API_KEY;
+}
 const CHARGE_STORE_PATH = process.env.CHARGE_STORE_PATH
     || path.join(STATE_DIR, STATE_DIR === ROOT ? '.charge-store.json' : 'charge-store.json');
 
@@ -688,7 +695,7 @@ async function chargeBalance(body) {
         // but nothing ever reached Moneris. Our reference travels as
         // creditCard.externalRefId, which is where MIND actually reads it.
         result = await postJson(`${BILLING_API_URL}/bot/${accountCode}/payment`,
-            { 'x-api-key': PAYMENT_API_KEY },
+            { 'x-api-key': paymentKeyFor(accountCode) },
             {
                 amount: Number(amount).toFixed(2),
                 currency: 'CAD',
