@@ -4,6 +4,13 @@
 const API_BASE_URL = 'https://api.iristelx.com';
 const API_KEY = 'HRT88y2qywc6fwX779zG2D8fJtJQJbvz';
 
+// TEST ONLY — account 96595869 (Test Residential 2) is on the VPNCA business
+// unit, which the main key cannot see; it has its own key.
+const ACCOUNT_API_KEYS = { '96595869': 'zKq6Pjme9NjdiDaQTJ8p5ovtIHAO1Vjn' };
+function accountsKeyFor(accountId) {
+    return ACCOUNT_API_KEYS[String(accountId)] || API_KEY;
+}
+
 // ============================================
 // ADD-ON PLAN CODE MAPPING
 // Mirrors the PLAN_CODES pattern in serviceSelection.html.
@@ -54,7 +61,7 @@ async function addServiceToAccount(accountId, serviceCode, serviceName, contactD
     const response = await fetch(`${API_BASE_URL}/accounts/${accountId}/services`, {
         method: 'POST',
         headers: {
-            'iristelx-api-key': API_KEY,
+            'iristelx-api-key': accountsKeyFor(accountId),
             'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody)
