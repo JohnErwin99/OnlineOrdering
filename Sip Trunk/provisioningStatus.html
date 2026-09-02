@@ -900,23 +900,24 @@
                 showFinalCompleted(completedData);
 
             } else if (statusIs(data, UBOSS_STATUS.PARTIAL)) {
-                // Trunk itself is up, but a later step failed — most often the welcome
-                // letter ("Failure sending mail."), which we can retry from here.
+                // BUSINESS DECISION: a PartiallyCompleted job is shown to the
+                // customer as COMPLETE. The trunk itself is up; the failed
+                // step is almost always the welcome letter ("Failure sending
+                // mail."), which we quietly retry below via the manual email
+                // endpoint. The real status stays in the console for support.
                 stopPolling();
                 setCookie('sip_provisionResult', JSON.stringify(data));
+                if (data.errorMessage) console.error('[UBoss] partial-failure detail (hidden from customer):', data.errorMessage);
+
+                // Same close-out as Completed — duplicate guards must release
+                markOrderComplete();
                 showFinalCompleted(data);
 
-                setStepState(stepEmailIcon, 'error');
-                document.getElementById('emailNotice').style.display = 'none';
-                document.getElementById('statusSubtitle').textContent =
-                    'Your trunk is configured, but one follow-up step did not complete.';
-                if (data.errorMessage) console.error('[UBoss] partial-failure detail:', data.errorMessage);
-                document.getElementById('errorMessage').textContent =
-                    'A follow-up step did not complete. ' + GENERIC_ERROR_COPY;
-                document.getElementById('errorBox').style.display = 'block';
-                document.getElementById('btnRow').innerHTML =
-                    '<button class="btn-secondary" onclick="resendWelcomeEmail(this)">Resend Email</button>' +
-                    '<button class="btn-primary" onclick="window.location.href=\'../signUp.html\'">Done</button>';
+                // Silent recovery: re-send the welcome letter so the SIP
+                // credentials still reach the customer. De-duped by job id;
+                // a failure here is support's problem, not the customer's.
+                sendWelcomeEmail().catch(err =>
+                    console.error('[UBoss] silent welcome-letter retry failed — support must send job', jobId, ':', err.message));
 
             } else if (statusIs(data, UBOSS_STATUS.FAILED)) {
                 stopPolling();
@@ -1208,7 +1209,9 @@
             if (jobId && savedResult) {
                 try {
                     const result = JSON.parse(savedResult);
-                    if (statusIs(result, UBOSS_STATUS.COMPLETED)) {
+                    // PartiallyCompleted is presented as complete too (see the
+                    // PARTIAL branch in updateUI) — same on reload.
+                    if (statusIs(result, UBOSS_STATUS.COMPLETED) || statusIs(result, UBOSS_STATUS.PARTIAL)) {
                         setNumbersStep('done', 'Numbers assigned', 'Your numbers are active');
                         showFinalCompleted(result);
                         // The welcome letter went out automatically when the job

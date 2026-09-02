@@ -683,19 +683,17 @@ async function chargeBalance(body) {
 
     let result;
     try {
-        // Shaped to match MIND's reference request EXACTLY — every field
-        // filled: currency CAD, remark identifying this channel, taxesIncluded
-        // (our amounts are tax-in), and inside creditCard the token from the
-        // saved card plus adapterId (processor routing), securityCode and
-        // externalRefId (our reference, where MIND reads it).
+        // MIND's UPDATED payment body — the first shape ever confirmed to
+        // actually capture on the card (Postman-verified). adapterId is
+        // numeric 3, issuer is hardcoded 'SBI' exactly as in the proven test,
+        // and our reference rides in externalRefId.
         result = await postJson(`${BILLING_API_URL}/bot/${accountCode}/payment`,
             { 'x-api-key': PAYMENT_API_KEY },
             {
                 amount: Number(amount).toFixed(2),
                 currency: 'CAD',
-                remark: 'Online Ordering',
-                taxesIncluded: 'true',
-                creditCard: { ...creditCard, adapterId: '1', externalRefId: reference }
+                remark: 'Online Sip Trunk',
+                creditCard: { ...creditCard, adapterId: 3, issuer: 'SBI', externalRefId: reference }
             });
     } catch (netErr) {
         chargeStore[key] = { ...chargeStore[key], outcome: 'unknown', detail: netErr.message };

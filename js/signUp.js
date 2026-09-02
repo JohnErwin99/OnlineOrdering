@@ -292,7 +292,7 @@ async function submitForm() {
                     phone: document.getElementById('phone').value.trim(),
                     language: document.getElementById('language').value
                 },
-                accountId: '7142292'   // TEST ONLY — remove at launch
+                accountId: '1204506'   // TEST ONLY — remove at launch
             })
         });
         const acctData = await acctResp.json().catch(() => null);
@@ -387,11 +387,11 @@ function prefillTestData() {
 }
 */
 
-// TEST MODE — Fetch account 7142292 from API and prefill form fields
+// TEST MODE — Fetch account 1204506 from API and prefill form fields
 async function prefillTestData() {
     try {
-        console.log('Fetching account 7142292 to prefill form...');
-        const response = await fetch(`${API_BASE_URL}/accounts/7142292`, {
+        console.log('Fetching account 1204506 to prefill form...');
+        const response = await fetch(`${API_BASE_URL}/accounts/1204506`, {
             method: 'GET',
             headers: {
                 'accept': 'application/json',
@@ -427,7 +427,7 @@ async function prefillTestData() {
             if (el && value) el.value = value;
         }
 
-        console.log('Form prefilled from account 7142292');
+        console.log('Form prefilled from account 1204506');
     } catch (error) {
         console.error('Failed to prefill from API, using fallback:', error);
         // Fallback if API fails
