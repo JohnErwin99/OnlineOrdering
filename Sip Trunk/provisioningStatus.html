@@ -352,12 +352,13 @@
                 <span class="eta-text">5:00</span>
             </div>
 
-            <h1 class="status-title" id="statusTitle">Provisioning Your Trunk...</h1>
-            <p class="status-subtitle" id="statusSubtitle">Your SIP trunk is being configured. This usually takes a few minutes. You can stay on this page or come back later.</p>
+            <h1 class="status-title" id="statusTitle">Setting up your order...</h1>
+            <p class="status-subtitle" id="statusSubtitle">You don’t need to wait here — it’s safe to close this page. We’ll email your confirmation and credentials as soon as everything is ready.</p>
             <p class="eta-timer" id="etaTimer" style="display:none;"></p>
 
-            <!-- Progress Steps -->
-            <div class="provision-steps" id="provisionSteps">
+            <!-- Progress Steps — kept for internal state, HIDDEN from the
+                 customer: the headline carries the only status they see. -->
+            <div class="provision-steps" id="provisionSteps" style="display:none;">
                 <!-- Steps 1 and 2 start neutral and are set from the recorded results -->
                 <div class="provision-step" id="stepAccount">
                     <div class="step-icon waiting" id="stepAccountIcon">
@@ -530,6 +531,81 @@
         // ============================================
         const GENERIC_ERROR_COPY = 'Something needs attention on our side — our team has been notified. ' +
             'Your order is saved and nothing is lost.';
+
+        // The one subtitle used while anything is in flight: the customer is
+        // explicitly free to leave — confirmation and credentials arrive by
+        // email. Step-level narration is deliberately gone (director request).
+        const LEAVE_COPY = 'You don’t need to wait here — it’s safe to close this page. ' +
+            'We’ll email your confirmation and credentials as soon as everything is ready.';
+
+        // ============================================
+        // SNAG — the only failure state the customer ever sees.
+        // Every espresso/UBoss error lands here: generic message, no detail,
+        // no retry button. The full report goes to the server's snag store
+        // for the provisioning team to follow up manually.
+        // ============================================
+        function showSnag(stage, detail) {
+            stopPolling();
+            stopEta();
+            showNavAwayNotice(false);
+            console.error('[snag]', stage, '—', detail);
+
+            const email = getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '';
+            if (email) {
+                fetch('/api/notify-snag', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, stage: stage, detail: String(detail || '') })
+                }).catch(err => console.error('[snag] report failed to send:', err.message));
+            }
+
+            const icon = document.getElementById('statusIcon');
+            icon.className = 'status-icon queued';
+            icon.innerHTML = ICON_CLOCK;
+            document.getElementById('statusTitle').textContent = 'Oops — we hit a snag';
+            document.getElementById('statusSubtitle').textContent =
+                'A representative will contact you within the next 2 hours to finish your setup. ' +
+                'Nothing is lost — you don’t need to do anything.';
+            document.getElementById('errorBox').style.display = 'none';
+            document.getElementById('emailNotice').style.display = 'none';
+            document.getElementById('btnRow').innerHTML =
+                '<button class="btn-primary" onclick="window.location.href=\'../signUp.html\'">Done</button>';
+        }
+
+        // ============================================
+        // CRM — after payment + provisioning, the whole order goes to
+        // Dynamics 365 as a Contact ("Sip Order"). Fire-and-forget: a CRM
+        // problem must never disturb the customer. De-duped per job id.
+        // ============================================
+        function syncCrmOnce() {
+            if (!jobId || getCookie('sip_crmSynced') === jobId) return;
+            const contact = getProvisioningContactData();
+            const last4 = getCookie('iristel_payment_card_last4') || '';
+            fetch('/api/crm/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: contact.emailAddress,
+                    contact: contact,
+                    businessName: getCookie('sip_businessName') || '',
+                    bizRegNumber: getCookie('sip_bizRegNumber') || '',
+                    plan: getCookie('iristel_selected_plan_name') || getCookie('iristel_selected_plan') || 'SIP Trunk',
+                    payment: {
+                        method: (getCookie('iristel_payment_card_code') || 'Credit card') + (last4 ? ' ****' + last4 : ''),
+                        last4: last4,
+                        reference: getCookie('iristel_payment_reference_balance') || getCookie('iristel_payment_reference') || '',
+                        amount: getCookie('iristel_payment_amount') || ''
+                    }
+                })
+            }).then(r => r.json()).then(d => {
+                if (d && (d.contactId || d.skipped)) {
+                    setCookie('sip_crmSynced', jobId);
+                    console.log('[crm] order synced to Dynamics 365:', d.contactId || '(skipped — not configured)');
+                } else {
+                    console.error('[crm] sync did not complete:', d && d.error);
+                }
+            }).catch(err => console.error('[crm] sync failed:', err.message));
+        }
 
         // The robot reports e.g. "Step 03: Create enterprise". Map the step
         // number to a customer-friendly phase instead of echoing it.
@@ -826,6 +902,10 @@
         function showFinalCompleted(data) {
             stopEta();
             showNavAwayNotice(false);
+            // Order finished (payment + provisioning done) — push everything
+            // to Dynamics 365. Runs for Completed AND PartiallyCompleted,
+            // including the reload path; de-duped per job id.
+            syncCrmOnce();
             const icon = document.getElementById('statusIcon');
             const stepProvisionIcon = document.getElementById('stepProvisionIcon');
             const stepProvisionLabel = document.getElementById('stepProvisionLabel');
@@ -862,8 +942,8 @@
             if (statusIs(data, UBOSS_STATUS.QUEUED)) {
                 icon.className = 'status-icon queued';
                 // The circle shows the countdown (startEta), not a spinner
-                title.textContent = 'Queued for Provisioning';
-                subtitle.textContent = 'Your trunk is in the queue and will be configured shortly.';
+                title.textContent = 'Currently provisioning your trunk...';
+                subtitle.textContent = LEAVE_COPY;
                 setStepState(stepProvisionIcon, 'waiting', stepProvisionLabel, stepProvisionDetail, 'Waiting in queue...', 'Will begin shortly');
                 setStepState(stepEmailIcon, 'waiting');
                 startEta(data);
@@ -874,8 +954,8 @@
             } else if (statusIs(data, UBOSS_STATUS.RUNNING)) {
                 icon.className = 'status-icon running';
                 // The circle shows the countdown (startEta), not a spinner
-                title.textContent = 'Provisioning Your Trunk...';
-                subtitle.textContent = 'Your SIP trunk is being configured on the platform. This usually takes a few minutes.';
+                title.textContent = 'Currently provisioning your trunk...';
+                subtitle.textContent = LEAVE_COPY;
                 setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring your trunk...', 'Setting up your service');
                 setStepState(stepEmailIcon, 'waiting');
                 startEta(data);
@@ -920,28 +1000,10 @@
                     console.error('[UBoss] silent welcome-letter retry failed — support must send job', jobId, ':', err.message));
 
             } else if (statusIs(data, UBOSS_STATUS.FAILED)) {
-                stopPolling();
-                icon.className = 'status-icon failed';
-                icon.innerHTML = ICON_X;
-                title.textContent = 'Provisioning Failed';
-                subtitle.textContent = 'There was an issue setting up your trunk. Our team has been notified and will follow up.';
-
-                setStepState(stepProvisionIcon, 'error', stepProvisionLabel, stepProvisionDetail, 'Configuration failed', 'An error occurred during provisioning');
-                setStepState(stepEmailIcon, 'waiting');
-                stopEta();
-                showNavAwayNotice(false);
-
-                if (data.errorMessage) console.error('[UBoss] failure detail:', data.errorMessage);
-                document.getElementById('errorMessage').textContent = GENERIC_ERROR_COPY;
-                document.getElementById('errorBox').style.display = 'block';
-
-                // "Retry Check" only re-polls, which on a terminal failure just
-                // replays the same error — so offer a real retry that starts a
-                // new provisioning job.
-                document.getElementById('btnRow').innerHTML = `
-                    <button class="btn-secondary" onclick="retryProvisioning()">Try Again</button>
-                    <a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>
-                `;
+                // Snag flow: generic message, report recorded server-side,
+                // a rep follows up manually. No retry button — a blind retry
+                // burns the number in the UBoss pool.
+                showSnag('uboss-provisioning', data.errorMessage || 'UBoss job failed');
             }
 
             document.getElementById('lastChecked').textContent = 'Last checked: ' + formatTime(new Date());
@@ -1057,7 +1119,11 @@
                 if (/^completed$/i.test(orderStatus)) break;
                 if (/rejected|canceled/i.test(orderStatus)) {
                     deleteCookie('sip_didOrderNumber');
-                    throw new Error('Number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase() + '. Please go back to Review and adjust your number requests.');
+                    // Tagged so the server-side snag report fetches espresso's
+                    // reject reasons (e.g. rate-center inventory exhausted)
+                    const err = new Error('Number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase());
+                    err.snagStage = 'espresso-order';
+                    throw err;
                 }
                 setNumbersStep('active', 'Ordering your numbers (' + (orderStatus || 'Processing') + ')...', 'Order ' + didOrderNumber);
                 await new Promise(r => setTimeout(r, 10000));
@@ -1130,19 +1196,9 @@
         }
 
         function showOrchestrationError(err) {
-            console.error('Orchestration failed:', err);
-            stopEta();
-            showNavAwayNotice(false);
-            const icon = document.getElementById('statusIcon');
-            icon.className = 'status-icon failed';
-            icon.innerHTML = ICON_X;
-            document.getElementById('statusTitle').textContent = 'Order Needs Attention';
-            document.getElementById('statusSubtitle').textContent = 'A step could not complete. Nothing is lost — refresh to retry, or contact support.';
-            document.getElementById('errorMessage').textContent = GENERIC_ERROR_COPY;
-            document.getElementById('errorBox').style.display = 'block';
-            document.getElementById('btnRow').innerHTML =
-                '<button class="btn-secondary" onclick="retryProvisioning()">Retry</button>' +
-                '<a href="tel:18334747835" class="btn-primary" style="text-decoration:none;">Contact Support</a>';
+            // Every orchestration failure (number order rejected, UBoss start
+            // failed, session recovery...) is a snag to the customer.
+            showSnag(err && err.snagStage || 'orchestration', err && err.message);
         }
 
         // Initialize
@@ -1228,11 +1284,16 @@
 
             try {
                 if (!jobId) {
-                    // Phase A: wait out the number order, then Phase B: start UBoss
+                    // Phase A: wait out the number order, then Phase B: start UBoss.
+                    // The customer sees only the general headline per phase.
+                    document.getElementById('statusTitle').textContent = 'Reserving your phone numbers...';
+                    document.getElementById('statusSubtitle').textContent = LEAVE_COPY;
+                    startEta(null); // countdown covers the whole flow, not just UBoss
                     setStepState(document.getElementById('stepProvisionIcon'), 'waiting',
                         document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
                         'Configuring trunk on platform', 'Starts once your numbers are assigned');
                     await waitForNumberOrder(trunksList);
+                    document.getElementById('statusTitle').textContent = 'Currently provisioning your trunk...';
                     jobId = await ensureUbossStarted(trunksList);
                     document.getElementById('detailJobId').textContent = jobId;
                 } else {

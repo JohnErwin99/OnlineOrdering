@@ -255,6 +255,20 @@
                                 <p class="form-hint">Name for the primary site where the trunk will be configured</p>
                             </div>
                         </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Business Registration Number</label>
+                                <input type="text" class="form-input" id="bizRegNumber" placeholder="e.g. corporation or business number">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label class="form-label">Business Registration Document <span class="required">*</span></label>
+                                <input type="file" class="form-input" id="bizRegDoc" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required>
+                                <p class="form-hint">Upload your business registration or incorporation document (PDF, JPG or PNG, max 10&nbsp;MB). Required to verify your business.</p>
+                                <p class="form-hint" id="bizRegDocStatus" style="color:#10B981;display:none;">Document uploaded ✓</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="form-section">

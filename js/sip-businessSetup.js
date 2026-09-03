@@ -50,14 +50,66 @@
             }
         }
 
-        function saveAndContinue() {
+        // The business registration document is required for fraud screening.
+        // It can't live in a cookie, so it's uploaded to the server (stored on
+        // disk, pointer in the order store) and later attached to the Dynamics
+        // 365 contact. Already-uploaded docs (back navigation) are not re-sent.
+        async function uploadBusinessDoc(email) {
+            const input = document.getElementById('bizRegDoc');
+            const file = input.files && input.files[0];
+            if (!file) {
+                if (getCookie('sip_bizDocUploaded') === '1') return true; // uploaded on a previous visit
+                showAlert('Please upload your business registration document.', 'error', 'Document required');
+                return false;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                showAlert('The document must be 10 MB or smaller.', 'error', 'File too large');
+                return false;
+            }
+            const base64 = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(String(r.result).split(',')[1] || '');
+                r.onerror = () => reject(new Error('Could not read the file'));
+                r.readAsDataURL(file);
+            });
+            const resp = await fetch('/api/business-doc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: email,
+                    filename: file.name,
+                    mimeType: file.type || 'application/pdf',
+                    data: base64
+                })
+            });
+            const data = await resp.json().catch(() => null);
+            if (!resp.ok) {
+                showAlert('Document upload failed: ' + ((data && data.error) || ('HTTP ' + resp.status)), 'error', 'Upload failed');
+                return false;
+            }
+            setCookie('sip_bizDocUploaded', '1');
+            document.getElementById('bizRegDocStatus').style.display = 'block';
+            return true;
+        }
+
+        async function saveAndContinue() {
             const form = document.getElementById('businessSetupForm');
+            // A doc uploaded on a previous visit satisfies the required file input
+            if (getCookie('sip_bizDocUploaded') === '1') {
+                document.getElementById('bizRegDoc').removeAttribute('required');
+            }
             if (!form.checkValidity()) { form.reportValidity(); return; }
 
             const fields = ['businessName', 'siteName', 'address1', 'address2', 'city', 'province', 'postalCode', 'country',
                            'billingFirstName', 'billingLastName', 'billingEmail', 'billingPhone',
                            'techFirstName', 'techLastName', 'techEmail', 'techPhone'];
             fields.forEach(field => setCookie('sip_' + field, document.getElementById(field).value));
+            setCookie('sip_bizRegNumber', document.getElementById('bizRegNumber').value.trim());
+
+            const email = document.getElementById('billingEmail').value.trim()
+                || getCookie('iristel_user_email') || '';
+            const uploaded = await uploadBusinessDoc(email);
+            if (!uploaded) return;
 
             window.location.href = 'numberSource.html';
         }
@@ -93,4 +145,10 @@
             loadSavedData();
             loadUserInfoBar();
             prefillTestDefaults();
+            const savedReg = getCookie('sip_bizRegNumber');
+            if (savedReg) document.getElementById('bizRegNumber').value = savedReg;
+            if (getCookie('sip_bizDocUploaded') === '1') {
+                document.getElementById('bizRegDoc').removeAttribute('required');
+                document.getElementById('bizRegDocStatus').style.display = 'block';
+            }
         });

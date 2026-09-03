@@ -188,7 +188,8 @@ const K = {
     account:   email => `account:${normEmail(email)}`,
     order:     (email, requests) => `order:${normEmail(email)}::${requestShape(requests)}`,
     pon:       email => `pon:${normEmail(email)}`,
-    provision: (email, numbers) => `provision:${normEmail(email)}::${(numbers || []).slice().sort().join(',')}`
+    provision: (email, numbers) => `provision:${normEmail(email)}::${(numbers || []).slice().sort().join(',')}`,
+    bizdoc:    email => `bizdoc:${normEmail(email)}`
 };
 
 // ============================================
@@ -477,6 +478,22 @@ function getOrderDetails(orderNumber) {
         const numbers = ranges.flatMap(x => expandRange(x.start, x.end));
         return { orderNumber, ranges, numbers };
     });
+}
+
+// Why espresso rejected an order — per-request reject reasons (e.g. "not
+// enough available numbers in rate center EDMONTON 587"). Included in snag
+// reports so the provisioning team sees the cause without asking espresso.
+function getOrderProblems(orderNumber) {
+    const body = `<ns1:didGetOrderProblems><didOrderId xsi:type="xsd:string">${xmlEscape(orderNumber)}</didOrderId></ns1:didGetOrderProblems>`;
+    return espressoCall(body, 'didGetOrderProblems')
+        .then(r => soapArray(r).map(x => ({
+            ratecenter: x.ratecenter, npa: x.npa, quantity: x.quantity,
+            rejectReason: x.reject_reason || x.rejectReason || null
+        })))
+        .catch(e => {
+            console.warn('[snag] could not fetch order problems for', orderNumber, '-', e.message);
+            return [];
+        });
 }
 
 // ============================================
@@ -927,6 +944,253 @@ async function startProvisioning(body) {
 }
 
 // ============================================
+// BUSINESS REGISTRATION DOCUMENT UPLOADS
+// ============================================
+// The legal document is required to weed out fraudulent signups and travels
+// to Dynamics 365 with the rest of the order. Files live on the same disk as
+// the stores; the pointer lives in the order store so it survives devices.
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(STATE_DIR, 'uploads');
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const UPLOAD_MIME_TYPES = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png' };
+
+function saveBusinessDoc(email, filename, mimeType, base64Data) {
+    if (!UPLOAD_MIME_TYPES[mimeType]) {
+        const err = new Error('Only PDF, JPG or PNG documents are accepted');
+        err.status = 400; throw err;
+    }
+    const buf = Buffer.from(base64Data, 'base64');
+    if (!buf.length) { const err = new Error('Empty file'); err.status = 400; throw err; }
+    if (buf.length > MAX_UPLOAD_BYTES) {
+        const err = new Error('Document must be 10 MB or smaller'); err.status = 400; throw err;
+    }
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    const safeName = String(filename || 'document').replace(/[^\w.-]/g, '_').slice(0, 80);
+    const storedName = `${normEmail(email).replace(/[^\w.@-]/g, '_')}-${Date.now()}-${safeName}`;
+    fs.writeFileSync(path.join(UPLOADS_DIR, storedName), buf);
+    stateSet(K.bizdoc(email), {
+        email: normEmail(email), filename: safeName, storedName,
+        mimeType, size: buf.length
+    });
+    return { filename: safeName, size: buf.length };
+}
+
+function getBusinessDoc(email) {
+    const rec = stateGet(K.bizdoc(email));
+    if (!rec || !rec.storedName) return null;
+    try {
+        return { ...rec, data: fs.readFileSync(path.join(UPLOADS_DIR, rec.storedName)) };
+    } catch (e) { return { ...rec, data: null }; }
+}
+
+// ============================================
+// SNAG REPORTS — customer sees "we hit a snag", ops sees everything
+// ============================================
+// No email is sent (by decision). Snags persist here with a loud log line;
+// GET /api/snags is what the provisioning team polls / a future integration
+// consumes. Each report carries everything needed to finish the order by hand.
+const SNAG_STORE_PATH = process.env.SNAG_STORE_PATH
+    || path.join(STATE_DIR, STATE_DIR === ROOT ? '.snag-store.json' : 'snag-store.json');
+let snagStore = [];
+try { snagStore = JSON.parse(fs.readFileSync(SNAG_STORE_PATH, 'utf8')); } catch (e) { snagStore = []; }
+
+async function recordSnag(email, stage, detail) {
+    const e = normEmail(email);
+    const report = {
+        at: new Date().toISOString(), email: e, stage, detail: String(detail || '').slice(0, 2000),
+        account: null, orderNumber: null, numbers: [], provisionJobs: [], businessName: null,
+        orderProblems: []
+    };
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.includes(`:${e}`) || !v) continue;
+        if (k.startsWith('account:')) report.account = v.accountId;
+        else if (k.startsWith('order:')) {
+            report.orderNumber = v.orderNumber;
+            report.businessName = v.businessName || report.businessName;
+            (v.trunks || []).forEach(t => (t.numbers || []).forEach(n => report.numbers.push(n)));
+        }
+        else if (k.startsWith('provision:')) report.provisionJobs.push({ jobId: v.jobId, numbers: v.phoneNumbers });
+    }
+    // For espresso failures the reject reason is the actionable part
+    if (report.orderNumber && /espresso|order|number/i.test(stage)) {
+        report.orderProblems = await getOrderProblems(report.orderNumber);
+    }
+    snagStore.push(report);
+    try {
+        ensureStoreDir(SNAG_STORE_PATH);
+        fs.writeFileSync(SNAG_STORE_PATH, JSON.stringify(snagStore), 'utf8');
+    } catch (err) { console.error('[SNAG] report not persisted -', err.message); }
+    console.error('[SNAG]', e, '| stage:', stage, '| account:', report.account,
+        '| order:', report.orderNumber, '| detail:', report.detail.slice(0, 200),
+        report.orderProblems.length ? '| problems: ' + JSON.stringify(report.orderProblems) : '');
+    return report;
+}
+
+// ============================================
+// DYNAMICS 365 — every completed order becomes/updates a CONTACT
+// ============================================
+// Topic "Sip Order": mapped fields go to real contact columns; everything
+// without a direct mapping goes into description. The business registration
+// document is attached as a Note (annotation). Credentials via env only.
+const D365_URL = (process.env.D365_URL || '').replace(/\/$/, '');
+const D365_TENANT_ID = process.env.D365_TENANT_ID || '';
+const D365_CLIENT_ID = process.env.D365_CLIENT_ID || '';
+const D365_CLIENT_SECRET = process.env.D365_CLIENT_SECRET || '';
+const D365_ENABLED = !!(D365_URL && D365_TENANT_ID && D365_CLIENT_ID && D365_CLIENT_SECRET);
+
+let d365Token = null; // { token, expiresAt }
+
+function httpsRequest(urlStr, options, bodyStr) {
+    return new Promise((resolve, reject) => {
+        const u = new URL(urlStr);
+        const req = https.request({
+            hostname: u.hostname, path: u.pathname + u.search, method: options.method || 'GET',
+            headers: options.headers || {}, timeout: 30000
+        }, res => {
+            let d = ''; res.on('data', c => d += c);
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, raw: d }));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => req.destroy(new Error('request timeout')));
+        if (bodyStr) req.write(bodyStr);
+        req.end();
+    });
+}
+
+async function d365GetToken() {
+    if (d365Token && d365Token.expiresAt > Date.now() + 60000) return d365Token.token;
+    const body = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: D365_CLIENT_ID,
+        client_secret: D365_CLIENT_SECRET,
+        scope: `${D365_URL}/.default`
+    }).toString();
+    const r = await httpsRequest(`https://login.microsoftonline.com/${D365_TENANT_ID}/oauth2/v2.0/token`,
+        { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, body);
+    const data = JSON.parse(r.raw);
+    if (!data.access_token) throw new Error('D365 auth failed: ' + (data.error_description || r.raw.slice(0, 200)));
+    d365Token = { token: data.access_token, expiresAt: Date.now() + (data.expires_in || 3600) * 1000 };
+    return d365Token.token;
+}
+
+async function d365Api(method, resource, bodyObj, extraHeaders) {
+    const token = await d365GetToken();
+    const bodyStr = bodyObj ? JSON.stringify(bodyObj) : null;
+    const r = await httpsRequest(`${D365_URL}/api/data/v9.2/${resource}`, {
+        method,
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+            'OData-MaxVersion': '4.0', 'OData-Version': '4.0',
+            ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+            ...(extraHeaders || {})
+        }
+    }, bodyStr);
+    if (r.status >= 400) throw new Error(`D365 ${method} ${resource} failed (HTTP ${r.status}): ${r.raw.slice(0, 300)}`);
+    return r;
+}
+
+// Build the "Sip Order" description from everything that has no contact column
+function buildCrmDescription(info) {
+    const lines = ['=== Sip Order ==='];
+    const add = (label, v) => { if (v !== undefined && v !== null && v !== '') lines.push(`${label}: ${v}`); };
+    add('MIND Account', info.accountId);
+    add('Payment Method', info.payment && info.payment.method);
+    add('Card Last 4', info.payment && info.payment.last4);
+    add('Payment Reference', info.payment && info.payment.reference);
+    add('Amount Charged', info.payment && info.payment.amount);
+    add('Business Name', info.businessName);
+    add('Business Registration #', info.bizRegNumber);
+    add('Business Document', info.doc ? `${info.doc.filename} (${info.doc.size} bytes, attached as Note)` : 'NOT UPLOADED');
+    add('Plan', info.plan);
+    add('Order Number', info.orderNumber);
+    add('Phone Numbers', info.numbers && info.numbers.join(', '));
+    add('Channels', info.channelCount);
+    add('UBoss Job(s)', info.provisionJobs && info.provisionJobs.join(', '));
+    add('Order Completed', new Date().toISOString());
+    return lines.join('\n');
+}
+
+async function crmSyncOrder(body) {
+    const email = normEmail(body.email);
+    const contact = body.contact || {};
+
+    // Everything the server itself knows about this customer's order
+    const info = {
+        payment: body.payment || {}, businessName: null, bizRegNumber: body.bizRegNumber || null,
+        plan: body.plan || null, accountId: null, orderNumber: null, numbers: [],
+        channelCount: null, provisionJobs: [], doc: null
+    };
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.includes(`:${email}`) || !v) continue;
+        if (k.startsWith('account:')) info.accountId = v.accountId;
+        else if (k.startsWith('order:')) {
+            info.orderNumber = v.orderNumber;
+            info.businessName = v.businessName || info.businessName;
+            (v.trunks || []).forEach(t => {
+                (t.numbers || []).forEach(n => info.numbers.push(n));
+                info.channelCount = (info.channelCount || 0) + (t.channels || 0);
+            });
+        }
+        else if (k.startsWith('provision:')) info.provisionJobs.push(v.jobId);
+    }
+    info.businessName = body.businessName || info.businessName;
+    const doc = getBusinessDoc(email);
+    if (doc) info.doc = { filename: doc.filename, size: doc.size };
+
+    const record = {
+        firstname: contact.fname || '', lastname: contact.lname || email,
+        emailaddress1: email,
+        telephone1: contact.phone || '',
+        address1_line1: contact.address1 || '', address1_city: contact.city || '',
+        address1_stateorprovince: contact.province || '', address1_postalcode: contact.postalCode || '',
+        address1_country: contact.country || '',
+        // NOTE: no companyname — this org's contact entity rejects it
+        // (0x80048d19); the business name lives in the description instead.
+        description: buildCrmDescription(info)
+    };
+
+    // Upsert by email — a returning customer updates their contact, never duplicates
+    const q = await d365Api('GET', `contacts?$select=contactid,description&$filter=emailaddress1 eq '${email.replace(/'/g, "''")}'`);
+    const found = (JSON.parse(q.raw).value || [])[0];
+    let contactId;
+    if (found) {
+        contactId = found.contactid;
+        // Never let a thinner re-sync clobber a richer Sip Order description
+        if ((found.description || '').length > record.description.length) {
+            delete record.description;
+        }
+        await d365Api('PATCH', `contacts(${contactId})`, record);
+    } else {
+        const created = await d365Api('POST', 'contacts', record);
+        const m = /contacts\(([0-9a-f-]+)\)/i.exec(created.headers['odata-entityid'] || '');
+        contactId = m && m[1];
+    }
+    if (!contactId) throw new Error('Contact upserted but no id resolved');
+
+    // Attach the legal document as a Note, once per file
+    let noteAttached = false;
+    if (doc && doc.data) {
+        const subject = `Sip Order — Business Registration Document (${doc.storedName})`;
+        const existing = await d365Api('GET',
+            `annotations?$select=annotationid&$filter=_objectid_value eq ${contactId} and subject eq '${subject.replace(/'/g, "''")}'`);
+        if (!(JSON.parse(existing.raw).value || []).length) {
+            await d365Api('POST', 'annotations', {
+                subject,
+                notetext: 'Uploaded during online SIP trunk ordering.',
+                filename: doc.filename,
+                mimetype: doc.mimeType,
+                documentbody: doc.data.toString('base64'),
+                'objectid_contact@odata.bind': `/contacts(${contactId})`
+            });
+        }
+        noteAttached = true;
+    }
+    console.log('[crm] contact', found ? 'updated' : 'created', contactId, 'for', email,
+        noteAttached ? '(document attached)' : '(no document)');
+    return { contactId, updated: !!found, documentAttached: noteAttached };
+}
+
+// ============================================
 // HTTP layer
 // ============================================
 function sendJson(res, status, obj) {
@@ -935,10 +1199,11 @@ function sendJson(res, status, obj) {
     res.end(body);
 }
 
-function readBody(req) {
+function readBody(req, limit) {
+    const max = limit || 1e6;
     return new Promise((resolve, reject) => {
         let data = '';
-        req.on('data', c => { data += c; if (data.length > 1e6) req.destroy(); });
+        req.on('data', c => { data += c; if (data.length > max) req.destroy(); });
         req.on('end', () => resolve(data));
         req.on('error', reject);
     });
@@ -1004,6 +1269,43 @@ async function handleApi(req, res, pathname) {
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             if (!body.contact) return sendJson(res, 400, { error: 'contact is required' });
             return sendJson(res, 200, await createAccount(body.email, body.contact, body.accountId));
+        }
+        if (pathname === '/api/business-doc' && req.method === 'POST') {
+            // Base64 inflates ~4/3, so 15 MB of JSON covers a 10 MB file
+            const body = JSON.parse(await readBody(req, 15 * 1024 * 1024) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            if (!body.data || !body.filename || !body.mimeType) {
+                return sendJson(res, 400, { error: 'filename, mimeType and data are required' });
+            }
+            try {
+                return sendJson(res, 200, saveBusinessDoc(body.email, body.filename, body.mimeType, body.data));
+            } catch (e) {
+                return sendJson(res, e.status || 500, { error: e.message });
+            }
+        }
+        if (pathname === '/api/notify-snag' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            const report = await recordSnag(body.email, body.stage || 'unknown', body.detail);
+            return sendJson(res, 200, { recorded: true, at: report.at });
+        }
+        if (pathname === '/api/snags' && req.method === 'GET') {
+            return sendJson(res, 200, { snags: snagStore });
+        }
+        if (pathname === '/api/crm/sync' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            if (!D365_ENABLED) {
+                console.warn('[crm] sync requested but D365 env vars are not set — skipped for', normEmail(body.email));
+                return sendJson(res, 200, { skipped: true, reason: 'D365 not configured' });
+            }
+            try {
+                return sendJson(res, 200, await crmSyncOrder(body));
+            } catch (e) {
+                // CRM problems must never disturb the customer's flow
+                console.error('[crm] sync failed for', normEmail(body.email), '-', e.message);
+                return sendJson(res, 200, { synced: false, error: e.message });
+            }
         }
         if (pathname === '/api/provision' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
