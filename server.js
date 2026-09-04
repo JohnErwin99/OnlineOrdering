@@ -950,7 +950,9 @@ async function startProvisioning(body) {
 // to Dynamics 365 with the rest of the order. Files live on the same disk as
 // the stores; the pointer lives in the order store so it survives devices.
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(STATE_DIR, 'uploads');
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// 5 MB — matches the Dynamics 365 org attachment limit (maxuploadfilesize);
+// anything bigger would store here but fail to attach to the CRM contact.
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const UPLOAD_MIME_TYPES = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png' };
 
 function saveBusinessDoc(email, filename, mimeType, base64Data) {
@@ -1089,25 +1091,52 @@ async function d365Api(method, resource, bodyObj, extraHeaders) {
     return r;
 }
 
-// Build the "Sip Order" description from everything that has no contact column
-function buildCrmDescription(info) {
-    const lines = ['=== Sip Order ==='];
-    const add = (label, v) => { if (v !== undefined && v !== null && v !== '') lines.push(`${label}: ${v}`); };
-    add('MIND Account', info.accountId);
-    add('Payment Method', info.payment && info.payment.method);
-    add('Card Last 4', info.payment && info.payment.last4);
-    add('Payment Reference', info.payment && info.payment.reference);
-    add('Amount Charged', info.payment && info.payment.amount);
-    add('Business Name', info.businessName);
-    add('Business Registration #', info.bizRegNumber);
-    add('Business Document', info.doc ? `${info.doc.filename} (${info.doc.size} bytes, attached as Note)` : 'NOT UPLOADED');
-    add('Plan', info.plan);
-    add('Order Number', info.orderNumber);
-    add('Phone Numbers', info.numbers && info.numbers.join(', '));
-    add('Channels', info.channelCount);
-    add('UBoss Job(s)', info.provisionJobs && info.provisionJobs.join(', '));
-    add('Order Completed', new Date().toISOString());
-    return lines.join('\n');
+// OData string-literal escaping (single quotes double up)
+function odataStr(v) { return String(v).replace(/'/g, "''"); }
+
+// First matching record id across a list of $filter expressions — the upsert
+// identity ladder. Returns { id, via } or null.
+async function d365FindFirst(entitySet, idField, filters) {
+    for (const f of filters) {
+        if (!f) continue;
+        const r = await d365Api('GET', `${entitySet}?$select=${idField}&$filter=${encodeURIComponent(f)}`);
+        const hit = (JSON.parse(r.raw).value || [])[0];
+        if (hit) return { id: hit[idField], via: f };
+    }
+    return null;
+}
+
+// The 13 cr57d_ columns live on the ACCOUNT table (business), created by John
+// in iris-sandbox. Text columns have hard max lengths — truncate defensively;
+// Currency/Whole Number reject strings — send numbers.
+function buildCrmAccountRecord(info, contact, email) {
+    const t = (v, max) => (v === undefined || v === null || v === '') ? undefined : String(v).slice(0, max);
+    const num = v => { const n = parseFloat(v); return isNaN(n) ? undefined : n; };
+    const int = v => { const n = parseInt(v, 10); return isNaN(n) ? undefined : n; };
+    const record = {
+        name: t(info.businessName, 160) || t(`${contact.fname || ''} ${contact.lname || ''}`.trim(), 160) || email,
+        cr57d_mindaccountnumber: t(info.accountId, 50),
+        cr57d_paymentmethod: t(info.payment.method, 50),
+        cr57d_cardlast4: t(info.payment.last4, 4),
+        cr57d_paymentreference: t(info.payment.reference, 100),
+        cr57d_amountcharged: num(info.payment.amount),
+        cr57d_businessname: t(info.businessName, 200),
+        cr57d_businessregnumber: t(info.bizRegNumber, 100),
+        cr57d_serviceplan: t(info.plan, 100),
+        cr57d_didordernumber: t(info.orderNumber, 100),
+        cr57d_phonenumbers: t(info.numbers.join(', '), 4000),
+        cr57d_channelcount: int(info.channelCount),
+        cr57d_ubossjobids: t(info.provisionJobs.join(', '), 2000),
+        cr57d_ordercompletedon: new Date().toISOString(),
+        emailaddress1: email,
+        telephone1: t(contact.phone, 50),
+        address1_line1: t(contact.address1, 250), address1_city: t(contact.city, 80),
+        address1_stateorprovince: t(contact.province, 50), address1_postalcode: t(contact.postalCode, 20),
+        address1_country: t(contact.country, 80)
+    };
+    // Never overwrite existing CRM data with blanks
+    for (const k of Object.keys(record)) if (record[k] === undefined) delete record[k];
+    return record;
 }
 
 async function crmSyncOrder(body) {
@@ -1137,42 +1166,64 @@ async function crmSyncOrder(body) {
     const doc = getBusinessDoc(email);
     if (doc) info.doc = { filename: doc.filename, size: doc.size };
 
-    const record = {
+    // ---- 1. ACCOUNT upsert (the business — carries the 13 cr57d_ columns).
+    // Identity ladder: MIND account number (stable across all of a customer's
+    // orders) → email → business name. A repeat order PATCHes the same account
+    // (latest order wins on order-specific fields); a new account is created
+    // only when all three lookups miss. Old values stay in the D365 audit log.
+    const accountRecord = buildCrmAccountRecord(info, contact, email);
+    const accFound = await d365FindFirst('accounts', 'accountid', [
+        info.accountId && `cr57d_mindaccountnumber eq '${odataStr(info.accountId)}'`,
+        `emailaddress1 eq '${odataStr(email)}'`,
+        info.businessName && `name eq '${odataStr(info.businessName)}'`
+    ]);
+    let crmAccountId;
+    if (accFound) {
+        crmAccountId = accFound.id;
+        await d365Api('PATCH', `accounts(${crmAccountId})`, accountRecord);
+    } else {
+        const created = await d365Api('POST', 'accounts', accountRecord);
+        const m = /accounts\(([0-9a-f-]+)\)/i.exec(created.headers['odata-entityid'] || '');
+        crmAccountId = m && m[1];
+    }
+    if (!crmAccountId) throw new Error('Account upserted but no id resolved');
+
+    // ---- 2. CONTACT upsert (the person), linked to the account
+    const contactRecord = {
         firstname: contact.fname || '', lastname: contact.lname || email,
         emailaddress1: email,
         telephone1: contact.phone || '',
         address1_line1: contact.address1 || '', address1_city: contact.city || '',
         address1_stateorprovince: contact.province || '', address1_postalcode: contact.postalCode || '',
         address1_country: contact.country || '',
-        // NOTE: no companyname — this org's contact entity rejects it
-        // (0x80048d19); the business name lives in the description instead.
-        description: buildCrmDescription(info)
+        description: `Sip Order — order data on account "${accountRecord.name}"`,
+        'parentcustomerid_account@odata.bind': `/accounts(${crmAccountId})`
     };
-
-    // Upsert by email — a returning customer updates their contact, never duplicates
-    const q = await d365Api('GET', `contacts?$select=contactid,description&$filter=emailaddress1 eq '${email.replace(/'/g, "''")}'`);
+    const q = await d365Api('GET', `contacts?$select=contactid,description&$filter=${encodeURIComponent(`emailaddress1 eq '${odataStr(email)}'`)}`);
     const found = (JSON.parse(q.raw).value || [])[0];
     let contactId;
     if (found) {
         contactId = found.contactid;
-        // Never let a thinner re-sync clobber a richer Sip Order description
-        if ((found.description || '').length > record.description.length) {
-            delete record.description;
+        // Records from the description-dump era keep their richer text
+        if ((found.description || '').length > contactRecord.description.length) {
+            delete contactRecord.description;
         }
-        await d365Api('PATCH', `contacts(${contactId})`, record);
+        await d365Api('PATCH', `contacts(${contactId})`, contactRecord);
     } else {
-        const created = await d365Api('POST', 'contacts', record);
+        const created = await d365Api('POST', 'contacts', contactRecord);
         const m = /contacts\(([0-9a-f-]+)\)/i.exec(created.headers['odata-entityid'] || '');
         contactId = m && m[1];
     }
     if (!contactId) throw new Error('Contact upserted but no id resolved');
 
-    // Attach the legal document as a Note, once per file
+    // ---- 3. Legal document → Note on the ACCOUNT, once per stored file.
+    // Repeat orders each add their own note, so the business's timeline keeps
+    // every registration document ever submitted.
     let noteAttached = false;
     if (doc && doc.data) {
         const subject = `Sip Order — Business Registration Document (${doc.storedName})`;
         const existing = await d365Api('GET',
-            `annotations?$select=annotationid&$filter=_objectid_value eq ${contactId} and subject eq '${subject.replace(/'/g, "''")}'`);
+            `annotations?$select=annotationid&$filter=${encodeURIComponent(`_objectid_value eq ${crmAccountId} and subject eq '${odataStr(subject)}'`)}`);
         if (!(JSON.parse(existing.raw).value || []).length) {
             await d365Api('POST', 'annotations', {
                 subject,
@@ -1180,14 +1231,15 @@ async function crmSyncOrder(body) {
                 filename: doc.filename,
                 mimetype: doc.mimeType,
                 documentbody: doc.data.toString('base64'),
-                'objectid_contact@odata.bind': `/contacts(${contactId})`
+                'objectid_account@odata.bind': `/accounts(${crmAccountId})`
             });
         }
         noteAttached = true;
     }
-    console.log('[crm] contact', found ? 'updated' : 'created', contactId, 'for', email,
+    console.log('[crm] account', accFound ? 'updated' : 'created', crmAccountId,
+        '| contact', found ? 'updated' : 'created', contactId, 'for', email,
         noteAttached ? '(document attached)' : '(no document)');
-    return { contactId, updated: !!found, documentAttached: noteAttached };
+    return { accountId: crmAccountId, contactId, updated: !!accFound, documentAttached: noteAttached };
 }
 
 // ============================================

@@ -50,6 +50,36 @@
             }
         }
 
+        // 5 MB — matches the Dynamics 365 attachment limit (org
+        // maxuploadfilesize); a bigger file would upload here but fail to
+        // attach in CRM, so it's rejected up front with a clear message.
+        const MAX_DOC_BYTES = 5 * 1024 * 1024;
+        const DOC_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+
+        // Instant feedback the moment a file is picked — size and type are
+        // told to the customer right away, not at submit time.
+        function validateDocInput() {
+            const input = document.getElementById('bizRegDoc');
+            const errEl = document.getElementById('bizRegDocError');
+            const file = input.files && input.files[0];
+            errEl.style.display = 'none';
+            if (!file) return true;
+            if (!DOC_TYPES.includes(file.type)) {
+                errEl.textContent = 'This file type is not accepted — please upload a PDF, JPG or PNG.';
+                errEl.style.display = 'block';
+                input.value = '';
+                return false;
+            }
+            if (file.size > MAX_DOC_BYTES) {
+                errEl.textContent = 'This file is ' + (file.size / 1024 / 1024).toFixed(1) +
+                    ' MB — the maximum is 5 MB. Try exporting the document at a smaller size.';
+                errEl.style.display = 'block';
+                input.value = '';
+                return false;
+            }
+            return true;
+        }
+
         // The business registration document is required for fraud screening.
         // It can't live in a cookie, so it's uploaded to the server (stored on
         // disk, pointer in the order store) and later attached to the Dynamics
@@ -62,10 +92,7 @@
                 showAlert('Please upload your business registration document.', 'error', 'Document required');
                 return false;
             }
-            if (file.size > 10 * 1024 * 1024) {
-                showAlert('The document must be 10 MB or smaller.', 'error', 'File too large');
-                return false;
-            }
+            if (!validateDocInput()) return false;
             const base64 = await new Promise((resolve, reject) => {
                 const r = new FileReader();
                 r.onload = () => resolve(String(r.result).split(',')[1] || '');
@@ -145,6 +172,7 @@
             loadSavedData();
             loadUserInfoBar();
             prefillTestDefaults();
+            document.getElementById('bizRegDoc').addEventListener('change', validateDocInput);
             const savedReg = getCookie('sip_bizRegNumber');
             if (savedReg) document.getElementById('bizRegNumber').value = savedReg;
             if (getCookie('sip_bizDocUploaded') === '1') {
