@@ -1018,6 +1018,12 @@
                     deleteCookie('sip_provisionJobId');
                     deleteCookie('sip_provisionJobs');
                     deleteCookie('sip_provisionResult');
+                    // Fresh countdown for the fresh job: without this the timer
+                    // anchor survives the reload, and the retry would open on an
+                    // already-expired timer showing "Taking more time than
+                    // usual" from second one. The tick logic hides that line
+                    // again whenever time remains.
+                    deleteCookie('sip_provisionStartedAt');
                     window.location.reload();
                     return;
                 }
