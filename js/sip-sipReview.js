@@ -621,6 +621,14 @@
                 throw new Error('Port request details are missing. Please go back to the Port Request step and fill them in.');
             }
 
+            // Defensive: a ponData cookie saved before the zip fix may carry a
+            // lowercase/no-space code, which the carrier rejects outright
+            // ("12: ZIP Code is invalid"). Normalize to "A1A 1A1" here too.
+            if (ponData.zip_code) {
+                const z = String(ponData.zip_code).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                ponData.zip_code = z.length > 3 ? z.slice(0, 3) + ' ' + z.slice(3) : z;
+            }
+
             console.log('[STEP 3b] LNP Create PON — POST /api/lnp/pon');
             const response = await fetch('/api/lnp/pon', {
                 method: 'POST',
@@ -783,6 +791,7 @@
                 deleteCookie('sip_provisionJobId');
                 deleteCookie('sip_provisionJobs');
                 deleteCookie('sip_provisionResult');
+                deleteCookie('sip_ubossAutoRetry');
 
                 if (window.IrisBridge) window.IrisBridge.orderComplete(getCookie('sip_didOrderNumber') || getCookie('sip_ponNumber') || accountId);
 

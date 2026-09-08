@@ -174,6 +174,28 @@ function markSessionDone(email) {
         saveOrderStore();
         console.log('[session]', e, '— closed', closed, 'record(s); a new order is now allowed');
     }
+
+    // The order is complete, so its payment is settled history: release this
+    // customer's SUCCESSFUL charge records so their NEXT order charges the
+    // card again instead of being treated as a duplicate. (Without this, the
+    // in-chargeBalance release could never fire — sessionAlreadyProvisioned
+    // sees only non-done records, and we just marked everything done.)
+    // Pending/unknown outcomes are deliberately kept: they still guard
+    // against a possible unresolved double charge.
+    const acct = orderStore[`account:${e}`];
+    if (acct && acct.accountId) {
+        let released = 0;
+        for (const [k, v] of Object.entries(chargeStore)) {
+            if (k.startsWith(`${acct.accountId}::`) && v && v.outcome === 'success') {
+                delete chargeStore[k];
+                released++;
+            }
+        }
+        if (released) {
+            saveChargeStore();
+            console.log('[session]', e, '— released', released, 'settled charge record(s); the next order will charge normally');
+        }
+    }
     return closed;
 }
 
@@ -1128,6 +1150,8 @@ function buildCrmAccountRecord(info, contact, email) {
         cr57d_channelcount: int(info.channelCount),
         cr57d_ubossjobids: t(info.provisionJobs.join(', '), 2000),
         cr57d_ordercompletedon: new Date().toISOString(),
+        // Server-authoritative: true when a PON record exists for this email
+        cr57d_isporting: !!info.isPorting,
         emailaddress1: email,
         telephone1: t(contact.phone, 50),
         address1_line1: t(contact.address1, 250), address1_city: t(contact.city, 80),
@@ -1147,7 +1171,7 @@ async function crmSyncOrder(body) {
     const info = {
         payment: body.payment || {}, businessName: null, bizRegNumber: body.bizRegNumber || null,
         plan: body.plan || null, accountId: null, orderNumber: null, numbers: [],
-        channelCount: null, provisionJobs: [], doc: null
+        channelCount: null, provisionJobs: [], doc: null, isPorting: false
     };
     for (const [k, v] of Object.entries(orderStore)) {
         if (!k.includes(`:${email}`) || !v) continue;
@@ -1161,6 +1185,7 @@ async function crmSyncOrder(body) {
             });
         }
         else if (k.startsWith('provision:')) info.provisionJobs.push(v.jobId);
+        else if (k.startsWith('pon:')) info.isPorting = true;
     }
     info.businessName = body.businessName || info.businessName;
     const doc = getBusinessDoc(email);

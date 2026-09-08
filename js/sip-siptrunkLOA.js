@@ -58,7 +58,12 @@
             ponStreetName:      { re: /^[a-zA-Z0-9 ]*$/,             desc: 'letters, numbers and spaces' },
             ponStreetType:      { re: /^[a-zA-Z0-9 ]*$/,             desc: 'letters and numbers — no periods (use "Blvd", not "Blvd.")' },
             ponCity:            { re: /^[a-zA-Z0-9 ]*$/,             desc: 'letters, numbers and spaces' },
-            ponZipCode:         { re: /^[A-Za-z]\d[A-Za-z] ?\d[A-Za-z]\d$|^$/, desc: 'a Canadian postal code, e.g. L3R 0B8' },
+            // Strict uppercase-with-space (e.g. "H3X 2S9"): the carrier
+            // rejects lowercase/no-space forms outright ("12: ZIP Code is
+            // invalid") even though they are valid postal codes. formatZip()
+            // normalizes as the customer types, so this backstop only catches
+            // genuinely malformed codes.
+            ponZipCode:         { re: /^[A-Z]\d[A-Z] \d[A-Z]\d$|^$/, desc: 'a Canadian postal code, e.g. L3R 0B8' },
             ponCarrierComments: { re: /^[a-zA-Z0-9 @/\\,;.#&]*$/,    desc: 'letters, numbers, spaces and @ / \\ , ; . # &' }
         };
 
@@ -125,10 +130,25 @@
             }
         }
 
+        // Normalize a Canadian postal code to the carrier's required shape:
+        // uppercase, single space in the middle ("h3x2s9" → "H3X 2S9").
+        function formatZip(value) {
+            const chars = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            return chars.length > 3 ? chars.slice(0, 3) + ' ' + chars.slice(3) : chars;
+        }
+
         function wirePonValidation() {
             Object.keys(PON_RULES).forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('input', () => validatePonField(el));
+            });
+            // Postal code self-corrects while typing — the carrier-invalid
+            // lowercase/no-space forms can never reach submission
+            const zip = document.getElementById('ponZipCode');
+            if (zip) zip.addEventListener('input', () => {
+                const fixed = formatZip(zip.value);
+                if (zip.value !== fixed) zip.value = fixed;
+                validatePonField(zip);
             });
         }
 
@@ -263,7 +283,7 @@
                 street_type: document.getElementById('ponStreetType').value.trim(),
                 city: document.getElementById('ponCity').value.trim(),
                 province_state: document.getElementById('ponProvince').value,
-                zip_code: document.getElementById('ponZipCode').value.trim(),
+                zip_code: formatZip(document.getElementById('ponZipCode').value),
                 losing_carrier_comments: document.getElementById('ponCarrierComments').value.trim(),
                 service_type: 'Wireline'
             };
@@ -322,13 +342,13 @@
                 setVal('ponStreetType', saved.street_type);
                 setVal('ponCity', saved.city);
                 setVal('ponProvince', saved.province_state);
-                setVal('ponZipCode', saved.zip_code);
+                setVal('ponZipCode', formatZip(saved.zip_code));
                 setVal('ponCarrierComments', saved.losing_carrier_comments);
             } else {
                 setVal('ponEndUserName', getCookie('sip_businessName'));
                 setVal('ponCity', getCookie('sip_city'));
                 setVal('ponProvince', getCookie('sip_province'));
-                setVal('ponZipCode', getCookie('sip_postalCode'));
+                setVal('ponZipCode', formatZip(getCookie('sip_postalCode')));
                 // Best-effort split of "123 Main" into number + street. The street
                 // number field takes digits only, so a suffix like "675A" keeps
                 // its letter with the street name rather than being rejected.

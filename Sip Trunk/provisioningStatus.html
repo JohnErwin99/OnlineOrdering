@@ -977,6 +977,7 @@
                 // welcome letter — an email failure surfaces as Partially
                 // Completed instead. Nothing left to send from here.
                 setCookie('sip_welcomeEmailSent', jobId);
+                deleteCookie('sip_ubossAutoRetry');
                 showFinalCompleted(completedData);
 
             } else if (statusIs(data, UBOSS_STATUS.PARTIAL)) {
@@ -991,6 +992,7 @@
 
                 // Same close-out as Completed — duplicate guards must release
                 markOrderComplete();
+                deleteCookie('sip_ubossAutoRetry');
                 showFinalCompleted(data);
 
                 // Silent recovery: re-send the welcome letter so the SIP
@@ -1000,10 +1002,31 @@
                     console.error('[UBoss] silent welcome-letter retry failed — support must send job', jobId, ':', err.message));
 
             } else if (statusIs(data, UBOSS_STATUS.FAILED)) {
+                // TIMEOUT failures are transient portal hangs (Mostapha raised
+                // the robot's click timeouts, and a same-session second attempt
+                // has been seen to succeed) — so retry silently, up to 3 total
+                // attempts, before the customer ever sees a snag. The page
+                // reloads into the normal "provisioning" state each time.
+                const isTimeout = /timeout/i.test(data.errorMessage || '');
+                const attempts = parseInt(getCookie('sip_ubossAutoRetry') || '1', 10);
+                if (isTimeout && attempts < 3) {
+                    stopPolling();
+                    console.warn('[UBoss] timeout failure on attempt', attempts, 'of 3 — silent auto-retry.',
+                        'Job error:', data.errorMessage);
+                    setCookie('sip_ubossAutoRetry', String(attempts + 1));
+                    setCookie('sip_forceReprovision', '1');
+                    deleteCookie('sip_provisionJobId');
+                    deleteCookie('sip_provisionJobs');
+                    deleteCookie('sip_provisionResult');
+                    window.location.reload();
+                    return;
+                }
                 // Snag flow: generic message, report recorded server-side,
                 // a rep follows up manually. No retry button — a blind retry
                 // burns the number in the UBoss pool.
-                showSnag('uboss-provisioning', data.errorMessage || 'UBoss job failed');
+                deleteCookie('sip_ubossAutoRetry');
+                showSnag('uboss-provisioning',
+                    (isTimeout ? `[after ${attempts} attempts] ` : '') + (data.errorMessage || 'UBoss job failed'));
             }
 
             document.getElementById('lastChecked').textContent = 'Last checked: ' + formatTime(new Date());
