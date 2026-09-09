@@ -1065,7 +1065,7 @@ const SNAG_WEBHOOK_URL = process.env.SNAG_WEBHOOK_URL || '';
 async function sendSnagWebhook(report) {
     try {
         const bodyStr = JSON.stringify({
-            subject: `[SNAG] ${report.stage} — ${report.businessName || report.email}`,
+            subject: `[SNAG] Online Sip Order — ${report.businessName || report.email}`,
             body: snagEmailHtml(report),
             bodyText: snagEmailText(report),
             ...report
@@ -1173,7 +1173,7 @@ async function sendSnagEmail(report) {
     if (!D365_ENABLED) { console.error('[SNAG mail] skipped — Azure creds not configured'); return; }
     const mail = {
         message: {
-            subject: `[SNAG] ${report.stage} — ${report.businessName || report.email}`,
+            subject: `[SNAG] Online Sip Order — ${report.businessName || report.email}`,
             body: { contentType: 'HTML', content: snagEmailHtml(report) },
             toRecipients: [{ emailAddress: { address: SNAG_MAIL_TO } }]
         },
