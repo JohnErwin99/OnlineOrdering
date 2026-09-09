@@ -1046,7 +1046,125 @@ async function recordSnag(email, stage, detail) {
     console.error('[SNAG]', e, '| stage:', stage, '| account:', report.account,
         '| order:', report.orderNumber, '| detail:', report.detail.slice(0, 200),
         report.orderProblems.length ? '| problems: ' + JSON.stringify(report.orderProblems) : '');
+    // Fire-and-forget: the customer's flow never waits on (or fails with) email
+    sendSnagReport(report);
     return report;
+}
+
+// Prefer the Power Automate webhook (no Azure admin consent needed); the
+// direct Graph path is the fallback once Mail.Send is ever granted.
+function sendSnagReport(report) {
+    if (SNAG_WEBHOOK_URL) return sendSnagWebhook(report);
+    return sendSnagEmail(report);
+}
+
+// Power Automate: flow trigger "When an HTTP request is received" →
+// "Send an email (V2)" to provisioning. The flow URL comes from env.
+const SNAG_WEBHOOK_URL = process.env.SNAG_WEBHOOK_URL || '';
+
+async function sendSnagWebhook(report) {
+    try {
+        const bodyStr = JSON.stringify({
+            subject: `[SNAG] ${report.stage} — ${report.businessName || report.email}`,
+            body: snagEmailText(report),
+            ...report
+        });
+        const r = await httpsRequest(SNAG_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) }
+        }, bodyStr);
+        if (r.status >= 200 && r.status < 300) {
+            console.log('[SNAG mail] webhook accepted for', report.email);
+        } else {
+            console.error('[SNAG mail] webhook failed (HTTP ' + r.status + '):', r.raw.slice(0, 300));
+        }
+    } catch (err) {
+        console.error('[SNAG mail] webhook failed -', err.message);
+    }
+}
+
+// ============================================
+// SNAG EMAIL — full report to provisioning via Microsoft Graph (Outlook).
+// Uses the same Azure app registration as D365; requires the Mail.Send
+// APPLICATION permission with admin consent on that app, and SNAG_MAIL_FROM
+// must be a real M365 mailbox the app may send as.
+// ============================================
+const SNAG_MAIL_TO = 'provisioning@iristel.com';
+const SNAG_MAIL_FROM = process.env.SNAG_MAIL_FROM || 'provisioning@iristel.com';
+
+let graphToken = null; // { token, expiresAt }
+
+async function graphGetToken() {
+    if (graphToken && graphToken.expiresAt > Date.now() + 60000) return graphToken.token;
+    const body = new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: D365_CLIENT_ID,
+        client_secret: D365_CLIENT_SECRET,
+        scope: 'https://graph.microsoft.com/.default'
+    }).toString();
+    const r = await httpsRequest(`https://login.microsoftonline.com/${D365_TENANT_ID}/oauth2/v2.0/token`,
+        { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, body);
+    const data = JSON.parse(r.raw);
+    if (!data.access_token) throw new Error('Graph auth failed: ' + (data.error_description || r.raw.slice(0, 200)));
+    graphToken = { token: data.access_token, expiresAt: Date.now() + (data.expires_in || 3600) * 1000 };
+    return graphToken.token;
+}
+
+function snagEmailText(report) {
+    const lines = [
+        `A customer order hit a snag and needs follow-up within 2 hours.`,
+        ``,
+        `When:          ${report.at}`,
+        `Customer:      ${report.email}`,
+        `Business:      ${report.businessName || '--'}`,
+        `MIND account:  ${report.account || '--'}`,
+        `Order number:  ${report.orderNumber || '--'}`,
+        `Numbers:       ${report.numbers.length ? report.numbers.join(', ') : '--'}`,
+        `UBoss jobs:    ${report.provisionJobs.length
+            ? report.provisionJobs.map(j => `${j.jobId} [${(j.numbers || []).join(', ')}]`).join('; ') : '--'}`,
+        ``,
+        `Failed stage:  ${report.stage}`,
+        `Error detail:`,
+        report.detail || '--'
+    ];
+    if (report.orderProblems.length) {
+        lines.push('', 'espresso order problems:', JSON.stringify(report.orderProblems, null, 2));
+    }
+    return lines.join('\n');
+}
+
+async function sendSnagEmail(report) {
+    if (!D365_ENABLED) { console.error('[SNAG mail] skipped — Azure creds not configured'); return; }
+    const mail = {
+        message: {
+            subject: `[SNAG] ${report.stage} — ${report.businessName || report.email}`,
+            body: { contentType: 'Text', content: snagEmailText(report) },
+            toRecipients: [{ emailAddress: { address: SNAG_MAIL_TO } }]
+        },
+        saveToSentItems: true
+    };
+    try {
+        const token = await graphGetToken();
+        const bodyStr = JSON.stringify(mail);
+        const r = await httpsRequest(
+            `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(SNAG_MAIL_FROM)}/sendMail`,
+            { method: 'POST', headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr)
+            } }, bodyStr);
+        if (r.status === 202) {
+            console.log('[SNAG mail] sent to', SNAG_MAIL_TO, 'for', report.email);
+        } else if (r.status === 403 || r.status === 401) {
+            console.error('[SNAG mail] Graph refused (HTTP ' + r.status + ') — the Azure app needs the '
+                + 'Mail.Send APPLICATION permission with admin consent '
+                + '(Azure Portal > App registrations > API permissions > Microsoft Graph > Application > Mail.Send). '
+                + 'Snag is still recorded in the snag store.');
+        } else {
+            console.error('[SNAG mail] send failed (HTTP ' + r.status + '):', r.raw.slice(0, 300));
+        }
+    } catch (err) {
+        console.error('[SNAG mail] send failed -', err.message);
+    }
 }
 
 // ============================================

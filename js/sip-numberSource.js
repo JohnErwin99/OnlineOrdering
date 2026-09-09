@@ -16,6 +16,10 @@
             if (selectedSource === 'port') {
                 window.location.href = 'siptrunkLOA.html';
             } else {
+                // Flipping from port-in to new numbers must not leave stale
+                // port data behind — review would still render it.
+                deleteCookie('sip_portNumbers');
+                deleteCookie('sip_ponData');
                 window.location.href = 'numberSelection.html';
             }
         }
