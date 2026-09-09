@@ -58,6 +58,15 @@ const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 // deploys the exact-match fix.
 const UBOSS_RESELLER_NAME = process.env.UBOSS_RESELLER_NAME || 'Demo Reseller';
 
+// NPAs whose "+1-<npa>" number pool is known to exist (and match exactly) in
+// UBoss — the ratecenter catalog is filtered to these, because a job for any
+// other NPA fails at "Add phone number to number pool". Comma-separated env
+// override; empty UBOSS_POOL_NPAS='' disables the filter entirely once the
+// UBoss team fixes pool lookup. 204 is the only NPA proven end-to-end so far.
+const UBOSS_POOL_NPAS = (process.env.UBOSS_POOL_NPAS !== undefined
+    ? process.env.UBOSS_POOL_NPAS : '204')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
 const ROOT = __dirname;
 
 // ============================================
@@ -1447,7 +1456,17 @@ async function handleApi(req, res, pathname) {
             return sendJson(res, 200, { didMode: ESPRESSO_MODE, lnpMode: ESPRESSO_LNP_MODE });
         }
         if (pathname === '/api/did/catalog' && req.method === 'GET') {
-            return sendJson(res, 200, { catalog: await getCatalog() });
+            let catalog = await getCatalog();
+            // UbossRobot can only provision NPAs whose "+1-<npa>" number pool
+            // exists in UBoss with an exact-match link — a missing pool makes
+            // every job for that NPA fail at Step 01 (confirmed for 647), and
+            // an ambiguous one dies on a strict-mode violation (416). Until
+            // the UBoss side is fixed, only offer NPAs from the allowlist so
+            // customers can't order a number we cannot provision.
+            if (UBOSS_POOL_NPAS.length) {
+                catalog = catalog.filter(c => UBOSS_POOL_NPAS.includes(String(c.npa)));
+            }
+            return sendJson(res, 200, { catalog });
         }
         if (pathname === '/api/did/profiles' && req.method === 'GET') {
             return sendJson(res, 200, { profiles: await getProfiles() });
