@@ -1472,10 +1472,15 @@ async function handleApi(req, res, pathname) {
                 markSessionDone(body.email);
                 seen = null;
             }
-            if (seen && seen.orderNumber) {
+            // force is set ONLY by the pool-collision auto-retry on the
+            // provisioning page: the previous number is burnt in the UBoss
+            // pool, so a genuinely new order is required. The fresh record
+            // overwrites the same key, keeping session resume consistent.
+            if (seen && seen.orderNumber && !body.force) {
                 console.log('[order] duplicate suppressed for', key, '→', seen.orderNumber);
                 return sendJson(res, 200, { ...seen, duplicate: true });
             }
+            if (body.force) console.log('[order] forced re-order for', key, '— previous:', seen && seen.orderNumber);
 
             const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef });
             stateSet(key, {

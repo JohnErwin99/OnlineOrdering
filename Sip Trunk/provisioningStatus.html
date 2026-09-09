@@ -909,6 +909,7 @@
                 // Completed instead. Nothing left to send from here.
                 setCookie('sip_welcomeEmailSent', jobId);
                 deleteCookie('sip_ubossAutoRetry');
+                deleteCookie('sip_poolRetry');
                 showFinalCompleted(completedData);
 
             } else if (statusIs(data, UBOSS_STATUS.PARTIAL)) {
@@ -924,6 +925,7 @@
                 // Same close-out as Completed — duplicate guards must release
                 markOrderComplete();
                 deleteCookie('sip_ubossAutoRetry');
+                deleteCookie('sip_poolRetry');
                 showFinalCompleted(data);
 
                 // Silent recovery: re-send the welcome letter so the SIP
@@ -933,6 +935,29 @@
                     console.error('[UBoss] silent welcome-letter retry failed — support must send job', jobId, ':', err.message));
 
             } else if (statusIs(data, UBOSS_STATUS.FAILED)) {
+                // POOL COLLISION — the number is burnt in the UBoss pool
+                // forever, so retrying with it can never succeed. Order a
+                // fresh number from espresso (same ratecenter/npa shape) and
+                // re-provision, at most 3 attempts total, before snagging.
+                const isPoolCollision = /already exist in the number pool/i.test(data.errorMessage || '');
+                if (isPoolCollision) {
+                    const poolAttempts = parseInt(getCookie('sip_poolRetry') || '1', 10);
+                    if (poolAttempts < 3) {
+                        stopPolling();
+                        console.warn('[UBoss] pool collision on attempt', poolAttempts, 'of 3 —',
+                            'ordering a replacement number.', 'Job error:', data.errorMessage);
+                        setCookie('sip_poolRetry', String(poolAttempts + 1));
+                        replaceNumbersAndRetry().catch(err => {
+                            console.error('[UBoss] replacement order failed:', err.message);
+                            deleteCookie('sip_poolRetry');
+                            showSnag('uboss-pool-retry', 'Replacement number order failed after pool collision: ' + err.message);
+                        });
+                        return;
+                    }
+                    deleteCookie('sip_poolRetry');
+                    showSnag('uboss-pool', `[after ${poolAttempts} attempts] ` + (data.errorMessage || 'UBoss job failed'));
+                    return;
+                }
                 // TIMEOUT failures are transient portal hangs (Mostapha raised
                 // the robot's click timeouts, and a same-session second attempt
                 // has been seen to succeed) — so retry silently, up to 3 total
@@ -1138,6 +1163,57 @@
         // makes every later attempt fail permanently.
         function retryProvisioning() {
             stopPolling();
+            setCookie('sip_forceReprovision', '1');
+            deleteCookie('sip_provisionJobId');
+            deleteCookie('sip_provisionJobs');
+            deleteCookie('sip_provisionResult');
+            window.location.reload();
+        }
+
+        // Pool-collision recovery: the burnt number is abandoned, a fresh DID
+        // of the same shape is ordered from espresso (force bypasses the
+        // server's duplicate guard — this is the one legitimate re-order),
+        // and the page reloads into the normal flow: waitForNumberOrder polls
+        // the new order, distributes the fresh numbers onto the cleared
+        // trunks, and a new UBoss job starts (new numbers = new guard key).
+        async function replaceNumbersAndRetry() {
+            const trunksList = loadTrunksFromCookie();
+            const requests = trunksList.flatMap(t => t.requests || []);
+            if (!requests.length) throw new Error('No number requests on the trunks to re-order.');
+
+            const contactData = getProvisioningContactData();
+            const email = contactData.emailAddress;
+            if (!email) throw new Error('No customer email on file.');
+
+            // Abandon the burnt numbers so distributeOrderedNumbers refills
+            trunksList.forEach(t => {
+                if ((t.requests || []).length) { t.numbers = []; t.primaryNumber = ''; }
+            });
+            deleteCookie('sip_primaryNumber');
+
+            const r = await fetch('/api/did/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    requests: requests,
+                    email: email,
+                    accountRef: getCookie('iristel_account_id') || null,
+                    trunks: trunksList,
+                    businessName: getProvisioningBusinessName(),
+                    force: true
+                })
+            });
+            const order = await r.json().catch(() => null);
+            if (!r.ok || !order || !order.orderNumber) {
+                throw new Error((order && (order.error || order.message)) || `Replacement order failed (HTTP ${r.status})`);
+            }
+            console.warn('[UBoss] replacement DID order placed:', order.orderNumber);
+
+            setCookie('sip_didOrderNumber', order.orderNumber);
+            setCookie('sip_trunks', JSON.stringify(trunksList));
+            await saveTrunksToServer(trunksList, email);
+
+            // Same job-state reset as the timeout retry
             setCookie('sip_forceReprovision', '1');
             deleteCookie('sip_provisionJobId');
             deleteCookie('sip_provisionJobs');
