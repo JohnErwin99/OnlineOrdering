@@ -42,14 +42,19 @@ function formatToE164(number) {
     return '+' + digits;
 }
 
-// UbossRobot expects the number as +1-XXXXXXXXXX (country code, dash, subscriber digits)
+// UbossRobot gets the number WITHOUT the +1 — bare 10 subscriber digits
+// (5818802894), whatever shape espresso returned it in (+15818802894,
+// 15818802894, +1-581..., 581-880-2894).
 function formatUbossPhone(number) {
-    const e164 = formatToE164(number || '');
-    const digits = e164.replace(/\D/g, '');
-    if (digits.length === 11) {
-        return `+${digits.charAt(0)}-${digits.slice(1)}`;
-    }
-    return e164;
+    let digits = String(number || '').replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+    return digits;
+}
+
+// UbossRobot gets the postal code capitalized with the space: "H3X 2S9".
+function formatUbossPostcode(postalCode) {
+    const compact = String(postalCode || '').toUpperCase().replace(/\s+/g, '');
+    return compact.length === 6 ? compact.slice(0, 3) + ' ' + compact.slice(3) : compact;
 }
 
 // MIND wraps the real reason in errors[] and puts a generic sentence in
@@ -101,9 +106,10 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
         phoneNumbers: phoneNumbers.map(formatUbossPhone),
         address: contactData.address1,
         city: contactData.city,
-        postcode: contactData.postalCode,
+        postcode: formatUbossPostcode(contactData.postalCode),
         notificationEmail: getCookie('sip_techEmail') || contactData.emailAddress,
-        invoiceEmail: contactData.emailAddress,
+        // Invoices always go to Iristel provisioning, never the customer
+        invoiceEmail: 'provisioning@iristel.com',
         accountRef: accountId,
         businessName: getProvisioningBusinessName(),
         channelCount: channelCount,
