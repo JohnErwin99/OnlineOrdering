@@ -51,14 +51,12 @@ const ESPRESSO_LNP_MODE = process.env.ESPRESSO_LNP_MODE === 'production' ? 'prod
 const ESPRESSO_LNP_URL = `https://connect.espressodid.com/cloud/public/v4/${ESPRESSO_LNP_MODE}`;
 const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 
-// The reseller every provisioning job is filed under. Environment-fixed:
-// the 'Demo Reseller' sandbox in test, the real IRISTEL reseller in
-// production. Overridable with UBOSS_RESELLER_NAME. NOTE: 'IRISTEL' only
-// works once the UBoss team fixes the robot's non-exact reseller lookup
-// ('IRISTEL' currently matches 6 links and dies on a strict-mode violation);
-// all completed jobs to date used 'Demo Reseller'.
-const UBOSS_RESELLER_NAME = process.env.UBOSS_RESELLER_NAME
-    || (ESPRESSO_MODE === 'test' ? 'Demo Reseller' : 'IRISTEL');
+// The reseller every provisioning job is filed under — set via
+// UBOSS_RESELLER_NAME. Defaults to 'Demo Reseller', the only reseller with
+// completed jobs to date: 'IRISTEL' dies on the robot's non-exact reseller
+// lookup (matches 6 links, strict-mode violation) until the UBoss team
+// deploys the exact-match fix.
+const UBOSS_RESELLER_NAME = process.env.UBOSS_RESELLER_NAME || 'Demo Reseller';
 
 const ROOT = __dirname;
 
@@ -936,9 +934,9 @@ async function startProvisioning(body) {
         city: body.city,
         postcode: body.postcode,
         notificationEmail: body.notificationEmail,
-        // Invoices go to the company's ordering mailbox, never the customer —
-        // hardcoded so the browser can't redirect them.
-        invoiceEmail: 'Onlineordering@iristel.com',
+        // Invoices go to the company's provisioning mailbox, never the
+        // customer — hardcoded so the browser can't redirect them.
+        invoiceEmail: 'provisioning@iristel.com',
         accountRef: body.accountRef,
         businessName: body.businessName,
         channelCount: body.channelCount,
