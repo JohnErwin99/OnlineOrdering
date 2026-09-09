@@ -1216,7 +1216,10 @@ async function sendSnagEmail(report) {
 // Topic "Sip Order": mapped fields go to real contact columns; everything
 // without a direct mapping goes into description. The business registration
 // document is attached as a Note (annotation). Credentials via env only.
-const D365_URL = (process.env.D365_URL || '').replace(/\/$/, '');
+// Tolerate a bare hostname in the env var: the OAuth scope must be a full
+// https URL or AAD rejects it ("scope input parameter is not valid").
+const D365_URL = (process.env.D365_URL || '').replace(/\/$/, '')
+    .replace(/^(?!https?:\/\/)(.+)$/, 'https://$1');
 const D365_TENANT_ID = process.env.D365_TENANT_ID || '';
 const D365_CLIENT_ID = process.env.D365_CLIENT_ID || '';
 const D365_CLIENT_SECRET = process.env.D365_CLIENT_SECRET || '';
