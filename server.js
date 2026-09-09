@@ -1066,7 +1066,8 @@ async function sendSnagWebhook(report) {
     try {
         const bodyStr = JSON.stringify({
             subject: `[SNAG] ${report.stage} — ${report.businessName || report.email}`,
-            body: snagEmailText(report),
+            body: snagEmailHtml(report),
+            bodyText: snagEmailText(report),
             ...report
         });
         const r = await httpsRequest(SNAG_WEBHOOK_URL, {
@@ -1133,12 +1134,47 @@ function snagEmailText(report) {
     return lines.join('\n');
 }
 
+// HTML version — Outlook (both the Power Automate connector and Graph) treats
+// the body as HTML, which collapses plain-text newlines into one blob.
+function snagEmailHtml(report) {
+    const esc = s => String(s == null || s === '' ? '--' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const row = (label, value) =>
+        `<tr><td style="padding:4px 14px 4px 0;color:#666;white-space:nowrap;vertical-align:top">${label}</td>` +
+        `<td style="padding:4px 0">${value}</td></tr>`;
+    const jobs = report.provisionJobs.length
+        ? report.provisionJobs.map(j =>
+            `${esc(j.jobId)} <span style="color:#666">[${esc((j.numbers || []).join(', '))}]</span>`).join('<br>')
+        : '--';
+    let html = `
+<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222;max-width:640px">
+  <p style="font-size:15px"><b>A customer order hit a snag</b> and needs follow-up within 2 hours.</p>
+  <table style="border-collapse:collapse;font-size:14px">
+    ${row('When', esc(report.at))}
+    ${row('Customer', esc(report.email))}
+    ${row('Business', esc(report.businessName))}
+    ${row('MIND account', esc(report.account))}
+    ${row('Order number', esc(report.orderNumber))}
+    ${row('Numbers', esc(report.numbers.join(', ')))}
+    ${row('UBoss jobs', jobs)}
+    ${row('Failed stage', `<b style="color:#b00020">${esc(report.stage)}</b>`)}
+  </table>
+  <p style="margin:14px 0 4px;color:#666">Error detail</p>
+  <pre style="background:#f6f6f6;border:1px solid #ddd;border-radius:4px;padding:10px;font-size:12px;white-space:pre-wrap;margin:0">${esc(report.detail)}</pre>`;
+    if (report.orderProblems.length) {
+        html += `
+  <p style="margin:14px 0 4px;color:#666">espresso order problems</p>
+  <pre style="background:#f6f6f6;border:1px solid #ddd;border-radius:4px;padding:10px;font-size:12px;white-space:pre-wrap;margin:0">${esc(JSON.stringify(report.orderProblems, null, 2))}</pre>`;
+    }
+    return html + '\n</div>';
+}
+
 async function sendSnagEmail(report) {
     if (!D365_ENABLED) { console.error('[SNAG mail] skipped — Azure creds not configured'); return; }
     const mail = {
         message: {
             subject: `[SNAG] ${report.stage} — ${report.businessName || report.email}`,
-            body: { contentType: 'Text', content: snagEmailText(report) },
+            body: { contentType: 'HTML', content: snagEmailHtml(report) },
             toRecipients: [{ emailAddress: { address: SNAG_MAIL_TO } }]
         },
         saveToSentItems: true
