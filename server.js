@@ -883,6 +883,51 @@ async function createAccount(email, contact, knownAccountId) {
 }
 
 // ============================================
+// MIND NUMBER ASSIGNMENT
+// ============================================
+// The espresso DID API has no notion of a customer — numbers are ordered into
+// a routing profile on the company account — so nothing downstream tells MIND
+// which service the numbers belong to. This is the missing link (per Shoam):
+// PATCH /accounts/{accountId}/services/{serviceId}/telephone-number attaches
+// a number (MSISDN) to the service so it shows on the account in MIND.
+async function assignNumbersToMindService(email, serviceId, accountId, numbers) {
+    if (!serviceId) throw new Error('serviceId is required');
+    if (!accountId) throw new Error('accountId is required');
+    if (!numbers || !numbers.length) throw new Error('no numbers to assign');
+
+    const key = `mindassign:${normEmail(email)}`;
+    const seen = stateGet(key);
+    const wanted = numbers.slice().sort().join(',');
+    if (seen && seen.serviceId === String(serviceId) && seen.numbers === wanted) {
+        console.log('[mind] numbers already assigned to service', serviceId, '— skipping');
+        return { assigned: seen.assigned, serviceId, reused: true };
+    }
+
+    const assigned = [];
+    for (const n of numbers) {
+        // MIND expects the 11-digit E.164-without-plus form (e.g. 12045551234)
+        let digits = String(n).replace(/\D/g, '');
+        if (digits.length === 10) digits = '1' + digits;
+        const payload = JSON.stringify({ telephoneNumber: digits });
+        const r = await httpsRequest(
+            `${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(serviceId)}/telephone-number`,
+            { method: 'PATCH', headers: {
+                'iristelx-api-key': MIND_API_KEY,
+                'Content-Type': 'application/json', 'Accept': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            } },
+            payload);
+        if (r.status < 200 || r.status >= 300) {
+            throw new Error(`MIND telephone-number update failed for ${digits} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
+        }
+        assigned.push(digits);
+        console.log('[mind] assigned', digits, 'to service', serviceId, 'on account', accountId);
+    }
+    stateSet(key, { email: normEmail(email), accountId: String(accountId), serviceId: String(serviceId), numbers: wanted, assigned });
+    return { assigned, serviceId, reused: false };
+}
+
+// ============================================
 // UBOSS PROVISIONING — never spawn a duplicate job
 // ============================================
 // UbossRobot does not resume: a retry restarts from step one. Once a previous
@@ -1519,6 +1564,33 @@ async function handleApi(req, res, pathname) {
                 businessName: body.businessName || null
             });
             return sendJson(res, 200, result);
+        }
+        if (pathname === '/api/mind/assign-number' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            const email = normEmail(body.email);
+
+            // Everything but the serviceId is already on file server-side
+            let accountId = null;
+            const numbers = [];
+            for (const [k, v] of Object.entries(orderStore)) {
+                if (!k.includes(`:${email}`) || !v) continue;
+                if (k.startsWith('account:')) accountId = v.accountId;
+                else if (k.startsWith('order:')) {
+                    (v.trunks || []).forEach(t => (t.numbers || []).forEach(n => numbers.push(n)));
+                }
+            }
+            accountId = body.accountId || accountId;
+            const serviceId = body.serviceId
+                || (stateGet(`mindassign:${email}`) || {}).serviceId;
+            const wanted = body.numbers && body.numbers.length ? body.numbers : [...new Set(numbers)];
+            try {
+                return sendJson(res, 200, await assignNumbersToMindService(email, serviceId, accountId, wanted));
+            } catch (e) {
+                // Reported but never customer-blocking — same policy as CRM sync
+                console.error('[mind] assignment failed:', e.message);
+                return sendJson(res, 200, { assigned: [], error: e.message });
+            }
         }
         if (pathname === '/api/account' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');

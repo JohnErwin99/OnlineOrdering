@@ -96,6 +96,12 @@ async function addServiceToAccount(accountId, planCode, planName, contactData) {
         throw new Error(responseData.message || `Failed to add service: ${response.status}`);
     }
 
+    // The service id is what the MIND "update telephone number" API needs
+    // later to attach the ordered number to this service.
+    const serviceId = responseData.serviceId || responseData.id
+        || (responseData.service && (responseData.service.serviceId || responseData.service.id));
+    if (serviceId) setCookie('sip_serviceId', String(serviceId));
+
     return responseData;
 }
 

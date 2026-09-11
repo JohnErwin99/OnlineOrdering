@@ -246,6 +246,22 @@
 
         .email-notice strong { color: var(--tufts-blue); }
 
+        /* Countdown under the subtitle (overtime message) */
+        .eta-timer {
+            font-size: 14px;
+            color: var(--tufts-blue);
+            font-weight: 500;
+            margin: -18px auto 30px;
+        }
+
+        /* Countdown rendered inside the status circle, replacing the spinner */
+        .status-icon .eta-text {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--tufts-blue);
+            font-variant-numeric: tabular-nums;
+        }
+
         /* "Safe to navigate away" notice — neutral cousin of .email-notice */
         .nav-away-notice {
             background: var(--light-gray);
@@ -331,16 +347,19 @@
 
         <div class="status-card" id="statusCard">
             <!-- Status Icon -->
+            <!-- The circle shows the provisioning countdown (startEta), not a spinner -->
             <div class="status-icon running" id="statusIcon">
-                <svg class="spinner" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+                <span class="eta-text">10:00</span>
             </div>
 
             <h1 class="status-title" id="statusTitle">Setting up your order...</h1>
             <p class="status-subtitle" id="statusSubtitle">You don’t need to wait here — it’s safe to close this page. We’ll email your confirmation and credentials as soon as everything is ready.</p>
+            <p class="eta-timer" id="etaTimer" style="display:none;"></p>
 
-            <!-- Progress Steps — kept for internal state, HIDDEN from the
-                 customer: the headline carries the only status they see. -->
-            <div class="provision-steps" id="provisionSteps" style="display:none;">
+            <!-- Progress Steps — each backend milestone gets its own checkmark
+                 row: MIND account, payment, espresso numbers, (porting),
+                 UBoss provisioning, welcome letter. -->
+            <div class="provision-steps" id="provisionSteps">
                 <!-- Steps 1 and 2 start neutral and are set from the recorded results -->
                 <div class="provision-step" id="stepAccount">
                     <div class="step-icon waiting" id="stepAccountIcon">
@@ -358,6 +377,18 @@
                     <div class="step-content">
                         <div class="step-label" id="stepServiceLabel">SIP Trunk service assigned</div>
                         <div class="step-detail" id="stepServiceDetail">Trunk plan activated on your account</div>
+                    </div>
+                </div>
+                <!-- Payment happened on the review page — shown done from the
+                     recorded payment reference; hidden when the session has no
+                     payment record (e.g. resumed on another device). -->
+                <div class="provision-step" id="stepPayment" style="display:none;">
+                    <div class="step-icon waiting" id="stepPaymentIcon">
+                        <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <div class="step-content">
+                        <div class="step-label" id="stepPaymentLabel">Payment received</div>
+                        <div class="step-detail" id="stepPaymentDetail">Your card has been charged</div>
                     </div>
                 </div>
                 <div class="provision-step" id="stepNumbers">
@@ -528,6 +559,7 @@
         // ============================================
         function showSnag(stage, detail) {
             stopPolling();
+            stopEta();
             showNavAwayNotice(false);
             console.error('[snag]', stage, '—', detail);
 
@@ -588,6 +620,39 @@
             }).catch(err => console.error('[crm] sync failed:', err.message));
         }
 
+        // Attach the ordered numbers to the MIND service (Update Telephone
+        // Number API) — without this the number provisions in UBoss but never
+        // shows on the service in MIND. Fire-and-forget like the CRM sync:
+        // a failure is support's problem, never the customer's. De-duped by
+        // the number set so reloads don't re-PATCH.
+        function assignNumbersToMind(trunksList) {
+            const numbers = [...new Set(trunksList.flatMap(t => t.numbers || []))];
+            if (!numbers.length) return;
+            const dedupeKey = numbers.slice().sort().join(',');
+            if (getCookie('sip_mindAssigned') === dedupeKey) return;
+            const contact = getProvisioningContactData();
+            fetch('/api/mind/assign-number', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: contact.emailAddress,
+                    serviceId: getCookie('sip_serviceId') || '',
+                    accountId: getCookie('iristel_account_id') || '',
+                    numbers: numbers
+                })
+            }).then(r => r.json()).then(d => {
+                if (d && d.assigned && d.assigned.length) {
+                    setCookie('sip_mindAssigned', dedupeKey);
+                    console.log('[mind] number(s) assigned to service', d.serviceId, ':', d.assigned.join(', '));
+                    setStepState(document.getElementById('stepServiceIcon'), 'done',
+                        document.getElementById('stepServiceLabel'), document.getElementById('stepServiceDetail'),
+                        null, 'Number ' + d.assigned[0] + ' assigned to your service');
+                } else {
+                    console.error('[mind] number assignment did not complete:', d && d.error);
+                }
+            }).catch(err => console.error('[mind] number assignment failed:', err.message));
+        }
+
         // The robot reports e.g. "Step 03: Create enterprise". Map the step
         // number to a customer-friendly phase instead of echoing it.
         function friendlyStep(currentStep) {
@@ -598,6 +663,55 @@
             if (n <= 8) return 'Building your trunk...';
             if (n <= 12) return 'Applying your configuration...';
             return 'Finishing up...';
+        }
+
+        // ============================================
+        // Countdown — anchored to when the job actually started, so a reload
+        // resumes the countdown instead of restarting it. Every retry path
+        // (timeout, pool collision, manual Try Again) clears the anchor so a
+        // fresh job restarts the clock at 10:00.
+        // ============================================
+        const ETA_TOTAL_MS = 10 * 60 * 1000;
+        let etaTimerHandle = null;
+
+        function etaStartTime(data) {
+            const saved = parseInt(getCookie('sip_provisionStartedAt'), 10);
+            if (saved) return saved;
+            const fromApi = data && data.createdAt ? Date.parse(data.createdAt) : NaN;
+            const start = isNaN(fromApi) ? Date.now() : fromApi;
+            setCookie('sip_provisionStartedAt', String(start));
+            return start;
+        }
+
+        // The countdown REPLACES the spinning-arrows icon: the status circle
+        // shows M:SS ticking down from 10:00 while work is in flight. Past
+        // zero it switches to a clock and a "taking more time than usual"
+        // line. Terminal states call stopEta() and then own the icon again.
+        function startEta(data) {
+            const el = document.getElementById('etaTimer');
+            const icon = document.getElementById('statusIcon');
+            const startedAt = etaStartTime(data);
+            const tick = () => {
+                const left = ETA_TOTAL_MS - (Date.now() - startedAt);
+                if (left <= 0) {
+                    icon.innerHTML = ICON_CLOCK;
+                    el.textContent = 'Taking more time than usual — no action needed, we’re still working on it.';
+                    el.style.display = 'block';
+                } else {
+                    const mins = Math.floor(left / 60000);
+                    const secs = Math.floor((left % 60000) / 1000);
+                    icon.innerHTML = '<span class="eta-text">' + mins + ':' + String(secs).padStart(2, '0') + '</span>';
+                    el.style.display = 'none';
+                }
+            };
+            tick();
+            if (!etaTimerHandle) etaTimerHandle = setInterval(tick, 1000);
+        }
+
+        function stopEta() {
+            if (etaTimerHandle) { clearInterval(etaTimerHandle); etaTimerHandle = null; }
+            document.getElementById('etaTimer').style.display = 'none';
+            deleteCookie('sip_provisionStartedAt');
         }
 
         function showNavAwayNotice(show) {
@@ -766,6 +880,21 @@
                     setStepState(iconEl, 'done', labelEl, detailEl, null, result.detail);
                 }
             });
+
+            // Payment happened on the review page; the reference cookie is the
+            // record of it. No record (resumed on another device) → keep the
+            // row hidden rather than showing a misleading "waiting".
+            const payRef = getCookie('iristel_payment_reference');
+            if (payRef) {
+                document.getElementById('stepPayment').style.display = '';
+                const amount = parseFloat(getCookie('iristel_payment_amount') || '0');
+                const last4 = getCookie('iristel_payment_card_last4') || '';
+                const detail = (amount ? '$' + amount.toFixed(2) + ' charged' : 'Your card has been charged')
+                    + (last4 ? ' to card ending ' + last4 : '');
+                setStepState(document.getElementById('stepPaymentIcon'), 'done',
+                    document.getElementById('stepPaymentLabel'), document.getElementById('stepPaymentDetail'),
+                    'Payment received', detail);
+            }
         }
 
         async function checkStatus() {
@@ -834,6 +963,7 @@
 
         // Show final completed state instantly (no staged delay) — used when reloading page
         function showFinalCompleted(data) {
+            stopEta();
             showNavAwayNotice(false);
             // Order finished (payment + provisioning done) — push everything
             // to Dynamics 365. Runs for Completed AND PartiallyCompleted,
@@ -874,22 +1004,24 @@
 
             if (statusIs(data, UBOSS_STATUS.QUEUED)) {
                 icon.className = 'status-icon queued';
-                icon.innerHTML = ICON_SPIN;
+                // The circle shows the countdown (startEta), not a spinner
                 title.textContent = 'Currently provisioning your trunk...';
                 subtitle.textContent = LEAVE_COPY;
                 setStepState(stepProvisionIcon, 'waiting', stepProvisionLabel, stepProvisionDetail, 'Waiting in queue...', 'Will begin shortly');
                 setStepState(stepEmailIcon, 'waiting');
+                startEta(data);
                 showNavAwayNotice(true);
                 stopPolling();
                 startPolling(5000);
 
             } else if (statusIs(data, UBOSS_STATUS.RUNNING)) {
                 icon.className = 'status-icon running';
-                icon.innerHTML = ICON_SPIN;
+                // The circle shows the countdown (startEta), not a spinner
                 title.textContent = 'Currently provisioning your trunk...';
                 subtitle.textContent = LEAVE_COPY;
                 setStepState(stepProvisionIcon, 'active', stepProvisionLabel, stepProvisionDetail, 'Configuring your trunk...', 'Setting up your service');
                 setStepState(stepEmailIcon, 'waiting');
+                startEta(data);
                 showNavAwayNotice(true);
 
             } else if (statusIs(data, UBOSS_STATUS.COMPLETED)) {
@@ -974,6 +1106,8 @@
                     deleteCookie('sip_provisionJobId');
                     deleteCookie('sip_provisionJobs');
                     deleteCookie('sip_provisionResult');
+                    // Fresh job, fresh 10:00 countdown
+                    deleteCookie('sip_provisionStartedAt');
                     window.location.reload();
                     return;
                 }
@@ -1151,6 +1285,7 @@
             setCookie('sip_provisionJobId', provisionJobs[0].jobId);
             setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
             deleteCookie('sip_provisionResult');
+            setCookie('sip_provisionStartedAt', String(Date.now()));
             return provisionJobs[0].jobId;
         }
 
@@ -1167,6 +1302,8 @@
             deleteCookie('sip_provisionJobId');
             deleteCookie('sip_provisionJobs');
             deleteCookie('sip_provisionResult');
+            // A fresh attempt restarts the countdown from 10:00
+            deleteCookie('sip_provisionStartedAt');
             window.location.reload();
         }
 
@@ -1218,6 +1355,8 @@
             deleteCookie('sip_provisionJobId');
             deleteCookie('sip_provisionJobs');
             deleteCookie('sip_provisionResult');
+            // Fresh job, fresh 10:00 countdown
+            deleteCookie('sip_provisionStartedAt');
             window.location.reload();
         }
 
@@ -1304,6 +1443,10 @@
                 } catch (e) {}
             }
 
+            // The countdown covers the whole wait — number ordering included —
+            // so it starts now, not when the UBoss job begins reporting.
+            startEta(null);
+
             try {
                 if (!jobId) {
                     // Phase A: wait out the number order, then Phase B: start UBoss.
@@ -1314,6 +1457,9 @@
                         document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
                         'Configuring trunk on platform', 'Starts once your numbers are assigned');
                     await waitForNumberOrder(trunksList);
+                    // Numbers exist now — attach them to the MIND service in
+                    // parallel with UBoss provisioning.
+                    assignNumbersToMind(trunksList);
                     document.getElementById('statusTitle').textContent = 'Currently provisioning your trunk...';
                     jobId = await ensureUbossStarted(trunksList);
                     document.getElementById('detailJobId').textContent = jobId;
@@ -1327,6 +1473,9 @@
                     document.getElementById('detailNumber').textContent = known || '--';
                     setNumbersStep('done', 'Numbers assigned',
                         known ? 'Your numbers are active' : 'Assigned to your account');
+                    // Catch up the MIND assignment for jobs started before this
+                    // step existed (de-duped, so a no-op when already done).
+                    assignNumbersToMind(trunksList);
                 }
             } catch (err) {
                 setNumbersStep('error', 'Number order problem', 'We hit a snag ordering your numbers');
