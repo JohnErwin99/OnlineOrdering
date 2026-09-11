@@ -58,13 +58,11 @@ const ESPRESSO_LNP_NS = `urn:${ESPRESSO_LNP_URL}`;
 // deploys the exact-match fix.
 const UBOSS_RESELLER_NAME = process.env.UBOSS_RESELLER_NAME || 'Demo Reseller';
 
-// NPAs whose "+1-<npa>" number pool is known to exist (and match exactly) in
-// UBoss — the ratecenter catalog is filtered to these, because a job for any
-// other NPA fails at "Add phone number to number pool". Comma-separated env
-// override; empty UBOSS_POOL_NPAS='' disables the filter entirely once the
-// UBoss team fixes pool lookup. 204 is the only NPA proven end-to-end so far.
-const UBOSS_POOL_NPAS = (process.env.UBOSS_POOL_NPAS !== undefined
-    ? process.env.UBOSS_POOL_NPAS : '204')
+// Optional catalog restriction to NPAs whose "+1-<npa>" number pool works in
+// UBoss. Off by default since the UBoss pool-lookup fix (2026-09-10 sweep:
+// 204/416/647/431/604 all provision cleanly). Set a comma-separated
+// UBOSS_POOL_NPAS to re-restrict if a pool breaks again.
+const UBOSS_POOL_NPAS = (process.env.UBOSS_POOL_NPAS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
 
 const ROOT = __dirname;
