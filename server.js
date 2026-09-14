@@ -888,7 +888,63 @@ async function createAccount(email, contact, knownAccountId) {
 // which service the numbers belong to. This is the missing link (per Shoam):
 // PATCH /accounts/{accountId}/services/{serviceId}/telephone-number attaches
 // a number (MSISDN) to the service so it shows on the account in MIND.
-async function assignNumbersToMindService(email, serviceId, accountId, numbers) {
+// Cities (with Shivam's numeric ids, live 2026-09-14) — cached for an hour.
+// The id is required by the inventory add; names match espresso ratecenters.
+let mindCitiesCache = null; // { at, byName: Map<UPPER name, id> }
+async function mindCityId(cityName) {
+    if (!cityName) return null;
+    if (!mindCitiesCache || mindCitiesCache.at < Date.now() - 3600000) {
+        const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers/cities`,
+            { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
+        const byName = new Map();
+        try {
+            (JSON.parse(r.raw).cities || []).forEach(c => {
+                if (c && c.city && c.id != null) byName.set(String(c.city).toUpperCase(), c.id);
+            });
+        } catch (e) { /* leave empty — caller falls through */ }
+        mindCitiesCache = { at: Date.now(), byName };
+    }
+    return mindCitiesCache.byName.get(String(cityName).toUpperCase().trim()) ?? null;
+}
+
+// Numbers must exist in the IristelX (MIND) database before they can be
+// attached to a service — the PATCH 403s otherwise (per Shivam). Inventory
+// add wants ranges: { start, end, cityId }. "Already exists" counts as done.
+async function ensureNumbersInMindInventory(email, numbers, cityHint) {
+    const key = `mindinv:${normEmail(email)}`;
+    const seen = stateGet(key) || {};
+    const added = new Set(seen.added || []);
+    const pending = numbers.filter(n => !added.has(n));
+    if (!pending.length) return { added: [...added], reused: true };
+
+    const cityId = await mindCityId(cityHint);
+    if (cityId == null) {
+        console.warn('[mind] no cityId found for', cityHint, '— skipping inventory add, PATCH may 403');
+        return { added: [...added], skipped: pending, noCityId: true };
+    }
+    for (const digits of pending) {
+        const payload = JSON.stringify({ telephoneNumbers: [{ start: digits, end: digits, cityId }] });
+        const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers`,
+            { method: 'POST', headers: {
+                'iristelx-api-key': MIND_API_KEY,
+                'Content-Type': 'application/json', 'Accept': 'application/json',
+                'Content-Length': Buffer.byteLength(payload)
+            } }, payload);
+        const dup = r.status === 400 && /exist/i.test(r.raw || '');
+        if ((r.status < 200 || r.status >= 300) && !dup) {
+            throw new Error(`MIND inventory add failed for ${digits} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
+        }
+        // A 200 with an empty telephoneNumbers array is still success — the
+        // number lands in MIND's *reserved* pool (visible via GET
+        // /telephone-numbers/reserved, not the catalogue), per Shivam.
+        added.add(digits);
+        console.log('[mind] inventory', dup ? 'already had' : 'added', digits, '(cityId', cityId + ')');
+    }
+    stateSet(key, { email: normEmail(email), cityId, added: [...added] });
+    return { added: [...added], reused: false };
+}
+
+async function assignNumbersToMindService(email, serviceId, accountId, numbers, cityHint) {
     if (!serviceId) throw new Error('serviceId is required');
     if (!accountId) throw new Error('accountId is required');
     if (!numbers || !numbers.length) throw new Error('no numbers to assign');
@@ -901,26 +957,35 @@ async function assignNumbersToMindService(email, serviceId, accountId, numbers) 
         return { assigned: seen.assigned, serviceId, reused: true };
     }
 
-    const assigned = [];
-    for (const n of numbers) {
-        // MIND expects the 11-digit E.164-without-plus form (e.g. 12045551234)
-        let digits = String(n).replace(/\D/g, '');
-        if (digits.length === 10) digits = '1' + digits;
-        const payload = JSON.stringify({ telephoneNumber: digits });
-        const r = await httpsRequest(
-            `${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(serviceId)}/telephone-number`,
-            { method: 'PATCH', headers: {
-                'iristelx-api-key': MIND_API_KEY,
-                'Content-Type': 'application/json', 'Accept': 'application/json',
-                'Content-Length': Buffer.byteLength(payload)
-            } },
-            payload);
-        if (r.status < 200 || r.status >= 300) {
-            throw new Error(`MIND telephone-number update failed for ${digits} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
-        }
-        assigned.push(digits);
-        console.log('[mind] assigned', digits, 'to service', serviceId, 'on account', accountId);
+    // MIND expects the 11-digit E.164-without-plus form (e.g. 12045551234)
+    const normalized = numbers.map(n => {
+        let d = String(n).replace(/\D/g, '');
+        return d.length === 10 ? '1' + d : d;
+    });
+
+    // Step 1: make sure ALL numbers exist in the MIND database (reserved
+    // pool). Non-fatal on cityId miss — the PATCH is the authoritative check.
+    await ensureNumbersInMindInventory(email, normalized, cityHint);
+
+    // Step 2: the service carries a single MSISDN, so only the PRIMARY
+    // number (first in the list — callers put trunk.primaryNumber first)
+    // is attached; the rest stay in the reserved pool against this unit.
+    const primary = normalized[0];
+    const payload = JSON.stringify({ telephoneNumber: primary });
+    const r = await httpsRequest(
+        `${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(serviceId)}/telephone-number`,
+        { method: 'PATCH', headers: {
+            'iristelx-api-key': MIND_API_KEY,
+            'Content-Type': 'application/json', 'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+        } },
+        payload);
+    if (r.status < 200 || r.status >= 300) {
+        throw new Error(`MIND telephone-number update failed for ${primary} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
     }
+    const assigned = [primary];
+    console.log('[mind] assigned primary', primary, 'to service', serviceId, 'on account', accountId,
+        normalized.length > 1 ? `(${normalized.length - 1} more in reserved pool)` : '');
     stateSet(key, { email: normEmail(email), accountId: String(accountId), serviceId: String(serviceId), numbers: wanted, assigned });
     return { assigned, serviceId, reused: false };
 }
@@ -1569,21 +1634,33 @@ async function handleApi(req, res, pathname) {
             const email = normEmail(body.email);
 
             // Everything but the serviceId is already on file server-side
-            let accountId = null;
+            let accountId = null, ratecenter = null, primary = null;
             const numbers = [];
             for (const [k, v] of Object.entries(orderStore)) {
                 if (!k.includes(`:${email}`) || !v) continue;
                 if (k.startsWith('account:')) accountId = v.accountId;
                 else if (k.startsWith('order:')) {
-                    (v.trunks || []).forEach(t => (t.numbers || []).forEach(n => numbers.push(n)));
+                    (v.trunks || []).forEach(t => {
+                        if (!primary && t.primaryNumber) primary = t.primaryNumber;
+                        (t.numbers || []).forEach(n => numbers.push(n));
+                    });
+                    // espresso ratecenter doubles as the MIND city name
+                    const req0 = (v.requests || [])[0];
+                    if (req0 && req0.ratecenter) ratecenter = req0.ratecenter;
                 }
             }
             accountId = body.accountId || accountId;
             const serviceId = body.serviceId
                 || (stateGet(`mindassign:${email}`) || {}).serviceId;
-            const wanted = body.numbers && body.numbers.length ? body.numbers : [...new Set(numbers)];
+            // Primary number first — assignNumbersToMindService attaches
+            // normalized[0] to the service; the rest only go to inventory.
+            let wanted = body.numbers && body.numbers.length ? body.numbers : [...new Set(numbers)];
+            if (primary && !body.numbers) {
+                wanted = [primary, ...wanted.filter(n => n !== primary)];
+            }
+            const cityHint = body.city || ratecenter;
             try {
-                return sendJson(res, 200, await assignNumbersToMindService(email, serviceId, accountId, wanted));
+                return sendJson(res, 200, await assignNumbersToMindService(email, serviceId, accountId, wanted, cityHint));
             } catch (e) {
                 // Reported but never customer-blocking — same policy as CRM sync
                 console.error('[mind] assignment failed:', e.message);
