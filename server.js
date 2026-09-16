@@ -1673,6 +1673,21 @@ async function handleApi(req, res, pathname) {
             });
             return sendJson(res, 200, result);
         }
+        // Read-only MIND account lookup, proxied because api.iristelx.com
+        // sends no CORS headers — a browser fetch dies on the preflight and
+        // the signup prefill silently fell back to "Test User".
+        const mAcct = pathname.match(/^\/api\/mind\/account\/([\w-]+)$/);
+        if (mAcct && req.method === 'GET') {
+            const r = await httpsRequest(`${BILLING_API_URL}/accounts/${encodeURIComponent(mAcct[1])}`,
+                { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
+            let data = null;
+            try { data = JSON.parse(r.raw); } catch (e) {}
+            if (r.status < 200 || r.status >= 300 || !data) {
+                return sendJson(res, r.status || 502, { error: (data && data.message) || `Account lookup failed (HTTP ${r.status})` });
+            }
+            // Only what the prefill needs — not the full billing record
+            return sendJson(res, 200, { contact: data.contact || null, language: data.language || null, name: data.name || null });
+        }
         if (pathname === '/api/mind/service' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });

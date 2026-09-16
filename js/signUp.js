@@ -391,12 +391,12 @@ function prefillTestData() {
 async function prefillTestData() {
     try {
         console.log('Fetching account 1204506 to prefill form...');
-        const response = await fetch(`${API_BASE_URL}/accounts/1204506`, {
+        // Via our server: api.iristelx.com has no CORS headers, so a direct
+        // browser fetch fails the preflight and the prefill fell back to
+        // the hardcoded "Test User" data.
+        const response = await fetch('/api/mind/account/1204506', {
             method: 'GET',
-            headers: {
-                'accept': 'application/json',
-                'iristelx-api-key': API_KEY
-            }
+            headers: { 'accept': 'application/json' }
         });
 
         const data = await response.json();
