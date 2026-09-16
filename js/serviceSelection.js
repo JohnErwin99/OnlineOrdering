@@ -142,12 +142,20 @@ async function configurePlan(accountId, planCode, planName, contactData) {
         showLoading(`Adding ${planName} to your account...`);
         hideMessage();
 
-        // Create a new add service using the plan code and
-        // the account info from cookies. Runs for every plan.
-        const result = await addServiceToAccount(accountId, planCode, planName, contactData);
+        // SIP Trunk: the MIND service is created exactly once by the review
+        // page after payment (POST /api/mind/service) — creating it here
+        // minted a new service on every visit. Other plans keep the
+        // create-at-selection behavior (their flows have no review step).
+        if (planCode === 'SIP_TRUNK') {
+            deleteCookie('sip_serviceId');
+        } else {
+            await addServiceToAccount(accountId, planCode, planName, contactData);
+        }
 
         hideLoading();
-        showMessage('success', `${planName} has been added to your account successfully!`);
+        showMessage('success', planCode === 'SIP_TRUNK'
+            ? `${planName} selected — you can review and pay at the end.`
+            : `${planName} has been added to your account successfully!`);
 
         // Store selected plan in cookie
         setCookie('iristel_selected_plan', planCode, 7);

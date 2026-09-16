@@ -114,12 +114,11 @@
             }
         }
 
-        function updateTrunkChannels(value) {
-            const trunk = getActiveTrunk();
-            if (trunk) {
-                trunk.channels = Math.max(1, parseInt(value, 10) || 1);
-                updateSummaryBar();
-            }
+        // Channels are DERIVED, not chosen: one channel per requested number.
+        // Called whenever a trunk's requests change so pricing/provisioning
+        // downstream (both keyed on trunk.channels) follow the real quantity.
+        function syncChannelsToRequests(trunk) {
+            if (trunk) trunk.channels = Math.max(1, trunkRequestedCount(trunk));
         }
 
         function renderTrunkTabs() {
@@ -142,18 +141,16 @@
         function updateTrunkBody() {
             const trunk = getActiveTrunk();
             document.getElementById('trunkNameInput').value = trunk.name;
-            document.getElementById('trunkChannelInput').value = trunk.channels || 1;
             document.getElementById('selectedTrunkLabel').textContent = trunk.name;
         }
 
         function updateSummaryBar() {
             document.getElementById('totalTrunksCount').textContent = trunks.length;
             const trunk = getActiveTrunk();
-            document.getElementById('currentTrunkChannelCount').textContent = trunk ? trunk.channels : 1;
             document.getElementById('currentTrunkNumberCount').textContent = trunk ? trunkRequestedCount(trunk) : 0;
-            // Estimate: $25/channel across all trunks
-            const totalChannels = trunks.reduce((sum, t) => sum + (t.channels || 1), 0);
-            document.getElementById('estMonthlyCost').textContent = '$' + (totalChannels * 25).toFixed(2);
+            // Estimate: $25 per requested number (1 number = 1 channel)
+            const totalNumbers = trunks.reduce((sum, t) => sum + trunkRequestedCount(t), 0);
+            document.getElementById('estMonthlyCost').textContent = '$' + (totalNumbers * 25).toFixed(2);
         }
 
         function refreshAll() {
@@ -185,21 +182,16 @@
                 return;
             }
 
-            // Channel rule (same as before): numbers on a trunk cannot exceed channels
-            const limit = trunk.channels || 1;
-            if (trunkRequestedCount(trunk) + quantity > limit) {
-                showAlert('This request would exceed the channel limit (' + limit + ') for "' + trunk.name +
-                    '". Increase the channel count to request more numbers.', 'info', 'Channel limit');
-                return;
-            }
-
-            // Merge with an existing request for the same rate center + NPA
+            // Merge with an existing request for the same rate center + NPA.
+            // No channel cap: each number IS a channel, so the count of
+            // numbers defines capacity and pricing.
             const existing = trunk.requests.find(r => r.ratecenter === rc && r.npa === npa);
             if (existing) {
                 existing.quantity = (parseInt(existing.quantity, 10) || 0) + quantity;
             } else {
                 trunk.requests.push({ ratecenter: rc, npa: npa, quantity: quantity });
             }
+            syncChannelsToRequests(trunk);
             refreshAll();
         }
 
@@ -207,6 +199,7 @@
             const trunk = getActiveTrunk();
             if (!trunk) return;
             trunk.requests.splice(index, 1);
+            syncChannelsToRequests(trunk);
             refreshAll();
         }
 
@@ -259,6 +252,9 @@
                 }
             }
 
+            // Channels always mirror the requested number count at save time
+            trunks.forEach(syncChannelsToRequests);
+
             // Save multi-trunk data
             setCookie('sip_trunks', JSON.stringify(trunks));
 
@@ -310,4 +306,24 @@
 
             refreshAll();
             loadCatalog();
+
+            // Sent back here because espresso couldn't fill part of the
+            // order ("not enough available numbers in the rate center").
+            // The failed requests were already removed from the trunks —
+            // tell the customer what happened and let them pick again.
+            // Payment is NOT taken again; only the numbers are re-ordered.
+            const rejection = getCookie('sip_orderRejection');
+            if (rejection) {
+                deleteCookie('sip_orderRejection');
+                try {
+                    const problems = JSON.parse(rejection);
+                    const failed = problems
+                        .map(p => (p.ratecenter || '?') + ' (' + (p.npa || '?') + ')')
+                        .join(', ');
+                    showAlert('We could not get numbers in ' + failed + ' — that rate center does not have enough ' +
+                        'available numbers right now. Please choose a different city or area code below. ' +
+                        'Your payment is unaffected; only the numbers are re-ordered.',
+                        'error', 'Numbers unavailable');
+                } catch (e) {}
+            }
         });

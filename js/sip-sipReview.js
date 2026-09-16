@@ -275,17 +275,22 @@
                         trunkCount = trunksList.length;
 
                         trunksList.forEach((trunk) => {
-                            const channels = trunk.channels || 1;
-                            const channelCost = channels * CHANNEL_PRICE;
+                            // Bill by the ACTUAL number quantity (1 number =
+                            // 1 channel) — never a separately-chosen channel
+                            // count that can drift from what was selected.
+                            const numbers = (trunk.requests || [])
+                                .reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0)
+                                || (trunk.numbers || []).length || 1;
+                            const trunkCost = numbers * CHANNEL_PRICE;
 
                             rows += `<tr>
                                 <td class="pricing-trunk-label">${trunk.name}</td>
-                                <td style="text-align:center;">${channels} ch</td>
-                                <td style="text-align:right;">$${CHANNEL_PRICE.toFixed(2)}/ch/mo</td>
-                                <td style="text-align:right;">$${channelCost.toFixed(2)}</td>
+                                <td style="text-align:center;">${numbers} number${numbers > 1 ? 's' : ''} / ${numbers} ch</td>
+                                <td style="text-align:right;">$${CHANNEL_PRICE.toFixed(2)}/mo</td>
+                                <td style="text-align:right;">$${trunkCost.toFixed(2)}</td>
                             </tr>`;
 
-                            totalMonthly += channelCost;
+                            totalMonthly += trunkCost;
                         });
 
                         if (trunkCount > 1) {
@@ -707,21 +712,46 @@
                     throw err;
                 }
 
-                // ---- STEP 2: SIP Trunk service ----
-                // Already assigned at plan selection (sipTrunkSelection.js), so there
-                // is nothing to call here — assigning a second time only asks MIND to
-                // add a package the account already has. The step is still recorded
-                // because the status page renders it.
-                const assignedPlan = getCookie('iristel_selected_plan_name')
-                    || getCookie('iristel_selected_plan') || 'SIP Trunk';
-                setOrderStepResult('service', 'done', assignedPlan + ' active on your account');
-
-                // Check remaining balance
+                // Check remaining balance BEFORE creating anything else —
+                // the service is only minted once payment has settled.
                 if (window._remainingBalance > 0) {
                     showAlert('Please pay the remaining balance of $' + window._remainingBalance.toFixed(2) + ' before submitting.', 'info', 'Balance outstanding');
                     if (window.IrisBridge) window.IrisBridge.error('Remaining balance of $' + window._remainingBalance.toFixed(2) + ' must be paid before submitting.');
                     resetSubmitButton();
                     return;
+                }
+
+                // ---- STEP 2: SIP Trunk service ----
+                // Created HERE, after payment — creating it at plan selection
+                // minted a new service on every visit to that page. The server
+                // guards by email, so a retry or resumed session reuses the
+                // same service instead of adding another.
+                const assignedPlan = getCookie('iristel_selected_plan_name')
+                    || getCookie('iristel_selected_plan') || 'SIP Trunk';
+                try {
+                    if (!getCookie('sip_serviceId')) {
+                        updateStatusMessage('Setting up your SIP Trunk service...');
+                        const svcResponse = await fetch('/api/mind/service', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                email: customerEmail(contactData),
+                                accountId: accountId || getCookie('iristel_account_id'),
+                                planCode: 'EXLNP_SBSIPTRNK',
+                                contact: contactData
+                            })
+                        });
+                        const svcData = await svcResponse.json().catch(() => null);
+                        if (!svcResponse.ok || !svcData || !svcData.serviceId) {
+                            throw new Error('Service setup failed: ' + ((svcData && svcData.error) || ('HTTP ' + svcResponse.status)));
+                        }
+                        setCookie('sip_serviceId', String(svcData.serviceId));
+                        console.log('SIP Trunk service', svcData.reused ? 'reused:' : 'created:', svcData.serviceId);
+                    }
+                    setOrderStepResult('service', 'done', assignedPlan + ' active on your account');
+                } catch (err) {
+                    setOrderStepResult('service', 'error', err.message);
+                    throw err;
                 }
 
                 // ---- STEP 3: Place the number order (espresso DID) ----

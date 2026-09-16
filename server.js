@@ -881,6 +881,51 @@ async function createAccount(email, contact, knownAccountId) {
 }
 
 // ============================================
+// MIND SERVICE CREATION
+// ============================================
+// The SIP trunk service used to be created client-side at plan-selection
+// time, which minted a NEW service on every visit to the selection page.
+// It now happens exactly once, server-side, after payment settles on the
+// review page — guarded by the order store so retries and resumed sessions
+// reuse the same service.
+async function createMindService(email, accountId, planCode, contact) {
+    if (!accountId) throw new Error('accountId is required');
+    const key = `service:${normEmail(email)}`;
+    const seen = stateGet(key);
+    if (seen && seen.serviceId) {
+        console.log('[service] reusing service', seen.serviceId, 'for', normEmail(email));
+        return { serviceId: seen.serviceId, reused: true };
+    }
+
+    const requestBody = {
+        accountId: String(accountId),
+        planCode: planCode || 'EXLNP_SBSIPTRNK',
+        contact: {
+            fname: contact.fname, lname: contact.lname,
+            address1: contact.address1, city: contact.city,
+            province: contact.province, country: contact.country,
+            postalCode: contact.postalCode, emailAddress: contact.emailAddress || email,
+            phone: contact.phone || ''
+        }
+    };
+    const r = await postJson(`${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services`,
+        { 'iristelx-api-key': MIND_API_KEY }, requestBody);
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !data) {
+        const err = new Error((data && data.message) || `Service creation failed (HTTP ${r.status})`);
+        err.status = r.status >= 400 && r.status < 500 ? r.status : 502;
+        throw err;
+    }
+    const serviceId = data.serviceId || data.id
+        || (data.service && (data.service.serviceId || data.service.id));
+    if (!serviceId) throw new Error('Service created but no id returned');
+    stateSet(key, { email: normEmail(email), accountId: String(accountId), serviceId: String(serviceId) });
+    console.log('[service] created', serviceId, 'on account', accountId, 'for', normEmail(email));
+    return { serviceId: String(serviceId), reused: false };
+}
+
+// ============================================
 // MIND NUMBER ASSIGNMENT
 // ============================================
 // The espresso DID API has no notion of a customer — numbers are ordered into
@@ -1628,6 +1673,13 @@ async function handleApi(req, res, pathname) {
             });
             return sendJson(res, 200, result);
         }
+        if (pathname === '/api/mind/service' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            if (!body.accountId) return sendJson(res, 400, { error: 'accountId is required' });
+            return sendJson(res, 200,
+                await createMindService(body.email, body.accountId, body.planCode, body.contact || {}));
+        }
         if (pathname === '/api/mind/assign-number' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
@@ -1651,6 +1703,7 @@ async function handleApi(req, res, pathname) {
             }
             accountId = body.accountId || accountId;
             const serviceId = body.serviceId
+                || (stateGet(`service:${email}`) || {}).serviceId
                 || (stateGet(`mindassign:${email}`) || {}).serviceId;
             // Primary number first — assignNumbersToMindService attaches
             // normalized[0] to the service; the rest only go to inventory.
@@ -1795,6 +1848,13 @@ async function handleApi(req, res, pathname) {
         m = pathname.match(/^\/api\/did\/order\/([^/]+)\/details$/);
         if (m && req.method === 'GET') {
             return sendJson(res, 200, await getOrderDetails(decodeURIComponent(m[1])));
+        }
+        // Per-request rejection reasons (e.g. "not enough available numbers
+        // in the specified rate center") — lets the status page send the
+        // customer back to pick a different city instead of snagging.
+        m = pathname.match(/^\/api\/did\/order\/([^/]+)\/problems$/);
+        if (m && req.method === 'GET') {
+            return sendJson(res, 200, { problems: await getOrderProblems(decodeURIComponent(m[1])) });
         }
         m = pathname.match(/^\/api\/lnp\/portability\/(\d{6})$/);
         if (m && req.method === 'GET') {

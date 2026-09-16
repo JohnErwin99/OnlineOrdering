@@ -1214,6 +1214,38 @@
                 label, detail);
         }
 
+        // Espresso rejected the order (typically "not enough available
+        // numbers in the specified rate center"). Pull the per-request
+        // reject reasons, drop the failed requests from the trunks, and send
+        // the customer back to number selection to pick a different city —
+        // WITHOUT re-charging: payment already settled and the corrected
+        // order re-places only the numbers, never the charge. Returns true
+        // when the redirect happened; false falls through to the snag flow.
+        async function redirectToReselection(didOrderNumber, trunksList) {
+            let problems = [];
+            try {
+                const pr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/problems`);
+                const pd = await pr.json().catch(() => null);
+                problems = (pd && pd.problems) || [];
+            } catch (e) { /* fall through to snag */ }
+            if (!problems.length) return false;
+
+            // Remove the failed requests so the customer replaces them
+            const failed = problems.map(p => (p.ratecenter || '') + '|' + (p.npa || ''));
+            trunksList.forEach(t => {
+                t.requests = (t.requests || []).filter(r => !failed.includes(r.ratecenter + '|' + r.npa));
+                t.channels = Math.max(1, (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0));
+            });
+            setCookie('sip_trunks', JSON.stringify(trunksList));
+            saveTrunksToServer(trunksList);
+
+            setCookie('sip_orderRejection', JSON.stringify(problems));
+            deleteCookie('sip_didOrderNumber'); // corrected order re-places, not re-bills
+            console.warn('[order] espresso rejected', didOrderNumber, '— sending customer back to reselect:', problems);
+            window.location.href = 'numberSelection.html';
+            return true;
+        }
+
         async function waitForNumberOrder(trunksList) {
             const didOrderNumber = getCookie('sip_didOrderNumber');
             if (!didOrderNumber || !trunksNeedNumbers(trunksList)) {
@@ -1231,6 +1263,12 @@
                 console.log('DID order', didOrderNumber, 'status:', orderStatus);
                 if (/^completed$/i.test(orderStatus)) break;
                 if (/rejected|canceled/i.test(orderStatus)) {
+                    // A rejection is almost always "not enough available
+                    // numbers in the rate center" — recoverable by picking a
+                    // different city, so route the customer back to number
+                    // selection instead of the dead-end snag flow.
+                    const redirected = await redirectToReselection(didOrderNumber, trunksList);
+                    if (redirected) return trunksList;
                     deleteCookie('sip_didOrderNumber');
                     // Tagged so the server-side snag report fetches espresso's
                     // reject reasons (e.g. rate-center inventory exhausted)

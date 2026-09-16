@@ -153,7 +153,10 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
 
         if (onProgress) onProgress(trunk.name || ('Trunk ' + (i + 1)), i + 1, trunksList.length);
         try {
-            const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId, trunk.channels || 1, options);
+            // Channel count = the actual numbers on the trunk (1 number =
+            // 1 channel); trunk.channels is only a fallback for old sessions.
+            const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId,
+                trunkNumbers.length || trunk.channels || 1, options);
             console.log('UbossRobot job started for', trunk.name, ':', ubossResult.id);
             provisionJobs.push({ trunkName: trunk.name || ('Trunk ' + (i + 1)), jobId: ubossResult.id });
         } catch (err) {

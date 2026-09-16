@@ -105,13 +105,17 @@ async function selectPlan(planCode, planName) {
 
 async function configurePlan(accountId, planCode, planName, contactData) {
     try {
-        showLoading(`Adding ${planName} to your account...`);
+        showLoading(`Configuring ${planName}...`);
         hideMessage();
 
-        const result = await addServiceToAccount(accountId, planCode, planName, contactData);
+        // The MIND service is NOT created here anymore — that minted a new
+        // service every time this page was visited. It is created exactly once
+        // by the review page (POST /api/mind/service) after payment settles.
+        // A stale serviceId from an earlier order must not leak into this one.
+        deleteCookie('sip_serviceId');
 
         hideLoading();
-        showMessage('success', `${planName} has been added to your account successfully!`);
+        showMessage('success', `${planName} selected — you can review and pay at the end.`);
 
         // Store selected plan in cookie
         setCookie('iristel_selected_plan', planCode, 7);

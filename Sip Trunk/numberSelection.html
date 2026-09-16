@@ -662,18 +662,15 @@
                             <span class="trunk-name-label">Trunk Name:</span>
                             <input type="text" class="trunk-name-input" id="trunkNameInput" placeholder="e.g. Main Office, Sales Line" oninput="updateTrunkName(this.value)">
                         </div>
-                        <div class="trunk-name-row">
-                            <span class="trunk-name-label">Channels:</span>
-                            <input type="number" class="trunk-name-input" id="trunkChannelInput" min="1" max="100" value="1" style="max-width:100px;text-align:center;" oninput="updateTrunkChannels(this.value)">
-                            <span style="font-size:13px;color:var(--text-gray);">concurrent call lines @ $25/channel/mo</span>
-                        </div>
+                        <!-- Channels are no longer chosen separately: each number
+                             is one channel ($25/number/mo), so the count of
+                             selected numbers drives capacity and pricing. -->
 
                         <!-- Trunk summary bar -->
                         <div class="trunk-summary-bar" id="trunkSummaryBar">
                             <span class="trunk-summary-item">Total Trunks: <strong id="totalTrunksCount">1</strong></span>
-                            <span class="trunk-summary-item">Channels (this trunk): <strong id="currentTrunkChannelCount">1</strong></span>
-                            <span class="trunk-summary-item">Numbers requested: <strong id="currentTrunkNumberCount">0</strong></span>
-                            <span class="trunk-summary-item">Est. Monthly: <strong id="estMonthlyCost">$25.00</strong></span>
+                            <span class="trunk-summary-item">Numbers / channels: <strong id="currentTrunkNumberCount">0</strong> <span style="font-size:12px;color:var(--text-gray);">@ $25/mo each</span></span>
+                            <span class="trunk-summary-item">Est. Monthly: <strong id="estMonthlyCost">$0.00</strong></span>
                         </div>
                     </div>
                 </div>
