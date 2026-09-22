@@ -183,8 +183,7 @@
         // ============================================
         // Payment Status (already collected before business setup)
         // ============================================
-        // Pricing constants
-        const CHANNEL_PRICE = 25.00;  // $25/mo per channel
+        // Pricing constants live in sip-provisioning-common.js (SIP_PRICING)
 
         // ============================================
         // PROMO CODE
@@ -275,18 +274,20 @@
                         trunkCount = trunksList.length;
 
                         trunksList.forEach((trunk) => {
-                            // Bill by the ACTUAL number quantity (1 number =
-                            // 1 channel) — never a separately-chosen channel
-                            // count that can drift from what was selected.
+                            // Channels (capacity) and numbers (DIDs) are billed
+                            // independently — channels are user-chosen, DIDs
+                            // are the actual requested quantity.
+                            const channels = Math.max(1, parseInt(trunk.channels, 10) || 1);
                             const numbers = (trunk.requests || [])
                                 .reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0)
-                                || (trunk.numbers || []).length || 1;
-                            const trunkCost = numbers * CHANNEL_PRICE;
+                                || (trunk.numbers || []).length || 0;
+                            const trunkCost = channels * SIP_PRICING.CHANNEL_MONTHLY
+                                + numbers * SIP_PRICING.DID_MONTHLY;
 
                             rows += `<tr>
                                 <td class="pricing-trunk-label">${trunk.name}</td>
-                                <td style="text-align:center;">${numbers} number${numbers > 1 ? 's' : ''} / ${numbers} ch</td>
-                                <td style="text-align:right;">$${CHANNEL_PRICE.toFixed(2)}/mo</td>
+                                <td style="text-align:center;">${channels} ch / ${numbers} DID${numbers === 1 ? '' : 's'}</td>
+                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/DID</td>
                                 <td style="text-align:right;">$${trunkCost.toFixed(2)}</td>
                             </tr>`;
 
@@ -303,12 +304,12 @@
             // Fallback: single trunk from old cookie format
             if (!rows) {
                 const channels = 1;
-                const channelCost = channels * CHANNEL_PRICE;
+                const channelCost = channels * SIP_PRICING.CHANNEL_MONTHLY;
 
                 rows = `<tr>
                     <td class="pricing-trunk-label">SIP Trunk</td>
                     <td style="text-align:center;">${channels} ch</td>
-                    <td style="text-align:right;">$${CHANNEL_PRICE.toFixed(2)}/ch/mo</td>
+                    <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch/mo</td>
                     <td style="text-align:right;">$${channelCost.toFixed(2)}</td>
                 </tr>`;
 
@@ -321,7 +322,7 @@
             // Calculate remaining balance vs the promo and what was already paid
             const paidAmount = parseFloat(getCookie('iristel_payment_amount') || '0');
             const promo = getAppliedPromo();
-            const tax = +(totalMonthly * 0.13).toFixed(2);
+            const tax = +(totalMonthly * SIP_PRICING.TAX_RATE).toFixed(2);
             const totalWithTax = +(totalMonthly + tax).toFixed(2);
             // The promo leaves one cent to charge — the card must still be
             // exercised for real before the order can be submitted.

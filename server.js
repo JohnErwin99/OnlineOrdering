@@ -925,6 +925,50 @@ async function createMindService(email, accountId, planCode, contact) {
     return { serviceId: String(serviceId), reused: false };
 }
 
+// Accounts are created with status NEW; once the order has fully provisioned
+// the account (and its SIP trunk service) are flipped to ACTIVE via
+// PATCH /accounts/{id} and PATCH /accounts/{id}/services/{id}. Best-effort:
+// a failure here must never fail the completion call, only log.
+async function patchMindStatus(path, label) {
+    const payload = JSON.stringify({ status: 'ACTIVE' });
+    const r = await httpsRequest(`${BILLING_API_URL}${path}`,
+        { method: 'PATCH', headers: {
+            'iristelx-api-key': MIND_API_KEY,
+            'Content-Type': 'application/json', 'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+        } },
+        payload);
+    if (r.status < 200 || r.status >= 300) {
+        throw new Error(`${label} activation failed (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
+    }
+}
+
+async function activateMindStatuses(email) {
+    const e = normEmail(email);
+    const rec = stateGet(`service:${e}`) || {};
+    const accountId = rec.accountId || (stateGet(`account:${e}`) || {}).accountId;
+    if (!accountId) {
+        console.warn('[mind] no accountId on file for', e, '— skipping status activation');
+        return;
+    }
+    try {
+        await patchMindStatus(`/accounts/${encodeURIComponent(accountId)}`, 'account');
+        console.log('[mind] account', accountId, 'set ACTIVE for', e);
+    } catch (err) {
+        console.warn('[mind]', err.message);
+    }
+    if (rec.serviceId) {
+        try {
+            await patchMindStatus(
+                `/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(rec.serviceId)}`,
+                'service');
+            console.log('[mind] service', rec.serviceId, 'set ACTIVE for', e);
+        } catch (err) {
+            console.warn('[mind]', err.message);
+        }
+    }
+}
+
 // ============================================
 // MIND NUMBER ASSIGNMENT
 // ============================================
@@ -1840,7 +1884,9 @@ async function handleApi(req, res, pathname) {
         if (pathname === '/api/session/complete' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
-            return sendJson(res, 200, { closed: markSessionDone(body.email) });
+            const closed = markSessionDone(body.email);
+            await activateMindStatuses(body.email);
+            return sendJson(res, 200, { closed });
         }
         if (pathname === '/api/payment/charge' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');

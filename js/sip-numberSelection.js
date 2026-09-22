@@ -11,6 +11,8 @@
         // Multi-trunk data structure.
         // Each trunk: { id, name, channels, requests: [{ratecenter, npa, quantity}],
         //               numbers: [], primaryNumber: '' }
+        // channels is USER-CHOSEN (concurrent call capacity, billed per
+        // channel) and independent of the DID quantity (billed per number).
         // numbers/primaryNumber stay in the shape — they are filled in when the
         // DID order completes, and downstream pages read them.
         let trunks = [{ id: 1, name: 'Trunk 1', channels: 1, requests: [], numbers: [], primaryNumber: '' }];
@@ -114,11 +116,12 @@
             }
         }
 
-        // Channels are DERIVED, not chosen: one channel per requested number.
-        // Called whenever a trunk's requests change so pricing/provisioning
-        // downstream (both keyed on trunk.channels) follow the real quantity.
-        function syncChannelsToRequests(trunk) {
-            if (trunk) trunk.channels = Math.max(1, trunkRequestedCount(trunk));
+        function updateTrunkChannels(value) {
+            const trunk = getActiveTrunk();
+            if (trunk) {
+                trunk.channels = Math.max(1, parseInt(value, 10) || 1);
+                updateSummaryBar();
+            }
         }
 
         function renderTrunkTabs() {
@@ -141,16 +144,19 @@
         function updateTrunkBody() {
             const trunk = getActiveTrunk();
             document.getElementById('trunkNameInput').value = trunk.name;
+            document.getElementById('channelsInput').value = trunk.channels || 1;
             document.getElementById('selectedTrunkLabel').textContent = trunk.name;
         }
 
         function updateSummaryBar() {
             document.getElementById('totalTrunksCount').textContent = trunks.length;
             const trunk = getActiveTrunk();
+            document.getElementById('currentChannelCount').textContent = trunk ? (trunk.channels || 1) : 1;
             document.getElementById('currentTrunkNumberCount').textContent = trunk ? trunkRequestedCount(trunk) : 0;
-            // Estimate: $25 per requested number (1 number = 1 channel)
-            const totalNumbers = trunks.reduce((sum, t) => sum + trunkRequestedCount(t), 0);
-            document.getElementById('estMonthlyCost').textContent = '$' + (totalNumbers * 25).toFixed(2);
+            const estimate = trunks.reduce((sum, t) =>
+                sum + (t.channels || 1) * SIP_PRICING.CHANNEL_MONTHLY
+                    + trunkRequestedCount(t) * SIP_PRICING.DID_MONTHLY, 0);
+            document.getElementById('estMonthlyCost').textContent = '$' + estimate.toFixed(2);
         }
 
         function refreshAll() {
@@ -183,15 +189,14 @@
             }
 
             // Merge with an existing request for the same rate center + NPA.
-            // No channel cap: each number IS a channel, so the count of
-            // numbers defines capacity and pricing.
+            // No channel cap: numbers (DIDs) and channels are billed
+            // independently, so any quantity is fine.
             const existing = trunk.requests.find(r => r.ratecenter === rc && r.npa === npa);
             if (existing) {
                 existing.quantity = (parseInt(existing.quantity, 10) || 0) + quantity;
             } else {
                 trunk.requests.push({ ratecenter: rc, npa: npa, quantity: quantity });
             }
-            syncChannelsToRequests(trunk);
             refreshAll();
         }
 
@@ -199,7 +204,6 @@
             const trunk = getActiveTrunk();
             if (!trunk) return;
             trunk.requests.splice(index, 1);
-            syncChannelsToRequests(trunk);
             refreshAll();
         }
 
@@ -252,9 +256,6 @@
                 }
             }
 
-            // Channels always mirror the requested number count at save time
-            trunks.forEach(syncChannelsToRequests);
-
             // Save multi-trunk data
             setCookie('sip_trunks', JSON.stringify(trunks));
 
@@ -278,17 +279,6 @@
                 document.getElementById('newNumbersInfo').style.display = 'none';
                 document.getElementById('pageTitle').textContent = 'Request Temporary Numbers';
                 document.getElementById('pageSubtitle').textContent = 'Request temporary numbers to test your service while your existing numbers are being ported.';
-
-                // Default channel count to match the number of ported numbers
-                const portData = getCookie('sip_portNumbers');
-                if (portData) {
-                    try {
-                        const portedCount = JSON.parse(portData).length;
-                        if (portedCount > 0) {
-                            trunks[0].channels = portedCount;
-                        }
-                    } catch (e) {}
-                }
             }
 
             // Load saved trunk data

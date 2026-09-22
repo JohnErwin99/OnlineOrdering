@@ -643,7 +643,7 @@
                 </div>
 
                 <div class="info-box" id="newNumbersInfo">
-                    <p>Choose the city (rate center), area code and how many numbers you need for each trunk. Your numbers are assigned when the order is processed — you'll see them on the order status page.</p>
+                    <p>Choose how many concurrent call channels your trunk needs, then pick the city (rate center), area code and how many numbers you need. Your numbers are assigned when the order is processed — you'll see them on the order status page.</p>
                 </div>
 
                 <!-- Trunk Manager -->
@@ -662,14 +662,20 @@
                             <span class="trunk-name-label">Trunk Name:</span>
                             <input type="text" class="trunk-name-input" id="trunkNameInput" placeholder="e.g. Main Office, Sales Line" oninput="updateTrunkName(this.value)">
                         </div>
-                        <!-- Channels are no longer chosen separately: each number
-                             is one channel ($25/number/mo), so the count of
-                             selected numbers drives capacity and pricing. -->
+                        <!-- Channels and numbers (DIDs) are independent:
+                             channels set concurrent call capacity, numbers are
+                             the DIDs ordered onto the trunk. -->
+                        <div class="trunk-name-row">
+                            <span class="trunk-name-label">Channels:</span>
+                            <input type="number" class="filter-input" id="channelsInput" min="1" max="100" value="1" style="max-width:100px;" oninput="updateTrunkChannels(this.value)">
+                            <span style="font-size:12px;color:var(--text-gray);">Concurrent call channels — $25/mo each</span>
+                        </div>
 
                         <!-- Trunk summary bar -->
                         <div class="trunk-summary-bar" id="trunkSummaryBar">
                             <span class="trunk-summary-item">Total Trunks: <strong id="totalTrunksCount">1</strong></span>
-                            <span class="trunk-summary-item">Numbers / channels: <strong id="currentTrunkNumberCount">0</strong> <span style="font-size:12px;color:var(--text-gray);">@ $25/mo each</span></span>
+                            <span class="trunk-summary-item">Channels: <strong id="currentChannelCount">1</strong> <span style="font-size:12px;color:var(--text-gray);">@ $25/mo</span></span>
+                            <span class="trunk-summary-item">Numbers (DIDs): <strong id="currentTrunkNumberCount">0</strong> <span style="font-size:12px;color:var(--text-gray);">@ $2/mo</span></span>
                             <span class="trunk-summary-item">Est. Monthly: <strong id="estMonthlyCost">$0.00</strong></span>
                         </div>
                     </div>
@@ -742,6 +748,7 @@
     </div>
 
     <script src="../js/common.js"></script>
+    <script src="../js/sip-provisioning-common.js"></script>
     <script src="../js/sip-numberSelection.js"></script>
 <script src="../js/iris-bridge.js"></script>
 </body>

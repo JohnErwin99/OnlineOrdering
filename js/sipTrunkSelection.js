@@ -120,7 +120,9 @@ async function configurePlan(accountId, planCode, planName, contactData) {
         // Store selected plan in cookie
         setCookie('iristel_selected_plan', planCode, 7);
         setCookie('iristel_selected_plan_name', planName, 7);
-        setCookie('iristel_monthly_charge', '25', 7); // base: 1 channel at $25
+        // Starting estimate: 1 channel, no DIDs yet — the real total is
+        // computed on the review page from the chosen channels + numbers.
+        setCookie('iristel_monthly_charge', String(SIP_PRICING.CHANNEL_MONTHLY), 7);
 
         // Redirect to SIP Trunk business setup
         setTimeout(() => {

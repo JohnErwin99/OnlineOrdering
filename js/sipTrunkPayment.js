@@ -169,8 +169,8 @@ async function processPayment() {
 // charged. The total shown here is the pre-promo estimate.
 // ============================================
 function initializePage() {
-    const monthly = parseFloat(getCookie('iristel_monthly_charge') || '25');
-    const tax = +(monthly * 0.13).toFixed(2);
+    const monthly = parseFloat(getCookie('iristel_monthly_charge')) || SIP_PRICING.CHANNEL_MONTHLY;
+    const tax = +(monthly * SIP_PRICING.TAX_RATE).toFixed(2);
     const total = +(monthly + tax).toFixed(2);
 
     document.getElementById('billMonthly').textContent = `$${monthly.toFixed(2)}`;

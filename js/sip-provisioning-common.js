@@ -5,6 +5,19 @@
 // ============================================
 
 // ============================================
+// Pricing — single source of truth for the whole ordering flow.
+// Channels and DIDs are billed independently: a trunk's monthly cost is
+// channels * CHANNEL_MONTHLY + dids * DID_MONTHLY. Rates pending final
+// confirmation from Fabio.
+// ============================================
+const SIP_PRICING = {
+    CHANNEL_MONTHLY: 25.00,
+    DID_MONTHLY: 2.00,
+    TAX_RATE: 0.13
+};
+window.SIP_PRICING = SIP_PRICING;
+
+// ============================================
 // UbossRobot API Configuration
 // ============================================
 const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
@@ -153,10 +166,10 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
 
         if (onProgress) onProgress(trunk.name || ('Trunk ' + (i + 1)), i + 1, trunksList.length);
         try {
-            // Channel count = the actual numbers on the trunk (1 number =
-            // 1 channel); trunk.channels is only a fallback for old sessions.
+            // Channel count = the user-chosen capacity, independent of how
+            // many numbers ride on the trunk.
             const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId,
-                trunkNumbers.length || trunk.channels || 1, options);
+                Math.max(1, parseInt(trunk.channels, 10) || 1), options);
             console.log('UbossRobot job started for', trunk.name, ':', ubossResult.id);
             provisionJobs.push({ trunkName: trunk.name || ('Trunk ' + (i + 1)), jobId: ubossResult.id });
         } catch (err) {
