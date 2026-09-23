@@ -1276,7 +1276,8 @@
                     err.snagStage = 'espresso-order';
                     throw err;
                 }
-                setNumbersStep('active', 'Ordering your numbers (' + (orderStatus || 'Processing') + ')...', 'Order ' + didOrderNumber);
+                setNumbersStep('active', 'Ordering your numbers (' + (orderStatus || 'Processing') + ')...',
+                    'Order ' + didOrderNumber + ' — last checked ' + new Date().toLocaleTimeString());
                 await new Promise(r => setTimeout(r, 10000));
             }
 

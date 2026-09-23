@@ -70,7 +70,9 @@ async function addCard(accountCode, cardData) {
     console.log('Add Card Response:', data);
 
     if (!response.ok) {
-        throw new Error(data.message || `Card addition failed (HTTP ${response.status})`);
+        // Gateway reasons are logged for ops, never shown to the customer
+        console.error('Card addition failed:', response.status, data.message);
+        throw new Error('We could not save your card. Please check the details and try again.');
     }
 
     return data;
@@ -159,7 +161,7 @@ async function processPayment() {
         console.error('Card save failed:', err);
         document.getElementById('loadingOverlay').classList.remove('active');
         payBtn.disabled = false;
-        showMessage('error', 'Failed to save card: ' + err.message);
+        showMessage('error', err.message);
     }
 }
 

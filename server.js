@@ -17,6 +17,10 @@
 
 const http = require('http');
 const https = require('https');
+
+// Reused across espresso/MIND/UbossRobot calls — saves a TLS handshake per
+// request, which adds up on the multi-call order path.
+const KEEPALIVE_AGENT = new https.Agent({ keepAlive: true, maxSockets: 10 });
 const fs = require('fs');
 const path = require('path');
 
@@ -254,6 +258,7 @@ function soapPost(bodyXml, url = ESPRESSO_URL, ns = ESPRESSO_NS) {
                 'SOAPAction': '""',
                 'Content-Length': Buffer.byteLength(payload)
             },
+            agent: KEEPALIVE_AGENT,
             timeout: 30000
         }, res => {
             let data = '';
@@ -378,9 +383,18 @@ function getCatalog() {
         .then(r => soapArray(r).map(x => ({ ratecenter: x.ratecenter, npa: x.npa })));
 }
 
+// Routing profiles change rarely; a fresh SOAP call per order is wasted
+// latency. Failures are never cached.
+const PROFILES_TTL_MS = 10 * 60 * 1000;
+let profilesCache = null;
+
 function getProfiles() {
+    if (profilesCache && Date.now() - profilesCache.at < PROFILES_TTL_MS) {
+        return Promise.resolve(profilesCache.list);
+    }
     return espressoCall('<ns1:didGetRoutingProfiles/>', 'didGetRoutingProfiles')
-        .then(r => soapArray(r).map(x => (typeof x === 'string' ? x : x.profile || JSON.stringify(x))));
+        .then(r => soapArray(r).map(x => (typeof x === 'string' ? x : x.profile || JSON.stringify(x))))
+        .then(list => { profilesCache = { list, at: Date.now() }; return list; });
 }
 
 // requests: [{ratecenter, npa, quantity}] — prefix/country_prefix are deprecated
@@ -433,15 +447,16 @@ async function findRecentMatchingOrder(requests) {
 }
 
 async function placeOrder(profile, requests, opts) {
-    // Advisory only — see the note above on why this cannot block
-    try {
-        const similar = await findRecentMatchingOrder(requests);
+    // Advisory only — see the note above on why this cannot block. Not
+    // awaited: the warning is for support to notice, so it must not cost the
+    // customer an espresso round trip on the order's critical path.
+    findRecentMatchingOrder(requests).then(similar => {
         if (similar) {
             console.warn('[order] NOTE: espresso already has a recent order with the same shape:', similar,
                 '— proceeding anyway (company-wide feed, cannot tell customers apart).',
                 'accountRef:', (opts && opts.accountRef) || 'unknown');
         }
-    } catch (e) { /* never let the advisory check block a real order */ }
+    }).catch(() => { /* never let the advisory check block a real order */ });
 
     if (!profile) profile = ESPRESSO_DID_PROFILE;
     const profiles = await getProfiles();
@@ -654,7 +669,7 @@ function saveChargeStore() {
 
 function getJson(url, headers) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, { headers: { ...headers, accept: 'application/json' }, timeout: 45000 },
+        const req = https.get(url, { headers: { ...headers, accept: 'application/json' }, agent: KEEPALIVE_AGENT, timeout: 45000 },
             res => {
                 let data = '';
                 res.on('data', c => data += c);
@@ -677,6 +692,7 @@ function postJson(url, headers, body) {
         const req = https.request(url, {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+            agent: KEEPALIVE_AGENT,
             timeout: 45000
         }, res => {
             let data = '';
@@ -765,7 +781,12 @@ async function chargeBalance(body) {
         delete chargeStore[key];
         saveChargeStore();
         const detail = Array.isArray(data.errors) ? data.errors.map(e => e && e.message).filter(Boolean).join(' ') : '';
-        const err = new Error((data.message || `Payment failed (HTTP ${result.status})`) + (detail ? ' — ' + detail : ''));
+        // Gateway reasons ("Purchase Transaction rejected: Invalid Route
+        // Service") are for ops, not customers — log them, return a generic
+        // message the customer can act on.
+        console.error('[charge] declined', reference, accountCode, amount, '—',
+            data.message || `HTTP ${result.status}`, detail);
+        const err = new Error('Payment could not be completed. Please verify your card details and try again, or use a different card.');
         err.status = 402;
         throw err;
     }
@@ -1111,11 +1132,8 @@ async function sessionAlreadyProvisioned(email) {
         .filter(([k, v]) => k.startsWith('provision:') && k.includes(`:${e}`) && v && v.jobId && v.status !== 'done')
         .map(([, v]) => v);
     if (!jobs.length) return false;
-    for (const j of jobs) {
-        const live = await ubossJobStatus(j.jobId);
-        if (!live || String(live.status || '').toLowerCase() !== 'completed') return false;
-    }
-    return true;
+    const statuses = await Promise.all(jobs.map(j => ubossJobStatus(j.jobId)));
+    return statuses.every(live => live && String(live.status || '').toLowerCase() === 'completed');
 }
 
 async function startProvisioning(body) {
@@ -1429,7 +1447,7 @@ function httpsRequest(urlStr, options, bodyStr) {
         const u = new URL(urlStr);
         const req = https.request({
             hostname: u.hostname, path: u.pathname + u.search, method: options.method || 'GET',
-            headers: options.headers || {}, timeout: 30000
+            headers: options.headers || {}, agent: KEEPALIVE_AGENT, timeout: 30000
         }, res => {
             let d = ''; res.on('data', c => d += c);
             res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, raw: d }));
