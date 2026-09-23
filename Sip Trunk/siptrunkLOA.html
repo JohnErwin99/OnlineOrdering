@@ -437,7 +437,17 @@
         .user-info strong {
             color: var(--rich-black);
         }
+
+        /* Narrow fields (street number/type, postal code). Was an inline
+           flex-basis, which became a fixed 140px HEIGHT once .form-row
+           stacks vertically on phones — as a class the media query below
+           can release it. */
+        .form-group-narrow { flex: 0 0 140px; }
+        @media (max-width: 900px) {
+            .form-group-narrow { flex: 1 1 auto; }
+        }
     </style>
+    <link rel="stylesheet" href="../css/mobile.css">
 </head>
 <body>
     <div class="container">
@@ -532,7 +542,7 @@
                             <p>This must match the address your <strong>current provider</strong> has on file — a mismatch is the most common reason ports get rejected.</p>
                         </div>
                         <div class="form-row">
-                            <div class="form-group" style="flex: 0 0 140px;">
+                            <div class="form-group form-group-narrow">
                                 <label class="form-label">Street Number <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponHouseNumber" required>
                                 <p class="field-error" id="errPonHouseNumber"></p>
@@ -542,7 +552,7 @@
                                 <input type="text" class="form-input" id="ponStreetName" required>
                                 <p class="field-error" id="errPonStreetName"></p>
                             </div>
-                            <div class="form-group" style="flex: 0 0 140px;">
+                            <div class="form-group form-group-narrow">
                                 <label class="form-label">Street Type</label>
                                 <input type="text" class="form-input" id="ponStreetType" placeholder="St, Ave, Blvd">
                                 <p class="field-error" id="errPonStreetType"></p>
@@ -573,7 +583,7 @@
                                     <option value="YT">Yukon</option>
                                 </select>
                             </div>
-                            <div class="form-group" style="flex: 0 0 140px;">
+                            <div class="form-group form-group-narrow">
                                 <label class="form-label">Postal Code <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="ponZipCode" required>
                                 <p class="field-error" id="errPonZipCode"></p>

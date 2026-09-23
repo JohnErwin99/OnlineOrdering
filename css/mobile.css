@@ -1,0 +1,116 @@
+/* ============================================
+   Shared phone-width fixes for the SIP ordering flow.
+   Loaded AFTER each page's own styles so it wins ties;
+   !important is used only where inline/embedded styles
+   or common.js's embed overrides would otherwise win.
+   Desktop/tablet (>600px) is untouched.
+   ============================================ */
+
+@media (max-width: 600px) {
+
+    /* --- Layout chrome --- */
+    .header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .support-link { font-size: 13px; }
+
+    .container,
+    .left-panel { padding: 20px !important; }
+
+    /* The decorative promo panel stacks below the form as 400-500px of
+       dead scroll on phones, and its 400px gradient circles overflow the
+       viewport when common.js forces overflow:visible in the Webflow
+       embed. It carries no functionality — drop it on phones. */
+    .right-panel { display: none !important; }
+
+    .promo-content { padding: 24px; }
+
+    /* --- Navigation buttons: stacked, full-width, never fixed.
+       position:fixed bars anchor to the full document inside the
+       height:auto Webflow embed and end up unreachable. --- */
+    .nav-buttons {
+        position: static !important;
+        display: flex;
+        flex-direction: column-reverse; /* primary action on top */
+        gap: 12px;
+        padding: 24px 0 0 !important;
+    }
+    .nav-buttons .btn-back,
+    .nav-buttons .btn-next,
+    .nav-buttons .btn-submit,
+    .nav-buttons .btn-proceed {
+        width: 100%;
+        padding: 15px 20px;
+    }
+    /* serviceAvailability's floating Continue button */
+    .nav-button {
+        position: static !important;
+        display: block;
+        width: 100%;
+        margin-top: 24px;
+    }
+
+    /* --- Inputs: 16px minimum or iOS Safari auto-zooms on focus --- */
+    input, select, textarea { font-size: 16px !important; }
+
+    /* --- Touch targets --- */
+    .toggle-password { padding: 12px; }
+    .checkbox-container input[type="checkbox"] {
+        width: 22px;
+        height: 22px;
+    }
+    .btn-remove,
+    .trunk-tab-remove,
+    .selected-chip button {
+        min-width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .btn-edit { padding: 10px 16px; }
+    .btn-set-primary { font-size: 14px; padding: 8px 4px; }
+    .btn-add-trunk { padding: 12px 20px; font-size: 15px; }
+
+    /* --- numberSelection --- */
+    .tabs { flex-wrap: wrap; }
+    .tab { padding: 12px 16px; }
+    .trunk-name-row { flex-wrap: wrap; }
+    .btn-search { align-self: stretch; width: 100%; }
+
+    /* --- siptrunkLOA --- */
+    .number-input-row { flex-wrap: wrap; }
+    .upload-area { padding: 20px; }
+    .uploaded-file-name { overflow-wrap: anywhere; }
+
+    /* --- sipTrunkPayment --- */
+    .card-row { grid-template-columns: 1fr; }
+    .wallet-buttons { grid-template-columns: 1fr; }
+    .billing-card, .payment-card { padding: 20px; }
+
+    /* --- sipReview --- */
+    .review-card { padding: 20px; }
+    .users-review-table,
+    .pricing-table {
+        display: block;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .promo-box { flex-wrap: wrap; }
+    .numbers-list { flex-wrap: wrap; }
+    .pay-ref { word-break: break-all; }
+
+    /* --- userAssignment: the 900px rule already scrolls the table;
+       keep the card from adding 60px of padding around it --- */
+    .users-card { padding: 16px; }
+    .card-header { flex-wrap: wrap; gap: 8px; }
+
+    /* --- provisioningStatus --- */
+    .detail-value.mono { word-break: break-all; }
+
+    /* --- Generic card/padding trims --- */
+    .service-card { padding: 20px; }
+    .choice-card { padding: 20px; }
+    .empty-state { padding: 24px; }
+}
