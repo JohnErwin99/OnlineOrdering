@@ -912,7 +912,9 @@ async function createAccount(email, contact, knownAccountId) {
 async function createMindService(email, accountId, planCode, contact) {
     if (!accountId) throw new Error('accountId is required');
     const key = `service:${normEmail(email)}`;
-    const seen = stateGet(key);
+    // activeOnly: a 'done' record belongs to a completed previous order —
+    // a new purchase must mint a NEW service, not attach to the old one.
+    const seen = stateGet(key, { activeOnly: true });
     if (seen && seen.serviceId) {
         console.log('[service] reusing service', seen.serviceId, 'for', normEmail(email));
         return { serviceId: seen.serviceId, reused: true };
