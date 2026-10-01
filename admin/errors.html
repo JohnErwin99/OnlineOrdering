@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Ordering — Error Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="../css/admin-errors.css">
+</head>
+<body>
+    <main class="wrap">
+        <header class="top">
+            <div>
+                <h1>Online Ordering errors</h1>
+                <p class="sub">Every failure in the SIP ordering flow: payment, DID/LNP, MIND, UBoss provisioning and CRM.</p>
+            </div>
+            <div class="top-actions">
+                <span class="updated" id="updated"></span>
+                <button type="button" class="btn" id="refresh">Refresh</button>
+            </div>
+        </header>
+
+        <section class="kpis" aria-label="Summary">
+            <div class="kpi"><span class="kpi-label">Errors (all time)</span><span class="kpi-value" id="kpiTotal">–</span></div>
+            <div class="kpi"><span class="kpi-label">Last 24 hours</span><span class="kpi-value" id="kpi24h">–</span></div>
+            <div class="kpi"><span class="kpi-label">Warnings</span><span class="kpi-value" id="kpiWarn">–</span></div>
+            <div class="kpi"><span class="kpi-label">Top failing stage</span><span class="kpi-value kpi-text" id="kpiTop">–</span></div>
+        </section>
+
+        <section class="filters panel" aria-label="Filters">
+            <input type="search" id="q" placeholder="Search email, business, order #, number, job id…">
+            <select id="fSeverity">
+                <option value="">All severities</option>
+                <option value="error">Errors</option>
+                <option value="warning">Warnings</option>
+            </select>
+            <select id="fStage"><option value="">All stages</option></select>
+            <select id="fSource">
+                <option value="">All sources</option>
+                <option value="client">Customer browser</option>
+                <option value="server">Server</option>
+            </select>
+            <label class="date">From <input type="date" id="fFrom"></label>
+            <label class="date">To <input type="date" id="fTo"></label>
+            <button type="button" class="btn btn-ghost" id="clear">Clear</button>
+        </section>
+
+        <section class="panel table-panel">
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>When</th>
+                            <th>Severity</th>
+                            <th>Stage</th>
+                            <th>Customer</th>
+                            <th>Order #</th>
+                            <th>Detail</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rows"></tbody>
+                </table>
+            </div>
+            <p class="empty" id="empty" hidden></p>
+            <p class="empty err-text" id="loadError" hidden></p>
+        </section>
+    </main>
+
+    <div class="backdrop" id="backdrop" hidden></div>
+    <aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="dTitle">
+        <div class="drawer-head">
+            <div>
+                <div id="dBadges"></div>
+                <h2 id="dTitle"></h2>
+                <p class="sub" id="dWhen"></p>
+            </div>
+            <button type="button" class="icon-btn" id="dClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="drawer-body" id="dBody"></div>
+    </aside>
+
+    <script src="../js/admin-errors.js"></script>
+</body>
+</html>

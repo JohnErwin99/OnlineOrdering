@@ -22,6 +22,7 @@ const https = require('https');
 // request, which adds up on the multi-call order path.
 const KEEPALIVE_AGENT = new https.Agent({ keepAlive: true, maxSockets: 10 });
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
@@ -1233,18 +1234,27 @@ function getBusinessDoc(email) {
 // ============================================
 // SNAG REPORTS — customer sees "we hit a snag", ops sees everything
 // ============================================
-// No email is sent (by decision). Snags persist here with a loud log line;
-// GET /api/snags is what the provisioning team polls / a future integration
-// consumes. Each report carries everything needed to finish the order by hand.
+// Every failure — reported by the browser (source 'client') or caught in an
+// API route (source 'server') — persists here. GET /api/snags feeds the error
+// dashboard (admin/errors.html, embedded in the partner portal); errors also
+// email provisioning a short alert linking to it. Warnings are dashboard-only.
 const SNAG_STORE_PATH = process.env.SNAG_STORE_PATH
     || path.join(STATE_DIR, STATE_DIR === ROOT ? '.snag-store.json' : 'snag-store.json');
 let snagStore = [];
 try { snagStore = JSON.parse(fs.readFileSync(SNAG_STORE_PATH, 'utf8')); } catch (e) { snagStore = []; }
+// Reports from before the dashboard have no id/source/severity
+snagStore.forEach(r => {
+    if (!r.id) r.id = crypto.randomUUID();
+    r.source = r.source || 'client';
+    r.severity = r.severity || 'error';
+    r.context = r.context || {};
+});
 
-async function recordSnag(email, stage, detail) {
+async function recordSnag(email, stage, detail, { source = 'client', severity = 'error', context = {} } = {}) {
     const e = normEmail(email);
     const report = {
-        at: new Date().toISOString(), email: e, stage, detail: String(detail || '').slice(0, 2000),
+        id: crypto.randomUUID(), at: new Date().toISOString(), email: e, stage,
+        source, severity, context, detail: String(detail || '').slice(0, 2000),
         account: null, orderNumber: null, numbers: [], provisionJobs: [], businessName: null,
         orderProblems: []
     };
@@ -1267,13 +1277,35 @@ async function recordSnag(email, stage, detail) {
         ensureStoreDir(SNAG_STORE_PATH);
         fs.writeFileSync(SNAG_STORE_PATH, JSON.stringify(snagStore), 'utf8');
     } catch (err) { console.error('[SNAG] report not persisted -', err.message); }
-    console.error('[SNAG]', e, '| stage:', stage, '| account:', report.account,
+    console.error('[SNAG]', severity, e, '| stage:', stage, '| account:', report.account,
         '| order:', report.orderNumber, '| detail:', report.detail.slice(0, 200),
         report.orderProblems.length ? '| problems: ' + JSON.stringify(report.orderProblems) : '');
     // Fire-and-forget: the customer's flow never waits on (or fails with) email
-    sendSnagReport(report);
+    if (severity === 'error') sendSnagReport(report);
     return report;
 }
+
+// Server-side failures: recorded without ever delaying or changing the
+// customer's response. 400s are input validation, not incidents.
+function reportServerError(email, stage, err, context = {}, severity = 'error') {
+    if (!email || (err && err.status === 400)) return;
+    recordSnag(email, stage, (err && err.message) || String(err),
+        { source: 'server', severity, context: { httpStatus: (err && err.status) || null, ...context } })
+        .catch(e => console.error('[SNAG] server report failed -', e.message));
+}
+
+// For promise chains in routes: record, then rethrow so the API catch-all
+// still sends the customer the same error response as before.
+function reportAndRethrow(email, stage, context) {
+    return err => { reportServerError(email, stage, err, context); throw err; };
+}
+
+// The partner-portal page that iframes admin/errors.html — Webflow has no
+// env vars, so the link lives here.
+const ERROR_DASHBOARD_URL = 'https://partner.iristel.com/dashboards/errors';
+const errorDashboardLink = report => `${ERROR_DASHBOARD_URL}?id=${encodeURIComponent(report.id)}`;
+const snagSubject = report =>
+    `[SNAG] Online Sip Order — ${report.businessName || report.email} (${report.stage})`;
 
 // Prefer the Power Automate webhook (no Azure admin consent needed); the
 // direct Graph path is the fallback once Mail.Send is ever granted.
@@ -1289,7 +1321,7 @@ const SNAG_WEBHOOK_URL = process.env.SNAG_WEBHOOK_URL || '';
 async function sendSnagWebhook(report) {
     try {
         const bodyStr = JSON.stringify({
-            subject: `[SNAG] Online Sip Order — ${report.businessName || report.email}`,
+            subject: snagSubject(report),
             body: snagEmailHtml(report),
             bodyText: snagEmailText(report),
             ...report
@@ -1335,69 +1367,65 @@ async function graphGetToken() {
     return graphToken.token;
 }
 
+// The email is just the alert — the full report (UBoss jobs, numbers, espresso
+// problems, context) lives on the error dashboard it links to.
+function snagEmailSummary(report) {
+    const detail = String(report.detail || '');
+    return {
+        customer: report.businessName ? `${report.businessName} (${report.email})` : report.email,
+        detail: detail.length > 200 ? detail.slice(0, 200) + '…' : detail
+    };
+}
+
 function snagEmailText(report) {
-    const lines = [
+    const { customer, detail } = snagEmailSummary(report);
+    return [
         `A customer order hit a snag and needs follow-up within 2 hours.`,
         ``,
         `When:          ${report.at}`,
-        `Customer:      ${report.email}`,
-        `Business:      ${report.businessName || '--'}`,
-        `MIND account:  ${report.account || '--'}`,
+        `Customer:      ${customer}`,
         `Order number:  ${report.orderNumber || '--'}`,
-        `Numbers:       ${report.numbers.length ? report.numbers.join(', ') : '--'}`,
-        `UBoss jobs:    ${report.provisionJobs.length
-            ? report.provisionJobs.map(j => `${j.jobId} [${(j.numbers || []).join(', ')}]`).join('; ') : '--'}`,
-        ``,
         `Failed stage:  ${report.stage}`,
-        `Error detail:`,
-        report.detail || '--'
-    ];
-    if (report.orderProblems.length) {
-        lines.push('', 'espresso order problems:', JSON.stringify(report.orderProblems, null, 2));
-    }
-    return lines.join('\n');
+        `Error:         ${detail || '--'}`,
+        ``,
+        `Full details in the error dashboard:`,
+        errorDashboardLink(report)
+    ].join('\n');
 }
 
 // HTML version — Outlook (both the Power Automate connector and Graph) treats
 // the body as HTML, which collapses plain-text newlines into one blob.
 function snagEmailHtml(report) {
     const esc = s => String(s == null || s === '' ? '--' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const row = (label, value) =>
         `<tr><td style="padding:4px 14px 4px 0;color:#666;white-space:nowrap;vertical-align:top">${label}</td>` +
         `<td style="padding:4px 0">${value}</td></tr>`;
-    const jobs = report.provisionJobs.length
-        ? report.provisionJobs.map(j =>
-            `${esc(j.jobId)} <span style="color:#666">[${esc((j.numbers || []).join(', '))}]</span>`).join('<br>')
-        : '--';
-    let html = `
+    const { customer, detail } = snagEmailSummary(report);
+    return `
 <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222;max-width:640px">
   <p style="font-size:15px"><b>A customer order hit a snag</b> and needs follow-up within 2 hours.</p>
   <table style="border-collapse:collapse;font-size:14px">
     ${row('When', esc(report.at))}
-    ${row('Customer', esc(report.email))}
-    ${row('Business', esc(report.businessName))}
-    ${row('MIND account', esc(report.account))}
+    ${row('Customer', esc(customer))}
     ${row('Order number', esc(report.orderNumber))}
-    ${row('Numbers', esc(report.numbers.join(', ')))}
-    ${row('UBoss jobs', jobs)}
     ${row('Failed stage', `<b style="color:#b00020">${esc(report.stage)}</b>`)}
+    ${row('Error', esc(detail))}
   </table>
-  <p style="margin:14px 0 4px;color:#666">Error detail</p>
-  <pre style="background:#f6f6f6;border:1px solid #ddd;border-radius:4px;padding:10px;font-size:12px;white-space:pre-wrap;margin:0">${esc(report.detail)}</pre>`;
-    if (report.orderProblems.length) {
-        html += `
-  <p style="margin:14px 0 4px;color:#666">espresso order problems</p>
-  <pre style="background:#f6f6f6;border:1px solid #ddd;border-radius:4px;padding:10px;font-size:12px;white-space:pre-wrap;margin:0">${esc(JSON.stringify(report.orderProblems, null, 2))}</pre>`;
-    }
-    return html + '\n</div>';
+  <p style="margin:20px 0">
+    <a href="${esc(errorDashboardLink(report))}"
+       style="background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:600;display:inline-block">
+      View in error dashboard</a>
+  </p>
+  <p style="color:#666;font-size:12px">The dashboard has the full report: numbers, UBoss jobs, espresso order problems and the complete error.</p>
+</div>`;
 }
 
 async function sendSnagEmail(report) {
     if (!D365_ENABLED) { console.error('[SNAG mail] skipped — Azure creds not configured'); return; }
     const mail = {
         message: {
-            subject: `[SNAG] Online Sip Order — ${report.businessName || report.email}`,
+            subject: snagSubject(report),
             body: { contentType: 'HTML', content: snagEmailHtml(report) },
             toRecipients: [{ emailAddress: { address: SNAG_MAIL_TO } }]
         },
@@ -1721,7 +1749,8 @@ async function handleApi(req, res, pathname) {
             }
             if (body.force) console.log('[order] forced re-order for', key, '— previous:', seen && seen.orderNumber);
 
-            const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef });
+            const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef })
+                .catch(reportAndRethrow(body.email, 'did-order', { requests, accountRef: body.accountRef || null }));
             stateSet(key, {
                 orderNumber: result.orderNumber,
                 orderNumbers: result.orderNumbers,
@@ -1757,7 +1786,8 @@ async function handleApi(req, res, pathname) {
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             if (!body.accountId) return sendJson(res, 400, { error: 'accountId is required' });
             return sendJson(res, 200,
-                await createMindService(body.email, body.accountId, body.planCode, body.contact || {}));
+                await createMindService(body.email, body.accountId, body.planCode, body.contact || {})
+                    .catch(reportAndRethrow(body.email, 'mind-service', { accountId: body.accountId, planCode: body.planCode || null })));
         }
         if (pathname === '/api/mind/assign-number' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
@@ -1796,6 +1826,7 @@ async function handleApi(req, res, pathname) {
             } catch (e) {
                 // Reported but never customer-blocking — same policy as CRM sync
                 console.error('[mind] assignment failed:', e.message);
+                reportServerError(email, 'mind-assign-number', e, { serviceId: serviceId || null, accountId, numbers: wanted });
                 return sendJson(res, 200, { assigned: [], error: e.message });
             }
         }
@@ -1803,7 +1834,8 @@ async function handleApi(req, res, pathname) {
             const body = JSON.parse(await readBody(req) || '{}');
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             if (!body.contact) return sendJson(res, 400, { error: 'contact is required' });
-            return sendJson(res, 200, await createAccount(body.email, body.contact, body.accountId));
+            return sendJson(res, 200, await createAccount(body.email, body.contact, body.accountId)
+                .catch(reportAndRethrow(body.email, 'mind-account', { accountId: body.accountId || null })));
         }
         if (pathname === '/api/business-doc' && req.method === 'POST') {
             // Base64 inflates ~4/3, so 15 MB of JSON covers a 10 MB file
@@ -1839,6 +1871,7 @@ async function handleApi(req, res, pathname) {
             } catch (e) {
                 // CRM problems must never disturb the customer's flow
                 console.error('[crm] sync failed for', normEmail(body.email), '-', e.message);
+                reportServerError(body.email, 'crm-sync', e, {}, 'warning');
                 return sendJson(res, 200, { synced: false, error: e.message });
             }
         }
@@ -1853,7 +1886,8 @@ async function handleApi(req, res, pathname) {
             if (!body.businessName || !String(body.businessName).trim()) {
                 return sendJson(res, 400, { error: 'businessName is required' });
             }
-            return sendJson(res, 200, await startProvisioning(body));
+            return sendJson(res, 200, await startProvisioning(body)
+                .catch(reportAndRethrow(body.email, 'uboss-start', { phoneNumbers: body.phoneNumbers, trunkName: body.trunkName || null })));
         }
         // What is still IN FLIGHT for a customer, so another device can pick the
         // order back up instead of starting (and paying for) a new one. A
@@ -1913,7 +1947,15 @@ async function handleApi(req, res, pathname) {
             if (!body.accountCode || !body.amount || !body.creditCard) {
                 return sendJson(res, 400, { error: 'accountCode, amount and creditCard are required' });
             }
-            return sendJson(res, 200, await chargeBalance(body));
+            return sendJson(res, 200, await chargeBalance(body).catch(err => {
+                // A decline is the customer's card, not an incident — dashboard
+                // only. Unknown/unreachable outcomes need a human to reconcile.
+                const declined = err.status === 402;
+                reportServerError(body.email, declined ? 'payment-declined' : 'payment-gateway', err,
+                    { reference: err.reference || null, amount: body.amount, accountCode: body.accountCode },
+                    declined ? 'warning' : 'error');
+                throw err;
+            }));
         }
         // Support/debug view of what this server has recorded
         if (pathname === '/api/did/orders/recorded' && req.method === 'GET') {
@@ -1968,7 +2010,8 @@ async function handleApi(req, res, pathname) {
                 console.log('[pon] duplicate suppressed for', ponKey, '→', seenPon.pon);
                 return sendJson(res, 200, { ...seenPon, duplicate: true });
             }
-            const ponResult = await lnpCreatePon({ ...body, numbers });
+            const ponResult = await lnpCreatePon({ ...body, numbers })
+                .catch(reportAndRethrow(body.email, 'lnp-pon', { numbers }));
             stateSet(ponKey, { ...ponResult, email: normEmail(body.email), numbers });
             return sendJson(res, 200, ponResult);
         }
