@@ -1236,11 +1236,12 @@
             } catch (e) { /* fall through to snag */ }
             if (!problems.length) return false;
 
-            // Remove the failed requests so the customer replaces them
+            // Remove the failed requests so the customer replaces them. The
+            // trunk keeps its channel count: channels are chosen (and priced)
+            // independently of the number of DIDs.
             const failed = problems.map(p => (p.ratecenter || '') + '|' + (p.npa || ''));
             trunksList.forEach(t => {
                 t.requests = (t.requests || []).filter(r => !failed.includes(r.ratecenter + '|' + r.npa));
-                t.channels = Math.max(1, (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0));
             });
             setCookie('sip_trunks', JSON.stringify(trunksList));
             saveTrunksToServer(trunksList);
@@ -1248,6 +1249,9 @@
             setCookie('sip_orderRejection', JSON.stringify(problems));
             deleteCookie('sip_didOrderNumber'); // corrected order re-places, not re-bills
             console.warn('[order] espresso rejected', didOrderNumber, '— sending customer back to reselect:', problems);
+            // The page keeps running until the navigation lands — stop the
+            // remaining steps here, or they fail and file a bogus snag
+            navigatingAway = true;
             window.location.href = 'numberSelection.html';
             return true;
         }
@@ -1266,7 +1270,11 @@
             for (;;) {
                 const sr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/status`);
                 const sd = await sr.json().catch(() => null);
-                if (!sr.ok) throw new Error('Number order status failed: ' + ((sd && sd.error) || ('HTTP ' + sr.status)));
+                if (!sr.ok) {
+                    const err = new Error('Number order status failed: ' + ((sd && sd.error) || ('HTTP ' + sr.status)));
+                    err.snagStage = 'did-order-status';
+                    throw err;
+                }
                 const orderStatus = String(sd.status || '');
                 console.log('DID order', didOrderNumber, 'status:', orderStatus);
                 if (/^completed$/i.test(orderStatus)) break;
@@ -1300,9 +1308,14 @@
 
             const dr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/details`);
             const dd = await dr.json().catch(() => null);
-            if (!dr.ok || !dd) throw new Error('Could not retrieve the ordered numbers: ' + ((dd && dd.error) || ('HTTP ' + dr.status)));
-            const numbers = dd.numbers || [];
-            if (!numbers.length) throw new Error('Number order completed but returned no numbers. Please contact support with order ' + didOrderNumber + '.');
+            const numbers = (dr.ok && dd && dd.numbers) || [];
+            if (!dr.ok || !dd || !numbers.length) {
+                const err = new Error(!dr.ok || !dd
+                    ? 'Could not retrieve the ordered numbers: ' + ((dd && dd.error) || ('HTTP ' + dr.status))
+                    : 'Number order completed but returned no numbers. Please contact support with order ' + didOrderNumber + '.');
+                err.snagStage = 'did-order-numbers';
+                throw err;
+            }
             console.log('DID order delivered', numbers.length, 'numbers');
 
             distributeOrderedNumbers(trunksList, numbers);
@@ -1419,7 +1432,9 @@
                         'Starting provisioning for ' + name + ' (' + i + '/' + total + ')...';
                 }, { force: force });
             if (provisionJobs.length === 0) {
-                throw new Error('No trunk has numbers to provision.');
+                const err = new Error('No trunk has numbers to provision.');
+                err.snagStage = 'uboss-no-numbers';
+                throw err;
             }
             setCookie('sip_provisionJobId', provisionJobs[0].jobId);
             setCookie('sip_provisionJobs', JSON.stringify(provisionJobs));
@@ -1501,10 +1516,19 @@
             window.location.reload();
         }
 
+        // Set when the page has sent the customer elsewhere (espresso rejected
+        // the order → back to number selection): nothing after that may run
+        // or report.
+        let navigatingAway = false;
+        // Which step is running — the fallback stage for an error that
+        // doesn't carry its own, so nothing lands under a vague catch-all.
+        let orchestrationPhase = 'orchestration';
+
         function showOrchestrationError(err) {
+            if (navigatingAway) return;
             // Every orchestration failure (number order rejected, UBoss start
             // failed, session recovery...) is a snag to the customer.
-            showSnag(err && err.snagStage || 'orchestration', err && err.message);
+            showSnag(err && err.snagStage || orchestrationPhase, err && err.message);
         }
 
         // Initialize
@@ -1597,12 +1621,18 @@
                     setStepState(document.getElementById('stepProvisionIcon'), 'waiting',
                         document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
                         'Configuring trunk on platform', 'Starts once your numbers are assigned');
+                    orchestrationPhase = 'did-order-wait';
                     await waitForNumberOrder(trunksList);
+                    // Rejected order: the customer is on their way back to
+                    // number selection — don't run (or fail) the rest
+                    if (navigatingAway) return;
                     // Nothing goes further until MIND confirms no one else
                     // already has these numbers and has linked them to the
                     // service (taken ones get replaced)
+                    orchestrationPhase = 'mind-tn-check';
                     await ensureNumbersFree(trunksList);
                     document.getElementById('statusTitle').textContent = 'Currently provisioning your trunk...';
+                    orchestrationPhase = 'uboss-start';
                     jobId = await ensureUbossStarted(trunksList);
                     document.getElementById('detailJobId').textContent = jobId;
                 } else {
@@ -1610,6 +1640,7 @@
                     // resumed browser may not know them. Recover before saying
                     // they are assigned, otherwise the step claims success
                     // while the number shows as "--".
+                    orchestrationPhase = 'session-resume';
                     await recoverNumbersIfMissing(trunksList, session);
                     const known = displayPrimaryNumber(trunksList);
                     document.getElementById('detailNumber').textContent = known || '--';
@@ -1620,7 +1651,15 @@
                     assignNumbersToMind(trunksList);
                 }
             } catch (err) {
-                setNumbersStep('error', 'Number order problem', 'We hit a snag ordering your numbers');
+                if (navigatingAway) return;
+                // Mark the step that actually failed, not always "numbers"
+                if ((err && err.snagStage || orchestrationPhase).startsWith('uboss')) {
+                    setStepState(document.getElementById('stepProvisionIcon'), 'error',
+                        document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
+                        'Configuring trunk on platform', 'We hit a snag setting up your trunk');
+                } else {
+                    setNumbersStep('error', 'Number order problem', 'We hit a snag ordering your numbers');
+                }
                 showOrchestrationError(err);
                 return;
             }

@@ -175,8 +175,10 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
         } catch (err) {
             // Report which trunks already went through so support can reconcile
             const started = provisionJobs.map(j => j.trunkName + ' (job ' + j.jobId + ')').join(', ');
-            throw new Error('Provisioning failed for "' + (trunk.name || ('Trunk ' + (i + 1))) + '": ' + err.message
+            const failure = new Error('Provisioning failed for "' + (trunk.name || ('Trunk ' + (i + 1))) + '": ' + err.message
                 + (started ? '\n\nAlready started: ' + started : ''));
+            failure.snagStage = 'uboss-start';
+            throw failure;
         }
     }
     return provisionJobs;
