@@ -1497,10 +1497,30 @@ snagStore.forEach(r => {
     r.context = r.context || {};
 });
 
+// The system a failure belongs to — what the error dashboard and the alert
+// email group by. The detailed stage stays alongside it. Decided by the
+// stage's prefix, so a new stage lands in the right system on its own. The
+// exceptions are named for where support has to look, not the step that
+// noticed: both replacement DID orders (after a MIND-taken number, after a
+// UBoss pool collision) are espresso orders, and "no numbers to provision"
+// means the DID order's numbers never reached the trunk — UBoss was never
+// called.
+const ESPRESSO_STAGES = new Set(['mind-tn-replace', 'uboss-pool-retry', 'uboss-no-numbers']);
+function snagSystem(stage) {
+    const s = String(stage || '');
+    if (ESPRESSO_STAGES.has(s)) return 'ESPRESSO';
+    if (s.startsWith('mind-')) return 'MIND';
+    if (s.startsWith('uboss-')) return 'UBOSS';
+    if (s.startsWith('did-') || s.startsWith('espresso') || s.startsWith('lnp-')) return 'ESPRESSO';
+    if (s.startsWith('payment')) return 'PAYMENT';
+    if (s.startsWith('crm')) return 'CRM';
+    return 'OTHER';
+}
+
 async function recordSnag(email, stage, detail, { source = 'client', severity = 'error', context = {} } = {}) {
     const e = normEmail(email);
     const report = {
-        id: crypto.randomUUID(), at: new Date().toISOString(), email: e, stage,
+        id: crypto.randomUUID(), at: new Date().toISOString(), email: e, stage, system: snagSystem(stage),
         source, severity, context, detail: String(detail || '').slice(0, 2000),
         account: null, orderNumber: null, numbers: [], provisionJobs: [], businessName: null,
         orderProblems: []
@@ -1552,7 +1572,7 @@ function reportAndRethrow(email, stage, context) {
 const ERROR_DASHBOARD_URL = 'https://partner.iristel.com/dashboards/errors';
 const errorDashboardLink = report => `${ERROR_DASHBOARD_URL}?id=${encodeURIComponent(report.id)}`;
 const snagSubject = report =>
-    `[SNAG] Online Sip Order — ${report.businessName || report.email} (${report.stage})`;
+    `[SNAG] Online Sip Order — ${report.businessName || report.email} (${snagSystem(report.stage)}: ${report.stage})`;
 
 // Prefer the Power Automate webhook (no Azure admin consent needed); the
 // direct Graph path is the fallback once Mail.Send is ever granted.
@@ -1632,7 +1652,7 @@ function snagEmailText(report) {
         `When:          ${report.at}`,
         `Customer:      ${customer}`,
         `Order number:  ${report.orderNumber || '--'}`,
-        `Failed stage:  ${report.stage}`,
+        `Failed stage:  ${snagSystem(report.stage)} (${report.stage})`,
         `Error:         ${detail || '--'}`,
         ``,
         `Full details in the error dashboard:`,
@@ -1656,7 +1676,7 @@ function snagEmailHtml(report) {
     ${row('When', esc(report.at))}
     ${row('Customer', esc(customer))}
     ${row('Order number', esc(report.orderNumber))}
-    ${row('Failed stage', `<b style="color:#b00020">${esc(report.stage)}</b>`)}
+    ${row('Failed stage', `<b style="color:#b00020">${esc(snagSystem(report.stage))}</b> <span style="color:#666">(${esc(report.stage)})</span>`)}
     ${row('Error', esc(detail))}
   </table>
   <p style="margin:20px 0">
@@ -2157,7 +2177,8 @@ async function handleApi(req, res, pathname) {
             return sendJson(res, 200, { recorded: true, at: report.at });
         }
         if (pathname === '/api/snags' && req.method === 'GET') {
-            return sendJson(res, 200, { snags: snagStore });
+            // Reports from before the system grouping get theirs on the way out
+            return sendJson(res, 200, { snags: snagStore.map(s => s.system ? s : { ...s, system: snagSystem(s.stage) }) });
         }
         if (pathname === '/api/crm/sync' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');

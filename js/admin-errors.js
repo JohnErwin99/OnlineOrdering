@@ -6,32 +6,37 @@
 
     const REFRESH_MS = 60000;
 
-    // Friendly names for the stages recorded by provisioningStatus.html
-    // (client) and reportServerError in server.js (server)
+    // The stage shown is the SYSTEM that failed (set by the server); the
+    // specific step is the detail underneath. Display order of the systems:
+    const SYSTEMS = ['MIND', 'ESPRESSO', 'UBOSS', 'PAYMENT', 'CRM', 'OTHER'];
+
+    // The specific step, per stage recorded by provisioningStatus.html
+    // (client) and reportServerError in server.js (server). Worded to read
+    // under its system heading.
     const STAGE_LABELS = {
-        'uboss-pool': 'UBoss number pool',
-        'uboss-pool-retry': 'UBoss pool re-order',
-        'uboss-provisioning': 'UBoss provisioning',
-        'uboss-start': 'UBoss provisioning start',
-        'uboss-no-numbers': 'No numbers to provision (UBoss not started)',
+        'mind-account': 'Account creation',
+        'mind-service': 'Service creation',
+        'mind-assign-number': 'Number assignment',
+        'mind-tn-check': 'Number ownership check',
+        'mind-tn-taken': 'Number already in use — disconnect in EspressoDID',
+        'mind-assign-verify': 'Number assignment not confirmed',
         'espresso-order': 'DID order rejected',
-        'orchestration': 'Provisioning page — unexpected error',
         'did-order': 'DID order placement',
         'did-order-wait': 'Waiting for DID order',
         'did-order-status': 'DID order status check failed',
         'did-order-numbers': 'DID order delivered no numbers',
-        'session-resume': 'Resuming an order',
+        'mind-tn-replace': 'Replacement number order (number taken in MIND)',
+        'uboss-pool-retry': 'Replacement number order (UBoss pool collision)',
+        'uboss-no-numbers': 'No numbers reached the trunk (UBoss not started)',
         'lnp-pon': 'Number port (PON)',
-        'mind-account': 'MIND account',
-        'mind-service': 'MIND service',
-        'mind-assign-number': 'MIND number assignment',
-        'mind-tn-check': 'MIND number ownership check',
-        'mind-tn-taken': 'Number already in MIND — disconnect in EspressoDID',
-        'mind-tn-replace': 'Replacement number order',
-        'mind-assign-verify': 'MIND number assignment not confirmed',
+        'uboss-pool': 'Number pool',
+        'uboss-provisioning': 'Provisioning',
+        'uboss-start': 'Provisioning start',
         'payment-declined': 'Payment declined',
         'payment-gateway': 'Payment gateway',
-        'crm-sync': 'CRM sync'
+        'crm-sync': 'CRM sync',
+        'orchestration': 'Provisioning page — unexpected error',
+        'session-resume': 'Resuming an order'
     };
 
     const $ = id => document.getElementById(id);
@@ -56,6 +61,7 @@
         return {
             ...r,
             id: r.id || `legacy-${i}-${r.at}`,
+            system: SYSTEMS.includes(r.system) ? r.system : 'OTHER',
             source: r.source || 'client',
             severity: r.severity || 'error',
             context: r.context || {},
@@ -86,17 +92,18 @@
         }
     }
 
+    // Stage filter = the systems that have errors, in the fixed order
     function fillStageFilter() {
         const sel = $('fStage');
         const current = sel.value;
-        const stages = [...new Set(all.map(r => r.stage))].sort((a, b) => stageLabel(a).localeCompare(stageLabel(b)));
+        const present = SYSTEMS.filter(s => all.some(r => r.system === s));
         sel.innerHTML = '<option value="">All stages</option>' +
-            stages.map(s => `<option value="${esc(s)}">${esc(stageLabel(s))}</option>`).join('');
-        sel.value = stages.includes(current) ? current : '';
+            present.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+        sel.value = present.includes(current) ? current : '';
     }
 
     function haystack(r) {
-        return [r.email, r.businessName, r.orderNumber, r.account, r.stage, stageLabel(r.stage), r.detail,
+        return [r.email, r.businessName, r.orderNumber, r.account, r.system, r.stage, stageLabel(r.stage), r.detail,
             ...r.numbers, ...r.provisionJobs.map(j => j.jobId), ...r.provisionJobs.flatMap(j => j.numbers || []),
             r.context.reference]
             .filter(Boolean).join(' ').toLowerCase();
@@ -109,7 +116,7 @@
         const to = $('fTo').value ? new Date($('fTo').value + 'T23:59:59.999') : null;
         return all.filter(r => {
             if (sev && r.severity !== sev) return false;
-            if (stage && r.stage !== stage) return false;
+            if (stage && r.system !== stage) return false;
             if (src && r.source !== src) return false;
             const at = new Date(r.at);
             if (from && at < from) return false;
@@ -126,9 +133,9 @@
         $('kpi24h').textContent = errors.filter(r => new Date(r.at).getTime() >= dayAgo).length;
         $('kpiWarn').textContent = all.length - errors.length;
         const counts = {};
-        errors.forEach(r => { counts[r.stage] = (counts[r.stage] || 0) + 1; });
+        errors.forEach(r => { counts[r.system] = (counts[r.system] || 0) + 1; });
         const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-        $('kpiTop').textContent = top ? `${stageLabel(top[0])} (${top[1]})` : '–';
+        $('kpiTop').textContent = top ? `${top[0]} (${top[1]})` : '–';
         $('kpiTop').title = $('kpiTop').textContent;
     }
 
@@ -139,7 +146,7 @@
             <tr data-id="${esc(r.id)}">
                 <td class="when">${esc(fmtWhen(r.at))}</td>
                 <td>${sevChip(r.severity)}</td>
-                <td>${esc(stageLabel(r.stage))}<div class="muted">${r.source === 'server' ? 'Server' : 'Customer browser'}</div></td>
+                <td><b>${esc(r.system)}</b><div class="muted">${esc(stageLabel(r.stage))} · ${r.source === 'server' ? 'Server' : 'Customer browser'}</div></td>
                 <td>${r.businessName ? `${esc(r.businessName)}<div class="muted">${esc(r.email)}</div>` : esc(r.email || '--')}</td>
                 <td class="mono">${esc(r.orderNumber || '--')}</td>
                 <td class="detail" title="${esc(r.detail)}">${esc(r.detail || '--')}</td>
@@ -158,8 +165,8 @@
         openId = id;
         $('dBadges').innerHTML = sevChip(r.severity) +
             `<span class="chip">${r.source === 'server' ? 'Server' : 'Customer browser'}</span>`;
-        $('dTitle').textContent = stageLabel(r.stage);
-        $('dWhen').textContent = fmtWhen(r.at) + ' · ' + r.stage;
+        $('dTitle').textContent = `${r.system} — ${stageLabel(r.stage)}`;
+        $('dWhen').textContent = fmtWhen(r.at) + ' · ' + (r.stage || 'unknown');
 
         const jobs = r.provisionJobs.length
             ? r.provisionJobs.map(j => `<span class="mono">${esc(j.jobId)}</span> <span class="muted">[${esc((j.numbers || []).join(', '))}]</span>`).join('<br>')

@@ -1341,6 +1341,7 @@
         async function ensureNumbersFree(trunksList) {
             const email = getProvisioningContactData().emailAddress;
             for (;;) {
+                orchestrationPhase = 'mind-tn-check';
                 const numbers = [...new Set(trunksList.flatMap(t => t.numbers || []))];
                 if (!numbers.length) return trunksList;
                 setNumbersStep('active', 'Verifying your numbers...', 'Checking ' + numbers.length + ' number(s) are free to use');
@@ -1384,6 +1385,9 @@
 
                 console.warn('[mind] number(s) already in use elsewhere:', taken.join(', '), '— ordering replacements');
                 setNumbersStep('active', 'Replacing unavailable numbers...', taken.length + ' number(s) were already in use — ordering new ones');
+                // Ordering and waiting for the replacement is espresso work:
+                // an untagged failure from here on belongs there, not to MIND
+                orchestrationPhase = 'mind-tn-replace';
                 // Ordered BEFORE the trunks change: a reload in between finds
                 // the same taken set and gets this same order back.
                 const or = await fetch('/api/did/replace', {
