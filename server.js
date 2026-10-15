@@ -1030,31 +1030,235 @@ async function ensureNumbersInMindInventory(email, numbers, cityHint) {
     const pending = numbers.filter(n => !added.has(n));
     if (!pending.length) return { added: [...added], reused: true };
 
+    // No MIND city for this rate center: the add still runs, without a
+    // cityId — the API doesn't require one and MIND is what matters
     const cityId = await mindCityId(cityHint);
-    if (cityId == null) {
-        console.warn('[mind] no cityId found for', cityHint, '— skipping inventory add, PATCH may 403');
-        return { added: [...added], skipped: pending, noCityId: true };
-    }
+    if (cityId == null) console.warn('[mind] no cityId found for', cityHint, '— adding without one');
     for (const digits of pending) {
-        const payload = JSON.stringify({ telephoneNumbers: [{ start: digits, end: digits, cityId }] });
-        const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers`,
-            { method: 'POST', headers: {
-                'iristelx-api-key': MIND_API_KEY,
-                'Content-Type': 'application/json', 'Accept': 'application/json',
-                'Content-Length': Buffer.byteLength(payload)
-            } }, payload);
-        const dup = r.status === 400 && /exist/i.test(r.raw || '');
-        if ((r.status < 200 || r.status >= 300) && !dup) {
-            throw new Error(`MIND inventory add failed for ${digits} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
-        }
-        // A 200 with an empty telephoneNumbers array is still success — the
-        // number lands in MIND's *reserved* pool (visible via GET
-        // /telephone-numbers/reserved, not the catalogue), per Shivam.
-        added.add(digits);
-        console.log('[mind] inventory', dup ? 'already had' : 'added', digits, '(cityId', cityId + ')');
+        // A number MIND already had is not this customer's to claim — it
+        // stays out of `added`, which is what marks a number as ours
+        if (await mindInventoryAdd(digits, cityId, cityHint) === 'inserted') added.add(digits);
+        else console.warn('[mind] inventory already had', digits, '— not recorded as this customer\'s');
     }
     stateSet(key, { email: normEmail(email), cityId, added: [...added] });
     return { added: [...added], reused: false };
+}
+
+// Adds one number to MIND's inventory (the *reserved* pool, per Shivam).
+// The response is layered and comes back HTTP 200 either way:
+//   - MIND:      "INSERTED IN MIND", or "NOT INSERTED IN MIND … already
+//                exists" (code 3100) → the number is used by someone.
+//   - IristelX DB: may add "NOT INSERTED IN THE DATABASE … ER_DUP_ENTRY" —
+//                IGNORED: the lookups that ran before the add already catch
+//                numbers that are in the pool, and MIND is what matters.
+// MIND's layer is the verdict ('inserted' | 'exists'); anything else throws.
+async function mindInventoryAdd(digits, cityId, cityHint) {
+    const entry = { start: digits, end: digits };
+    if (cityId != null) entry.cityId = cityId;
+    const payload = JSON.stringify({ telephoneNumbers: [entry] });
+    const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers`,
+        { method: 'POST', headers: {
+            'iristelx-api-key': MIND_API_KEY,
+            'Content-Type': 'application/json', 'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+        } }, payload);
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    const errors = data && Array.isArray(data.errors) ? data.errors : [];
+    const mindErrors = errors.filter(x => !/DATABASE|ER_DUP_ENTRY/i.test(JSON.stringify(x)));
+    if ((r.status === 400 && /exist/i.test(r.raw || '')) || mindErrors.some(x => /exist/i.test(JSON.stringify(x)))) {
+        return 'exists';
+    }
+    const inserted = (data && Array.isArray(data.telephoneNumbers) ? data.telephoneNumbers : [])
+        .some(t => /INSERTED IN MIND/i.test(String(t && t.status || '')));
+    if (r.status < 200 || r.status >= 300 || mindErrors.length || !inserted) {
+        const noCity = cityId == null;
+        const err = new Error(`MIND inventory add failed for ${digits} (HTTP ${r.status})`
+            + (noCity ? ` — MIND has no city for ${cityHint || 'this rate center'}, ask the MIND team to add it` : '')
+            + `: ${String(r.raw || '').slice(0, 200)}`);
+        err.status = 502;
+        throw err;
+    }
+    console.log('[mind] inventory added', digits, cityId != null ? `(cityId ${cityId})` : '(no cityId)');
+    return 'inserted';
+}
+
+// Marks a number as added to MIND by this customer — i.e. theirs from now on
+function rememberInventoryAdd(email, digits, cityId) {
+    const key = `mindinv:${normEmail(email)}`;
+    const seen = stateGet(key) || {};
+    const added = new Set(seen.added || []);
+    added.add(digits);
+    stateSet(key, { ...seen, email: normEmail(email), cityId: seen.cityId || cityId, added: [...added] });
+}
+
+// MIND expects the 11-digit E.164-without-plus form (e.g. 12045551234)
+function mindDigits(n) {
+    const d = String(n).replace(/\D/g, '');
+    return d.length === 10 ? '1' + d : d;
+}
+
+// Who already holds a number in MIND: one row per service carrying it, []
+// when nobody does; row.code is that service's id. Only the 11-digit form
+// matches — a 10-digit query silently comes back empty, i.e. a false "free".
+// (The newer /account-details-with-phone misses SIP trunk services, so this
+// is the lookup.) Fails closed: an unclear answer is never read as "free".
+async function mindNumberHolders(number) {
+    const digits = mindDigits(number);
+    const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers/account-details/${encodeURIComponent(digits)}`,
+        { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
+    let rows = null;
+    try { rows = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !Array.isArray(rows)) {
+        const err = new Error(`MIND number lookup failed for ${digits} (HTTP ${r.status}): ${String(r.raw || '').slice(0, 200)}`);
+        err.status = 502;
+        throw err;
+    }
+    return rows;
+}
+
+// MIND's number inventory entry for a number, or null. This is where a
+// trunk's EXTRA DIDs live: a service carries only one number (the primary),
+// so the rest sit here — serviceId null, inUse false — and the service
+// lookup above never sees them. Same 11-digit rule (a 10-digit fullNumber is
+// a 400) and the same fail-closed handling.
+async function mindInventoryEntry(number) {
+    const digits = mindDigits(number);
+    const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers/reserved?fullNumber=${encodeURIComponent(digits)}`,
+        { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !data || !Array.isArray(data.telephoneNumbers)) {
+        const err = new Error(`MIND inventory lookup failed for ${digits} (HTTP ${r.status}): ${String(r.raw || '').slice(0, 200)}`);
+        err.status = 502;
+        throw err;
+    }
+    return data.telephoneNumbers.find(t => mindDigits(t.telephoneNumber) === digits) || null;
+}
+
+// Which MIND account holds a number, per account-details-with-phone (the
+// UBoss-gateway lookup Shivam listed as step 4). Returns [{code, product}]
+// — account codes only, never names or contact details. Best-effort: used
+// to enrich ops alerts and verify assignments, so a failure returns [].
+async function mindPhoneAccounts(number) {
+    try {
+        const digits = mindDigits(number);
+        const r = await httpsRequest(`${BILLING_API_URL}/account-details-with-phone?telephoneNumber=${encodeURIComponent(digits)}`,
+            { headers: { 'x-api-key': UBOSS_API_KEY, 'Accept': 'application/json' } });
+        const data = JSON.parse(r.raw);
+        if (r.status < 200 || r.status >= 300 || !Array.isArray(data.accounts)) return [];
+        return data.accounts.map(a => ({ code: String(a.code || a.accountId || ''), product: (a.product && a.product.code) || null }));
+    } catch (e) {
+        return [];
+    }
+}
+
+// Is a number free to use for this customer's order?
+//   taken — on someone else's service, in the inventory as an extra DID this
+//           customer never added (another order's numbers 2..n), or known to
+//           MIND in a state neither lookup shows (it refuses to add it)
+//   ours  — only on this order's service / added to inventory by this
+//           customer (a reload or resume after we linked it)
+//   free  — MIND has never heard of it
+// A number both lookups call free is then ADDED to the inventory (Shivam's
+// step 1) — the add is the final word: MIND says "already exists" for
+// numbers it holds in states no lookup returns (e.g. run 1's numbers sat on
+// a wholesale account), and a successful add claims the number for this
+// customer. Step 2: the add is confirmed by reading the pool back.
+async function numberVerdict(email, number, serviceId, cityId, cityHint) {
+    const [rows, inv] = await Promise.all([mindNumberHolders(number), mindInventoryEntry(number)]);
+    if (!rows.length && !inv) {
+        const digits = mindDigits(number);
+        if (await mindInventoryAdd(digits, cityId, cityHint) === 'exists') {
+            return { verdict: 'taken', via: 'mind', holderServiceId: null, holderPlan: null };
+        }
+        // Shivam's step 2: Get Number — the pool must now show it
+        if (!(await mindInventoryEntry(number))) {
+            const err = new Error(`Number ${digits} was added to MIND but is not in the reserved pool`);
+            err.status = 502;
+            throw err;
+        }
+        rememberInventoryAdd(email, digits, cityId);
+        return { verdict: 'free' };
+    }
+    const foreign = rows.find(r => !serviceId || String(r.code) !== String(serviceId));
+    if (foreign) {
+        return { verdict: 'taken', via: 'service', holderServiceId: String(foreign.code || ''), holderPlan: foreign.planCode || null };
+    }
+    if (inv && inv.serviceId && String(inv.serviceId) !== String(serviceId)) {
+        return { verdict: 'taken', via: 'inventory', holderServiceId: String(inv.serviceId), holderPlan: null };
+    }
+    if (inv && !inv.serviceId) {
+        const added = (stateGet(`mindinv:${normEmail(email)}`) || {}).added || [];
+        if (!added.includes(mindDigits(number))) {
+            return { verdict: 'taken', via: 'inventory', holderServiceId: null, holderPlan: null };
+        }
+    }
+    return { verdict: rows.length || inv ? 'ours' : 'free' };
+}
+
+// The gate before a delivered number goes anywhere (MIND, UBoss). A taken
+// number was still bought from espresso, which has no API to hand it back —
+// so it is listed under didrelease: and reported once, for a manual
+// disconnect in the EspressoDID portal. Only the holder's service id and
+// plan are kept: the rows also carry the other customer's contact details.
+async function checkNumbersInMind(email, numbers, serviceId, cityHint) {
+    const e = normEmail(email);
+    const cityId = await mindCityId(cityHint);
+    const lookups = await Promise.all(numbers.map(async n => ({ number: n, ...(await numberVerdict(e, n, serviceId, cityId, cityHint)) })));
+    const out = { free: [], ours: [], taken: [] };
+    for (const { number, verdict, via, holderServiceId, holderPlan } of lookups) {
+        if (verdict !== 'taken') { out[verdict].push(number); continue; }
+        const entry = { number, via, holderServiceId, holderPlan };
+        // Name the holding MIND account in the ops alert where we can
+        if (via === 'mind') entry.holders = await mindPhoneAccounts(number);
+        out.taken.push(entry);
+        flagTakenNumber(e, entry);
+    }
+    console.log('[mind] number check for', e, '— free:', out.free.length, 'ours:', out.ours.length, 'taken:', out.taken.length);
+    return out;
+}
+
+// A taken number was still bought from espresso, which has no API to hand it
+// back — list it under didrelease: and report it once, for a manual disconnect
+// in the EspressoDID portal.
+function flagTakenNumber(email, entry) {
+    const releaseKey = `didrelease:${email}`;
+    const release = (stateGet(releaseKey) || {}).numbers || [];
+    if (release.some(x => mindDigits(x.number) === mindDigits(entry.number))) return;  // already reported
+    stateSet(releaseKey, { email, numbers: [...release, { ...entry, at: new Date().toISOString() }] });
+    const holders = (entry.holders || []).map(h => `${h.code}${h.product ? ' (' + h.product + ')' : ''}`).join(', ');
+    const where = entry.via === 'service'
+        ? `is already on MIND service ${entry.holderServiceId} (plan ${entry.holderPlan || 'unknown'})`
+        : entry.via === 'mind'
+            ? (holders ? `is already held by MIND account ${holders}`
+                : 'is already known to MIND (it refuses to add or attach it — held or recently released)')
+            : entry.holderServiceId
+                ? `is already in MIND's number inventory, attached to service ${entry.holderServiceId}`
+                : "is already in MIND's number inventory (an extra DID on another order)";
+    recordSnag(email, 'mind-tn-taken',
+        `Number ${entry.number} ${where}. It was bought from espresso but cannot be used — `
+        + 'disconnect it in the EspressoDID portal (DID Disconnect). A replacement is being ordered automatically.',
+        { source: 'server', severity: 'error', context: entry })
+        .catch(err => console.error('[SNAG] taken-number report failed -', err.message));
+}
+
+// espresso ratecenter of the customer's current order — doubles as the MIND
+// city name. The newest in-flight order wins: a rejected or finished order
+// from earlier may still be on file under another rate center.
+function orderRatecenter(email) {
+    const e = normEmail(email);
+    let best = null;
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v) continue;
+        const req0 = (v.requests || [])[0];
+        if (!req0 || !req0.ratecenter) continue;
+        const rank = [v.status !== 'done' ? 1 : 0, v.createdAt || 0];
+        if (!best || rank[0] > best.rank[0] || (rank[0] === best.rank[0] && rank[1] > best.rank[1])) {
+            best = { rank, ratecenter: req0.ratecenter };
+        }
+    }
+    return best && best.ratecenter;
 }
 
 async function assignNumbersToMindService(email, serviceId, accountId, numbers, cityHint) {
@@ -1070,20 +1274,37 @@ async function assignNumbersToMindService(email, serviceId, accountId, numbers, 
         return { assigned: seen.assigned, serviceId, reused: true };
     }
 
-    // MIND expects the 11-digit E.164-without-plus form (e.g. 12045551234)
-    const normalized = numbers.map(n => {
-        let d = String(n).replace(/\D/g, '');
-        return d.length === 10 ? '1' + d : d;
-    });
+    const normalized = numbers.map(mindDigits);
 
-    // Step 1: make sure ALL numbers exist in the MIND database (reserved
-    // pool). Non-fatal on cityId miss — the PATCH is the authoritative check.
+    // Never attach a number another customer's service already carries —
+    // the status page checks first, but resume/catch-up calls land here too.
+    const primary = normalized[0];
+    const cityId = await mindCityId(cityHint);
+    if ((await numberVerdict(email, primary, serviceId, cityId, cityHint)).verdict === 'taken') {
+        const err = new Error(`Number ${primary} is already held elsewhere in MIND — not attaching it`);
+        err.takenNumber = primary;
+        throw err;
+    }
+
+    // Shivam's step 1: ALL numbers go into the reserved pool — the primary
+    // so it can be attached, the extra DIDs so a later order can't be
+    // handed them ("if adding the same number again doesn't work, it means
+    // the number is used by someone").
     await ensureNumbersInMindInventory(email, normalized, cityHint);
 
-    // Step 2: the service carries a single MSISDN, so only the PRIMARY
+    // Step 2: Get Number — the primary must now sit in the pool, unattached
+    // (or already on this service, for a resume)
+    const pooled = await mindInventoryEntry(primary);
+    if (pooled && pooled.serviceId && String(pooled.serviceId) !== String(serviceId)) {
+        const err = new Error(`Number ${primary} is in the reserved pool on service ${pooled.serviceId} — not attaching it`);
+        err.takenNumber = primary;
+        throw err;
+    }
+    if (!pooled) console.warn('[mind] primary', primary, 'not visible in the reserved pool before attach — PATCH will decide');
+
+    // Step 3: the service carries a single MSISDN, so only the PRIMARY
     // number (first in the list — callers put trunk.primaryNumber first)
     // is attached; the rest stay in the reserved pool against this unit.
-    const primary = normalized[0];
     const payload = JSON.stringify({ telephoneNumber: primary });
     const r = await httpsRequest(
         `${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(serviceId)}/telephone-number`,
@@ -1094,12 +1315,38 @@ async function assignNumbersToMindService(email, serviceId, accountId, numbers, 
         } },
         payload);
     if (r.status < 200 || r.status >= 300) {
-        throw new Error(`MIND telephone-number update failed for ${primary} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
+        const err = new Error(`MIND telephone-number update failed for ${primary} (HTTP ${r.status}): ${r.raw.slice(0, 200)}`);
+        // 10008 "no longer available": MIND holds the number in a state the
+        // lookups don't show — it can't be this customer's, so it is taken
+        if (/no longer available|"10008"|:10008\b/i.test(r.raw || '')) err.takenNumber = primary;
+        throw err;
     }
     const assigned = [primary];
     console.log('[mind] assigned primary', primary, 'to service', serviceId, 'on account', accountId,
         normalized.length > 1 ? `(${normalized.length - 1} more in reserved pool)` : '');
-    stateSet(key, { email: normEmail(email), accountId: String(accountId), serviceId: String(serviceId), numbers: wanted, assigned });
+
+    // Confirm the attach took. (a) The pool entry is the reliable signal:
+    // it must now show inUse on this service. (b) Shivam's step 4 lookup is
+    // recorded for evidence — what it returns for an attached SIP trunk
+    // number is still being established, so it never blocks.
+    let verify = null;
+    try {
+        const after = await mindInventoryEntry(primary);
+        const confirmed = !!(after && after.inUse && String(after.serviceId || '') === String(serviceId));
+        const step4 = await mindPhoneAccounts(primary);
+        verify = { confirmed, inUse: after ? after.inUse : null, poolServiceId: after ? after.serviceId : null, step4 };
+        console.log('[mind] attach verify for', primary, '—', confirmed ? 'confirmed' : 'NOT confirmed',
+            '| pool:', JSON.stringify(after && { inUse: after.inUse, serviceId: after.serviceId }),
+            '| account-details-with-phone:', JSON.stringify(step4));
+        if (!confirmed) {
+            reportServerError(email, 'mind-assign-verify',
+                new Error(`Primary ${primary} attached to service ${serviceId} but the reserved pool does not confirm it`),
+                { primary, serviceId, accountId, pool: after, step4 }, 'warning');
+        }
+    } catch (e) {
+        console.warn('[mind] attach verify failed for', primary, '-', e.message);
+    }
+    stateSet(key, { email: normEmail(email), accountId: String(accountId), serviceId: String(serviceId), numbers: wanted, assigned, verify });
     return { assigned, serviceId, reused: false };
 }
 
@@ -1766,6 +2013,34 @@ async function handleApi(req, res, pathname) {
             });
             return sendJson(res, 200, result);
         }
+        // Replacements for delivered numbers MIND says are already taken.
+        // Kept out of order: — every reader treats that record as THE order —
+        // and keyed on the taken set, so a reload never buys the same
+        // replacement twice.
+        if (pathname === '/api/did/replace' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            const taken = Array.isArray(body.taken) ? body.taken.map(String) : [];
+            const requests = Array.isArray(body.requests) ? body.requests : [];
+            if (!taken.length || !requests.length) {
+                return sendJson(res, 400, { error: 'taken[] and requests[] are required' });
+            }
+            for (const r of requests) {
+                if (!r.ratecenter || !r.npa) return sendJson(res, 400, { error: 'each request needs ratecenter and npa' });
+            }
+            const email = normEmail(body.email);
+            const key = `didreplace:${email}::${taken.slice().sort().join(',')}`;
+            const seen = stateGet(key, { activeOnly: true });
+            if (seen && seen.orderNumber) {
+                console.log('[order] replacement already placed for', key, '→', seen.orderNumber);
+                return sendJson(res, 200, { ...seen, duplicate: true });
+            }
+            const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef })
+                .catch(reportAndRethrow(email, 'mind-tn-replace', { taken, requests }));
+            console.warn('[order] replacement for MIND-taken', taken.join(', '), '→', result.orderNumber);
+            stateSet(key, { orderNumber: result.orderNumber, orderNumbers: result.orderNumbers, email, taken, requests });
+            return sendJson(res, 200, result);
+        }
         // Read-only MIND account lookup, proxied because api.iristelx.com
         // sends no CORS headers — a browser fetch dies on the preflight and
         // the signup prefill silently fell back to "Test User".
@@ -1788,6 +2063,24 @@ async function handleApi(req, res, pathname) {
             return sendJson(res, 200,
                 await createMindService(body.email, body.accountId, body.planCode, body.contact || {})
                     .catch(reportAndRethrow(body.email, 'mind-service', { accountId: body.accountId, planCode: body.planCode || null })));
+        }
+        // Is any of these numbers already on someone else's MIND service?
+        // Gates provisioning — the status page replaces a taken number before
+        // UBoss ever sees it (UBoss burns every number it touches).
+        if (pathname === '/api/mind/check-numbers' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            if (!Array.isArray(body.numbers) || !body.numbers.length) {
+                return sendJson(res, 400, { error: 'numbers[] is required' });
+            }
+            const email = normEmail(body.email);
+            // This order's service — a number on it is ours, not taken
+            const serviceId = body.serviceId
+                || (stateGet(`service:${email}`, { activeOnly: true }) || {}).serviceId
+                || (stateGet(`mindassign:${email}`, { activeOnly: true }) || {}).serviceId
+                || null;
+            return sendJson(res, 200, await checkNumbersInMind(email, body.numbers, serviceId, body.city || orderRatecenter(email))
+                .catch(reportAndRethrow(email, 'mind-tn-check', { numbers: body.numbers, serviceId })));
         }
         if (pathname === '/api/mind/assign-number' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
@@ -1824,6 +2117,13 @@ async function handleApi(req, res, pathname) {
             try {
                 return sendJson(res, 200, await assignNumbersToMindService(email, serviceId, accountId, wanted, cityHint));
             } catch (e) {
+                // A number MIND won't attach is taken: the status page
+                // replaces it before UBoss, like a failed check
+                if (e.takenNumber) {
+                    const entry = { number: e.takenNumber, via: 'mind', holderServiceId: null, holderPlan: null };
+                    flagTakenNumber(email, entry);
+                    return sendJson(res, 200, { assigned: [], error: e.message, taken: [entry] });
+                }
                 // Reported but never customer-blocking — same policy as CRM sync
                 console.error('[mind] assignment failed:', e.message);
                 reportServerError(email, 'mind-assign-number', e, { serviceId: serviceId || null, accountId, numbers: wanted });

@@ -623,16 +623,20 @@
 
         // Attach the ordered numbers to the MIND service (Update Telephone
         // Number API) — without this the number provisions in UBoss but never
-        // shows on the service in MIND. Fire-and-forget like the CRM sync:
-        // a failure is support's problem, never the customer's. De-duped by
-        // the number set so reloads don't re-PATCH.
+        // shows on the service in MIND. A failure is support's problem, never
+        // the customer's — except a number MIND refuses as taken, which the
+        // response lists in `taken` for ensureNumbersFree to replace. Resolves
+        // to the server's answer (null when skipped). De-duped by the number
+        // set so reloads don't re-PATCH.
         function assignNumbersToMind(trunksList) {
-            const numbers = [...new Set(trunksList.flatMap(t => t.numbers || []))];
-            if (!numbers.length) return;
+            // The server attaches the first number to the service — the primary
+            const numbers = [...new Set(trunksList.flatMap(t =>
+                [t.primaryNumber, ...(t.numbers || [])].filter(Boolean)))];
+            if (!numbers.length) return Promise.resolve(null);
             const dedupeKey = numbers.slice().sort().join(',');
-            if (getCookie('sip_mindAssigned') === dedupeKey) return;
+            if (getCookie('sip_mindAssigned') === dedupeKey) return Promise.resolve(null);
             const contact = getProvisioningContactData();
-            fetch('/api/mind/assign-number', {
+            return fetch('/api/mind/assign-number', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -651,7 +655,8 @@
                 } else {
                     console.error('[mind] number assignment did not complete:', d && d.error);
                 }
-            }).catch(err => console.error('[mind] number assignment failed:', err.message));
+                return d;
+            }).catch(err => { console.error('[mind] number assignment failed:', err.message); return null; });
         }
 
         // The robot reports e.g. "Step 03: Create enterprise". Map the step
@@ -1249,7 +1254,9 @@
 
         async function waitForNumberOrder(trunksList) {
             const didOrderNumber = getCookie('sip_didOrderNumber');
-            if (!didOrderNumber || !trunksNeedNumbers(trunksList)) {
+            // "Short", not just "empty": a replacement order tops up a trunk
+            // that still holds its other numbers
+            if (!didOrderNumber || !trunksShortOfNumbers(trunksList)) {
                 setNumbersStep('done', 'Numbers ready', 'Your numbers are assigned');
                 return trunksList;
             }
@@ -1263,6 +1270,15 @@
                 const orderStatus = String(sd.status || '');
                 console.log('DID order', didOrderNumber, 'status:', orderStatus);
                 if (/^completed$/i.test(orderStatus)) break;
+                if (/rejected|canceled/i.test(orderStatus) && getCookie('sip_tnCheckRound')) {
+                    // A REPLACEMENT order — the customer's order is already
+                    // paid and placed, so sending them back to pick numbers
+                    // would be wrong. Support takes it from here.
+                    deleteCookie('sip_didOrderNumber');
+                    const err = new Error('Replacement number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase());
+                    err.snagStage = 'mind-tn-replace';
+                    throw err;
+                }
                 if (/rejected|canceled/i.test(orderStatus)) {
                     // A rejection is almost always "not enough available
                     // numbers in the rate center" — recoverable by picking a
@@ -1297,6 +1313,89 @@
             setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered');
             document.getElementById('detailNumber').textContent = displayPrimaryNumber(trunksList) || '--';
             return trunksList;
+        }
+
+        // ============================================
+        // Phase A2: make sure MIND doesn't already have a delivered number on
+        // another customer's service. A taken one is dropped and re-ordered —
+        // espresso has no API to hand it back, so the server flags it for a
+        // manual disconnect. Must finish before UBoss, which burns every
+        // number it sees. The replacement count survives a reload, and the
+        // server's guard means a reload mid-replacement re-uses the order.
+        // ============================================
+        const MAX_TN_REPLACEMENTS = 3;
+
+        async function ensureNumbersFree(trunksList) {
+            const email = getProvisioningContactData().emailAddress;
+            for (;;) {
+                const numbers = [...new Set(trunksList.flatMap(t => t.numbers || []))];
+                if (!numbers.length) return trunksList;
+                setNumbersStep('active', 'Verifying your numbers...', 'Checking ' + numbers.length + ' number(s) are free to use');
+
+                const r = await fetch('/api/mind/check-numbers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, numbers: numbers, serviceId: getCookie('sip_serviceId') || '' })
+                });
+                const d = await r.json().catch(() => null);
+                if (!r.ok || !d) {
+                    // Fail closed — an unverified number never reaches UBoss
+                    const err = new Error('Could not verify the numbers in MIND: ' + ((d && d.error) || ('HTTP ' + r.status)));
+                    err.snagStage = 'mind-tn-check';
+                    throw err;
+                }
+                let taken = (d.taken || []).map(t => t.number);
+                if (!taken.length) {
+                    // Link them in MIND now, still before UBoss: MIND can
+                    // refuse a number the checks passed ("no longer
+                    // available"), and that one gets replaced too
+                    const link = await assignNumbersToMind(trunksList);
+                    taken = ((link && link.taken) || []).map(t => t.number);
+                }
+                if (!taken.length) {
+                    deleteCookie('sip_tnCheckRound');
+                    setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered and verified');
+                    return trunksList;
+                }
+
+                const replaced = parseInt(getCookie('sip_tnCheckRound') || '0', 10);
+                const requests = replacementRequests(trunksList, taken);
+                const replaceable = requests.reduce((s, q) => s + q.quantity, 0);
+                if (replaced >= MAX_TN_REPLACEMENTS || replaceable < taken.length) {
+                    const err = new Error('Number(s) ' + taken.join(', ') + ' already in use in MIND'
+                        + (replaceable < taken.length ? ' and cannot be re-ordered (no number request on the trunk)'
+                            : ' after ' + replaced + ' replacement order(s)'));
+                    err.snagStage = 'mind-tn-taken';
+                    throw err;
+                }
+
+                console.warn('[mind] number(s) already in use elsewhere:', taken.join(', '), '— ordering replacements');
+                setNumbersStep('active', 'Replacing unavailable numbers...', taken.length + ' number(s) were already in use — ordering new ones');
+                // Ordered BEFORE the trunks change: a reload in between finds
+                // the same taken set and gets this same order back.
+                const or = await fetch('/api/did/replace', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: email,
+                        accountRef: getCookie('iristel_account_id') || null,
+                        taken: taken,
+                        requests: requests
+                    })
+                });
+                const order = await or.json().catch(() => null);
+                if (!or.ok || !order || !order.orderNumber) {
+                    const err = new Error('Replacement number order failed: ' + ((order && order.error) || ('HTTP ' + or.status)));
+                    err.snagStage = 'mind-tn-replace';
+                    throw err;
+                }
+
+                removeNumbersFromTrunks(trunksList, taken);
+                setCookie('sip_tnCheckRound', String(replaced + 1));
+                setCookie('sip_didOrderNumber', order.orderNumber);
+                saveTrunksToServer(trunksList);
+                await waitForNumberOrder(trunksList);
+            }
         }
 
         // ============================================
@@ -1388,6 +1487,8 @@
 
             setCookie('sip_didOrderNumber', order.orderNumber);
             setCookie('sip_trunks', JSON.stringify(trunksList));
+            // A whole new set of numbers — MIND-check replacements start over
+            deleteCookie('sip_tnCheckRound');
             await saveTrunksToServer(trunksList, email);
 
             // Same job-state reset as the timeout retry
@@ -1497,9 +1598,10 @@
                         document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
                         'Configuring trunk on platform', 'Starts once your numbers are assigned');
                     await waitForNumberOrder(trunksList);
-                    // Numbers exist now — attach them to the MIND service in
-                    // parallel with UBoss provisioning.
-                    assignNumbersToMind(trunksList);
+                    // Nothing goes further until MIND confirms no one else
+                    // already has these numbers and has linked them to the
+                    // service (taken ones get replaced)
+                    await ensureNumbersFree(trunksList);
                     document.getElementById('statusTitle').textContent = 'Currently provisioning your trunk...';
                     jobId = await ensureUbossStarted(trunksList);
                     document.getElementById('detailJobId').textContent = jobId;

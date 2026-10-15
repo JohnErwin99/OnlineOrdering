@@ -20,6 +20,10 @@
         'mind-account': 'MIND account',
         'mind-service': 'MIND service',
         'mind-assign-number': 'MIND number assignment',
+        'mind-tn-check': 'MIND number ownership check',
+        'mind-tn-taken': 'Number already in MIND — disconnect in EspressoDID',
+        'mind-tn-replace': 'Replacement number order',
+        'mind-assign-verify': 'MIND number assignment not confirmed',
         'payment-declined': 'Payment declined',
         'payment-gateway': 'Payment gateway',
         'crm-sync': 'CRM sync'

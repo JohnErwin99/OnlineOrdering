@@ -182,16 +182,32 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
     return provisionJobs;
 }
 
+// How many numbers a trunk asked for (a trunk with no requests holds one)
+function trunkWantedCount(trunk) {
+    return (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0) || 1;
+}
+
+// Last 10 digits — trunks and espresso don't agree on the +1
+function tenDigits(n) {
+    return String(n || '').replace(/\D/g, '').slice(-10);
+}
+
 // Distribute an espresso DID order's numbers across the trunks in request
-// order. Mutates trunksList and persists the cookies the rest of the flow reads.
+// order, topping each trunk up to its requested count — so the same pass
+// places a first delivery and the replacements for numbers MIND rejected.
+// Numbers already on a trunk are skipped. Mutates trunksList and persists
+// the cookies the rest of the flow reads.
 function distributeOrderedNumbers(trunksList, numbers) {
+    const placed = new Set(trunksList.flatMap(t => (t.numbers || []).map(tenDigits)));
+    const fresh = numbers.filter(n => !placed.has(tenDigits(n)));
     let cursor = 0;
     trunksList.forEach(trunk => {
-        if (trunk.numbers && trunk.numbers.length) return;
-        const wanted = (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0) || 1;
-        trunk.numbers = numbers.slice(cursor, cursor + wanted);
-        trunk.primaryNumber = trunk.numbers[0] || '';
-        cursor += wanted;
+        const have = trunk.numbers || [];
+        const short = trunkWantedCount(trunk) - have.length;
+        if (short <= 0) return;
+        trunk.numbers = have.concat(fresh.slice(cursor, cursor + short));
+        if (!trunk.primaryNumber) trunk.primaryNumber = trunk.numbers[0] || '';
+        cursor += short;
     });
     setCookie('sip_trunks', JSON.stringify(trunksList));
     if (trunksList[0] && trunksList[0].primaryNumber) {
@@ -213,4 +229,46 @@ function loadTrunksFromCookie() {
 
 function trunksNeedNumbers(trunksList) {
     return trunksList.some(t => (!t.numbers || !t.numbers.length) && (t.requests || []).length);
+}
+
+// Any trunk with requests still holding fewer numbers than it asked for —
+// e.g. after MIND-taken numbers were dropped awaiting their replacements
+function trunksShortOfNumbers(trunksList) {
+    return trunksList.some(t => (t.requests || []).length && (t.numbers || []).length < trunkWantedCount(t));
+}
+
+// What to re-order for numbers MIND says are taken: one each, from the
+// trunk's request in the same area code (else its first request). A number
+// on a trunk with no request can't be re-ordered and is left out — the
+// caller compares the counts. Pure: the trunks are not touched.
+function replacementRequests(trunksList, taken) {
+    const drop = new Set(taken.map(tenDigits));
+    const byKey = new Map();
+    trunksList.forEach(trunk => {
+        const reqs = trunk.requests || [];
+        (trunk.numbers || []).forEach(n => {
+            const d = tenDigits(n);
+            if (!drop.has(d)) return;
+            const req = reqs.find(r => String(r.npa) === d.slice(0, 3)) || reqs[0];
+            if (!req) return;
+            const key = req.ratecenter + '|' + req.npa;
+            const entry = byKey.get(key) || { ratecenter: req.ratecenter, npa: req.npa, quantity: 0 };
+            entry.quantity++;
+            byKey.set(key, entry);
+        });
+    });
+    return [...byKey.values()];
+}
+
+// Take MIND-taken numbers off their trunks so distributeOrderedNumbers tops
+// them up from the replacement order. Persists like distributeOrderedNumbers.
+function removeNumbersFromTrunks(trunksList, taken) {
+    const drop = new Set(taken.map(tenDigits));
+    trunksList.forEach(trunk => {
+        trunk.numbers = (trunk.numbers || []).filter(n => !drop.has(tenDigits(n)));
+        if (drop.has(tenDigits(trunk.primaryNumber))) trunk.primaryNumber = trunk.numbers[0] || '';
+    });
+    setCookie('sip_trunks', JSON.stringify(trunksList));
+    if (trunksList[0] && trunksList[0].primaryNumber) setCookie('sip_primaryNumber', trunksList[0].primaryNumber);
+    else deleteCookie('sip_primaryNumber');
 }
