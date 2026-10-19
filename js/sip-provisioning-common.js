@@ -6,16 +6,31 @@
 
 // ============================================
 // Pricing — single source of truth for the whole ordering flow.
-// Channels and DIDs are billed independently: a trunk's monthly cost is
-// channels * CHANNEL_MONTHLY + dids * DID_MONTHLY. Rates pending final
-// confirmation from Fabio.
+// A SIP trunk always includes one DID; channels and additional DIDs are
+// billed on top: a trunk's monthly cost is
+//   channels * CHANNEL_MONTHLY + (dids - INCLUDED_DIDS) * DID_MONTHLY.
+// server.js mirrors INCLUDED_DIDS for MIND's EXLNP_SBDID quantity.
 // ============================================
 const SIP_PRICING = {
     CHANNEL_MONTHLY: 25.00,
-    DID_MONTHLY: 2.00,
+    DID_MONTHLY: 2.00,       // per DID beyond the included one
+    INCLUDED_DIDS: 1,        // every trunk comes with this many
     TAX_RATE: 0.13
 };
 window.SIP_PRICING = SIP_PRICING;
+
+// One trunk's monthly cost, before tax. DIDs are the requested quantity,
+// else the numbers already on the trunk; the first is included. The review
+// page prices with this, UBoss gets it as monthlyRecurringPrice, and the
+// server applies the same rule to MIND's channel/DID quantities.
+function getTrunkBilling(trunk) {
+    const channels = Math.max(1, parseInt(trunk.channels, 10) || 1);
+    const dids = (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
+        || (trunk.numbers || []).length || 0;
+    const extraDids = Math.max(0, dids - SIP_PRICING.INCLUDED_DIDS);
+    const monthly = channels * SIP_PRICING.CHANNEL_MONTHLY + extraDids * SIP_PRICING.DID_MONTHLY;
+    return { channels, dids, extraDids, monthly: Math.round(monthly * 100) / 100 };
+}
 
 // ============================================
 // UbossRobot API Configuration
@@ -129,6 +144,11 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
         // UbossRobot emails the welcome letter to notificationEmail as soon as
         // the job completes — no separate POST /email/{jobId} call is needed.
         sendWelcomeLetterToNotificationEmail: true,
+        // Shown on the my.iristel dashboard
+        location: (getCookie('sip_siteName') || '').trim(),
+        serviceReference: getCookie('sip_serviceId') || '',
+        planName: getCookie('iristel_selected_plan_name') || getCookie('iristel_selected_plan') || 'SIP Trunk',
+        monthlyRecurringPrice: opts.monthlyRecurringPrice,
         force: !!opts.force
     };
 
@@ -168,8 +188,9 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
         try {
             // Channel count = the user-chosen capacity, independent of how
             // many numbers ride on the trunk.
+            const billing = getTrunkBilling(trunk);
             const ubossResult = await startUbossProvisioning(contactData, trunkNumbers, accountId,
-                Math.max(1, parseInt(trunk.channels, 10) || 1), options);
+                billing.channels, Object.assign({}, options, { monthlyRecurringPrice: billing.monthly }));
             console.log('UbossRobot job started for', trunk.name, ':', ubossResult.id);
             provisionJobs.push({ trunkName: trunk.name || ('Trunk ' + (i + 1)), jobId: ubossResult.id });
         } catch (err) {

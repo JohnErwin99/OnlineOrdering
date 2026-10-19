@@ -265,11 +265,9 @@ async function submitForm() {
     // The server reuses an account that already exists for this email —
     // checking its own records first, then asking MIND directly — so a
     // customer whose first order failed and who starts again from signup
-    // gets their original account instead of a second one.
-    //
-    // TEST ONLY: accountId pins every signup to the shared test account.
-    // Delete that line to go live; the server then finds or creates the
-    // customer's real account, and nothing else here changes.
+    // gets their original account instead of a second one. (No account id
+    // is pinned any more: the email decides — an existing MIND account for
+    // it is reused, otherwise a new one is created.)
     const signupEmail = document.getElementById('email').value.trim();
     const postalCodeValue = document.getElementById('postalCode').value.trim().replace(/\s/g, '');
 
@@ -291,8 +289,7 @@ async function submitForm() {
                     emailAddress: signupEmail,
                     phone: document.getElementById('phone').value.trim(),
                     language: document.getElementById('language').value
-                },
-                accountId: '1204506'   // TEST ONLY — remove at launch
+                }
             })
         });
         const acctData = await acctResp.json().catch(() => null);
@@ -409,15 +406,19 @@ async function prefillTestData() {
         const contact = data.contact || data;
         const phone = contact.phone || {};
 
+        // Everything but the email: the tester types the email, and the
+        // server checks it for an existing MIND account before creating one.
+        // The password is never sent anywhere; it only has to pass the rules.
         const fieldMap = {
             firstName:  contact.fname || '',
             lastName:   contact.lname || '',
-            email:      contact.emailAddress || contact.email || '',
-            phone:      phone.mobile || phone.home || phone.work || '',
+            password:   'TestPass123',
+            // The test account has no phone on file; the form requires one
+            phone:      phone.mobile || phone.home || phone.work || '5145550100',
             address1:   contact.address1 || '',
             city:       contact.city || '',
             province:   contact.province || '',
-            postalCode: contact.postalCode || '',
+            postalCode: (contact.postalCode || '').toUpperCase().replace(/\s/g, ''),
             country:    contact.country || '',
             language:   data.language || 'EN'
         };
@@ -433,7 +434,7 @@ async function prefillTestData() {
         // Fallback if API fails
         document.getElementById('firstName').value = 'Test';
         document.getElementById('lastName').value = 'User';
-        document.getElementById('email').value = 'test@example.com';
+        document.getElementById('password').value = 'TestPass123';
         document.getElementById('country').value = 'CA';
         document.getElementById('language').value = 'EN';
     }

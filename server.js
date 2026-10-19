@@ -949,6 +949,123 @@ async function createMindService(email, accountId, planCode, contact) {
     return { serviceId: String(serviceId), reused: false };
 }
 
+// ============================================
+// MIND SERVICE QUANTITIES — channels and DIDs, set once the customer has paid
+// ============================================
+// The SIP trunk service carries one billable line per channel
+// (EXLNP_SBSIPTRNK) and one per additional DID (EXLNP_SBDID — the first DID
+// comes with the trunk). Their quantities are set
+// with PUT /accounts/{acct}/services/{svc}/quantity, from the order as placed
+// — the same rule the review page priced it with, so MIND bills what the
+// customer was charged. MIND has no read-back for quantities (the add-on list
+// doesn't carry them), so the PUT's own answer is the confirmation.
+// Every trunk includes one DID (mirrors SIP_PRICING.INCLUDED_DIDS in
+// js/sip-provisioning-common.js), so EXLNP_SBDID carries only the ADDITIONAL
+// DIDs (0 when each trunk has just its included one).
+const SIP_QTY_CODES = { channels: 'EXLNP_SBSIPTRNK', extraDids: 'EXLNP_SBDID' };
+const INCLUDED_DIDS_PER_TRUNK = 1;
+
+// Channels and DIDs for the customer's current order: the newest in-flight
+// order record's trunks, else the trunks the browser sent (an order that
+// needed no DID order has no record).
+function orderQuantities(email, fallbackTrunks) {
+    const e = normEmail(email);
+    let newest = null;
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v || v.status === 'done') continue;
+        if (!newest || (v.createdAt || 0) > (newest.createdAt || 0)) newest = v;
+    }
+    const trunks = (newest && Array.isArray(newest.trunks) && newest.trunks.length) ? newest.trunks
+        : (Array.isArray(fallbackTrunks) ? fallbackTrunks : []);
+    let channels = 0, dids = 0, extraDids = 0;
+    trunks.forEach(t => {
+        channels += Math.max(1, parseInt(t.channels, 10) || 1);
+        const trunkDids = (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
+            || (t.numbers || []).length;
+        dids += trunkDids;
+        extraDids += Math.max(0, trunkDids - INCLUDED_DIDS_PER_TRUNK);
+    });
+    return { channels, dids, extraDids, trunks: trunks.length };
+}
+
+// The billable lines on a service, e.g. ['EXLNP_SBSIPTRNK', 'EXLNP_SBDID']
+async function mindServiceLines(accountId, serviceId) {
+    const r = await httpsRequest(
+        `${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(serviceId)}/add-on`,
+        { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
+    let d = null;
+    try { d = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !d || !Array.isArray(d.services)) {
+        throw new Error(`MIND service lines lookup failed (HTTP ${r.status}): ${String(r.raw || '').slice(0, 200)}`);
+    }
+    return d.services.map(s => String(s.code || ''));
+}
+
+async function putServiceQuantity(accountId, serviceId, serviceCode, quantity) {
+    const payload = JSON.stringify({ serviceCode, quantity: String(quantity) });
+    const r = await httpsRequest(
+        `${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services/${encodeURIComponent(serviceId)}/quantity`,
+        { method: 'PUT', headers: {
+            'iristelx-api-key': MIND_API_KEY,
+            'Content-Type': 'application/json', 'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
+        } }, payload);
+    let d = null;
+    try { d = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !d || String(d.quantity) !== String(quantity)) {
+        throw new Error(`MIND quantity update failed for ${serviceCode}=${quantity} (HTTP ${r.status}): ${String(r.raw || '').slice(0, 200)}`);
+    }
+    return d;
+}
+
+// Confirm the service's billable lines, then set each quantity. Idempotent:
+// the same service with the same counts already set is a no-op. Throws when
+// anything is left unset, with the partial result attached for the report.
+async function setServiceQuantities(email, fallbackTrunks) {
+    const e = normEmail(email);
+    const svc = stateGet(`service:${e}`, { activeOnly: true });
+    if (!svc || !svc.serviceId || !svc.accountId) throw new Error('No MIND service on file for this order');
+    const q = orderQuantities(e, fallbackTrunks);
+    if (!q.trunks) throw new Error('No trunks on file to take the channel/DID counts from');
+
+    const key = `svcqty:${e}`;
+    const seen = stateGet(key, { activeOnly: true });
+    if (seen && seen.complete && seen.serviceId === svc.serviceId && seen.channels === q.channels && seen.extraDids === q.extraDids) {
+        return { ...seen, reused: true };
+    }
+
+    const lines = await mindServiceLines(svc.accountId, svc.serviceId);
+    const result = { serviceId: svc.serviceId, accountId: svc.accountId, channels: q.channels, dids: q.dids,
+        extraDids: q.extraDids, lines, set: {}, problems: [] };
+    for (const [what, code] of Object.entries(SIP_QTY_CODES)) {
+        const qty = q[what];
+        if (!lines.includes(code)) {
+            // A missing line only matters when there is something to bill on it
+            if (qty) result.problems.push(`service ${svc.serviceId} has no ${code} line`);
+            continue;
+        }
+        // Written even when 0 (MIND accepts it), so neither MIND's default
+        // nor an earlier, higher count — e.g. before the customer reselected
+        // fewer numbers — is left standing
+        try {
+            const d = await putServiceQuantity(svc.accountId, svc.serviceId, code, qty);
+            result.set[code] = { quantity: qty, line: d.servId || null };
+        } catch (err) {
+            result.problems.push(err.message);
+        }
+    }
+    result.complete = result.problems.length === 0;
+    stateSet(key, { email: e, ...result });
+    console.log('[mind] quantities for service', svc.serviceId, '— channels', q.channels, 'DIDs', q.dids, '(extra', q.extraDids + ')',
+        result.complete ? 'set' : 'INCOMPLETE: ' + result.problems.join('; '));
+    if (!result.complete) {
+        const err = new Error('Channel/DID quantities not fully set: ' + result.problems.join('; '));
+        err.result = result;
+        throw err;
+    }
+    return result;
+}
+
 // Accounts are created with status NEW; once the order has fully provisioned
 // the account (and its SIP trunk service) are flipped to ACTIVE via
 // PATCH /accounts/{id} and PATCH /accounts/{id}/services/{id}. Best-effort:
@@ -1361,7 +1478,7 @@ async function assignNumbersToMindService(email, serviceId, accountId, numbers, 
 // So an accidental repeat (refresh, new device, re-submit) must NEVER start a
 // second job; it returns the existing one. Only an explicit, user-initiated
 // retry may start a fresh job, and it says so with force:true.
-const UBOSS_API_URL = 'https://api.iristelx.com/uboss-robot';
+const UBOSS_API_URL = process.env.UBOSS_API_URL || 'https://api.iristelx.com/uboss-robot';
 const UBOSS_API_KEY = process.env.UBOSS_API_KEY || 'b1582d78d369685683e090ad37489937';
 
 function ubossJobStatus(jobId) {
@@ -1416,7 +1533,14 @@ async function startProvisioning(body) {
         channelCount: body.channelCount,
         // UbossRobot sends the welcome letter to notificationEmail itself once
         // the job completes — replaces the manual POST /email/{jobId} step.
-        sendWelcomeLetterToNotificationEmail: body.sendWelcomeLetterToNotificationEmail !== false
+        sendWelcomeLetterToNotificationEmail: body.sendWelcomeLetterToNotificationEmail !== false,
+        // Shown on the my.iristel dashboard. The service reference falls back
+        // to the MIND service on file when the browser has lost it.
+        location: String(body.location || '').trim(),
+        serviceReference: String(body.serviceReference
+            || (stateGet(`service:${normEmail(email)}`, { activeOnly: true }) || {}).serviceId || ''),
+        planName: String(body.planName || 'SIP Trunk'),
+        monthlyRecurringPrice: Number(body.monthlyRecurringPrice) || 0
     };
 
     const r = await postJson(`${UBOSS_API_URL}/trunk-provisioning`, { 'x-api-key': UBOSS_API_KEY }, requestBody);
@@ -2083,6 +2207,19 @@ async function handleApi(req, res, pathname) {
             return sendJson(res, 200,
                 await createMindService(body.email, body.accountId, body.planCode, body.contact || {})
                     .catch(reportAndRethrow(body.email, 'mind-service', { accountId: body.accountId, planCode: body.planCode || null })));
+        }
+        // Channel and DID quantities on the paid order's service. Never
+        // blocks the customer — a miss is reported for ops to fix in MIND.
+        if (pathname === '/api/mind/service/quantities' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            try {
+                return sendJson(res, 200, { ok: true, ...(await setServiceQuantities(body.email, body.trunks)) });
+            } catch (e) {
+                console.error('[mind] quantities:', e.message);
+                reportServerError(body.email, 'mind-quantity', e, { result: e.result || null });
+                return sendJson(res, 200, { ok: false, error: e.message, result: e.result || null });
+            }
         }
         // Is any of these numbers already on someone else's MIND service?
         // Gates provisioning — the status page replaces a taken number before

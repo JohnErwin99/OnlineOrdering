@@ -20,6 +20,7 @@
         'mind-tn-check': 'Number ownership check',
         'mind-tn-taken': 'Number already in use — disconnect in EspressoDID',
         'mind-assign-verify': 'Number assignment not confirmed',
+        'mind-quantity': 'Channel/DID quantities',
         'espresso-order': 'DID order rejected',
         'did-order': 'DID order placement',
         'did-order-wait': 'Waiting for DID order',

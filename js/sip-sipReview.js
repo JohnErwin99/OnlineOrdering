@@ -277,17 +277,13 @@
                             // Channels (capacity) and numbers (DIDs) are billed
                             // independently — channels are user-chosen, DIDs
                             // are the actual requested quantity.
-                            const channels = Math.max(1, parseInt(trunk.channels, 10) || 1);
-                            const numbers = (trunk.requests || [])
-                                .reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0)
-                                || (trunk.numbers || []).length || 0;
-                            const trunkCost = channels * SIP_PRICING.CHANNEL_MONTHLY
-                                + numbers * SIP_PRICING.DID_MONTHLY;
+                            // Same rule UBoss and MIND's quantities use
+                            const { channels, dids: numbers, monthly: trunkCost } = getTrunkBilling(trunk);
 
                             rows += `<tr>
                                 <td class="pricing-trunk-label">${trunk.name}</td>
                                 <td style="text-align:center;">${channels} ch / ${numbers} DID${numbers === 1 ? '' : 's'}</td>
-                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/DID</td>
+                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/extra DID<div style="font-size:11px;color:#888;">1st DID included</div></td>
                                 <td style="text-align:right;">$${trunkCost.toFixed(2)}</td>
                             </tr>`;
 
@@ -815,6 +811,24 @@
                         setOrderStepResult('port', 'error', err.message);
                         throw err;
                     }
+                }
+
+                // ---- STEP 4: Channel and DID quantities on the MIND service ----
+                // The customer has paid and the order is placed, so the billing
+                // lines get their counts now. Never blocks the order: the server
+                // reports a miss for ops to fix in MIND.
+                updateStatusMessage('Setting up billing for your channels and numbers...');
+                try {
+                    const qr = await fetch('/api/mind/service/quantities', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: customerEmail(contactData), trunks: trunksList })
+                    });
+                    const qd = await qr.json().catch(() => null);
+                    if (qd && qd.ok) console.log('MIND quantities set — channels', qd.channels, 'DIDs', qd.dids);
+                    else console.error('MIND quantities not set:', qd && qd.error);
+                } catch (err) {
+                    console.error('MIND quantities request failed:', err.message);
                 }
 
                 // The status page starts UBoss once the numbers exist — clear any
