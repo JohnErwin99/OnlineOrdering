@@ -953,17 +953,15 @@ async function createMindService(email, accountId, planCode, contact) {
 // MIND SERVICE QUANTITIES — channels and DIDs, set once the customer has paid
 // ============================================
 // The SIP trunk service carries one billable line per channel
-// (EXLNP_SBSIPTRNK) and one per additional DID (EXLNP_SBDID — the first DID
-// comes with the trunk). Their quantities are set
-// with PUT /accounts/{acct}/services/{svc}/quantity, from the order as placed
-// — the same rule the review page priced it with, so MIND bills what the
-// customer was charged. MIND has no read-back for quantities (the add-on list
-// doesn't carry them), so the PUT's own answer is the confirmation.
-// Every trunk includes one DID (mirrors SIP_PRICING.INCLUDED_DIDS in
-// js/sip-provisioning-common.js), so EXLNP_SBDID carries only the ADDITIONAL
-// DIDs (0 when each trunk has just its included one).
-const SIP_QTY_CODES = { channels: 'EXLNP_SBSIPTRNK', extraDids: 'EXLNP_SBDID' };
-const INCLUDED_DIDS_PER_TRUNK = 1;
+// (EXLNP_SBSIPTRNK) and one per DID (EXLNP_SBDID — every DID is billed, none
+// comes with the trunk). Their quantities are set with
+// PUT /accounts/{acct}/services/{svc}/quantity, from the order as placed —
+// the same rule the review page priced it with (getTrunkBilling in
+// js/sip-provisioning-common.js), so MIND bills what the customer was
+// charged. Get Services and the add-on list don't carry quantities; the
+// service journal (GET /accounts/{a}/services/{s}/log, field SRV_QUANTITY)
+// is the only read-back. New lines start at quantity 1.
+const SIP_QTY_CODES = { channels: 'EXLNP_SBSIPTRNK', dids: 'EXLNP_SBDID' };
 
 // Channels and DIDs for the customer's current order: the newest in-flight
 // order record's trunks, else the trunks the browser sent (an order that
@@ -977,15 +975,13 @@ function orderQuantities(email, fallbackTrunks) {
     }
     const trunks = (newest && Array.isArray(newest.trunks) && newest.trunks.length) ? newest.trunks
         : (Array.isArray(fallbackTrunks) ? fallbackTrunks : []);
-    let channels = 0, dids = 0, extraDids = 0;
+    let channels = 0, dids = 0;
     trunks.forEach(t => {
         channels += Math.max(1, parseInt(t.channels, 10) || 1);
-        const trunkDids = (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
+        dids += (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
             || (t.numbers || []).length;
-        dids += trunkDids;
-        extraDids += Math.max(0, trunkDids - INCLUDED_DIDS_PER_TRUNK);
     });
-    return { channels, dids, extraDids, trunks: trunks.length };
+    return { channels, dids, trunks: trunks.length };
 }
 
 // The billable lines on a service, e.g. ['EXLNP_SBSIPTRNK', 'EXLNP_SBDID']
@@ -1030,13 +1026,15 @@ async function setServiceQuantities(email, fallbackTrunks) {
 
     const key = `svcqty:${e}`;
     const seen = stateGet(key, { activeOnly: true });
-    if (seen && seen.complete && seen.serviceId === svc.serviceId && seen.channels === q.channels && seen.extraDids === q.extraDids) {
+    // A record from before every DID was billed (it has extraDids) is redone
+    if (seen && seen.complete && seen.serviceId === svc.serviceId && seen.channels === q.channels && seen.dids === q.dids
+        && !('extraDids' in seen)) {
         return { ...seen, reused: true };
     }
 
     const lines = await mindServiceLines(svc.accountId, svc.serviceId);
     const result = { serviceId: svc.serviceId, accountId: svc.accountId, channels: q.channels, dids: q.dids,
-        extraDids: q.extraDids, lines, set: {}, problems: [] };
+        lines, set: {}, problems: [] };
     for (const [what, code] of Object.entries(SIP_QTY_CODES)) {
         const qty = q[what];
         if (!lines.includes(code)) {
@@ -1056,7 +1054,7 @@ async function setServiceQuantities(email, fallbackTrunks) {
     }
     result.complete = result.problems.length === 0;
     stateSet(key, { email: e, ...result });
-    console.log('[mind] quantities for service', svc.serviceId, '— channels', q.channels, 'DIDs', q.dids, '(extra', q.extraDids + ')',
+    console.log('[mind] quantities for service', svc.serviceId, '— channels', q.channels, 'DIDs', q.dids,
         result.complete ? 'set' : 'INCOMPLETE: ' + result.problems.join('; '));
     if (!result.complete) {
         const err = new Error('Channel/DID quantities not fully set: ' + result.problems.join('; '));

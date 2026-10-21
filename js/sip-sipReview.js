@@ -283,7 +283,7 @@
                             rows += `<tr>
                                 <td class="pricing-trunk-label">${trunk.name}</td>
                                 <td style="text-align:center;">${channels} ch / ${numbers} DID${numbers === 1 ? '' : 's'}</td>
-                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/extra DID<div style="font-size:11px;color:#888;">1st DID included</div></td>
+                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/DID</td>
                                 <td style="text-align:right;">$${trunkCost.toFixed(2)}</td>
                             </tr>`;
 

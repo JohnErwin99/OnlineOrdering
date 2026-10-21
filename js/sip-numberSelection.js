@@ -153,7 +153,7 @@
             const trunk = getActiveTrunk();
             document.getElementById('currentChannelCount').textContent = trunk ? (trunk.channels || 1) : 1;
             document.getElementById('currentTrunkNumberCount').textContent = trunk ? trunkRequestedCount(trunk) : 0;
-            // Same rule as the review page and MIND: first DID included
+            // Same rule as the review page and MIND: every DID is billed
             const estimate = trunks.reduce((sum, t) => sum + getTrunkBilling(t).monthly, 0);
             document.getElementById('estMonthlyCost').textContent = '$' + estimate.toFixed(2);
         }

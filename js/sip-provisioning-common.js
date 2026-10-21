@@ -6,30 +6,27 @@
 
 // ============================================
 // Pricing — single source of truth for the whole ordering flow.
-// A SIP trunk always includes one DID; channels and additional DIDs are
-// billed on top: a trunk's monthly cost is
-//   channels * CHANNEL_MONTHLY + (dids - INCLUDED_DIDS) * DID_MONTHLY.
-// server.js mirrors INCLUDED_DIDS for MIND's EXLNP_SBDID quantity.
+// Channels and DIDs are both billed — no DID comes with the trunk:
+//   channels * CHANNEL_MONTHLY + dids * DID_MONTHLY.
+// server.js bills MIND the same way (EXLNP_SBDID = every DID).
 // ============================================
 const SIP_PRICING = {
     CHANNEL_MONTHLY: 25.00,
-    DID_MONTHLY: 2.00,       // per DID beyond the included one
-    INCLUDED_DIDS: 1,        // every trunk comes with this many
+    DID_MONTHLY: 2.00,       // per DID
     TAX_RATE: 0.13
 };
 window.SIP_PRICING = SIP_PRICING;
 
 // One trunk's monthly cost, before tax. DIDs are the requested quantity,
-// else the numbers already on the trunk; the first is included. The review
-// page prices with this, UBoss gets it as monthlyRecurringPrice, and the
-// server applies the same rule to MIND's channel/DID quantities.
+// else the numbers already on the trunk. The review page prices with this,
+// UBoss gets it as monthlyRecurringPrice, and the server applies the same
+// rule to MIND's channel/DID quantities.
 function getTrunkBilling(trunk) {
     const channels = Math.max(1, parseInt(trunk.channels, 10) || 1);
     const dids = (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
         || (trunk.numbers || []).length || 0;
-    const extraDids = Math.max(0, dids - SIP_PRICING.INCLUDED_DIDS);
-    const monthly = channels * SIP_PRICING.CHANNEL_MONTHLY + extraDids * SIP_PRICING.DID_MONTHLY;
-    return { channels, dids, extraDids, monthly: Math.round(monthly * 100) / 100 };
+    const monthly = channels * SIP_PRICING.CHANNEL_MONTHLY + dids * SIP_PRICING.DID_MONTHLY;
+    return { channels, dids, monthly: Math.round(monthly * 100) / 100 };
 }
 
 // ============================================
