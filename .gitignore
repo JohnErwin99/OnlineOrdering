@@ -4,6 +4,7 @@ testAntigravity
 # espresso credentials — never commit
 .env.local
 .env
+.env.sandbox
 
 # runtime order records (idempotency + support lookup)
 .order-store.json

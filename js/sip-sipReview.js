@@ -14,6 +14,12 @@
         // UBoss config / formatToE164 / describeApiError now live
         // in sip-provisioning-common.js, shared with provisioningStatus.html.
 
+        // Text from cookies or the server going into innerHTML
+        function escapeHtml(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
         function setText(id, value) {
             const el = document.getElementById(id);
             if (value && value.trim()) {
@@ -65,7 +71,7 @@
                     try {
                         const nums = JSON.parse(portNumbers);
                         document.getElementById('revPortNumbers').innerHTML = nums.map(n =>
-                            `<span class="number-chip">${n}</span>`
+                            `<span class="number-chip">${escapeHtml(n)}</span>`
                         ).join('');
                     } catch (e) {}
                 }
@@ -89,23 +95,39 @@
                 try {
                     const trunksList = JSON.parse(trunksData);
                     if (Array.isArray(trunksList) && trunksList.length > 0) {
+                        const chip = (n, main) => main
+                            ? `<span class="number-chip pilot">${escapeHtml(n)} (Main)</span>`
+                            : `<span class="number-chip">${escapeHtml(n)}</span>`;
                         document.getElementById('revSelectedNumbers').innerHTML = trunksList.map(trunk => {
-                            // Concrete numbers when they exist; otherwise the
-                            // rate-center requests this order will place
+                            // Delivered numbers when they exist; otherwise the
+                            // numbers the customer picked (the first is the
+                            // main one), and the rate-center request for
+                            // anything the server will pick
                             let chips;
                             if (trunk.numbers && trunk.numbers.length > 0) {
-                                chips = trunk.numbers.map(n =>
-                                    n === trunk.primaryNumber
-                                        ? `<span class="number-chip pilot">${n} (Main)</span>`
-                                        : `<span class="number-chip">${n}</span>`
-                                ).join('');
+                                chips = trunk.numbers.map(n => chip(n, n === trunk.primaryNumber)).join('');
                             } else {
-                                chips = (trunk.requests || []).map(r =>
-                                    `<span class="number-chip">${r.ratecenter} (${r.npa}) &times; ${r.quantity}</span>`
-                                ).join('') || '<span class="number-chip">No numbers requested</span>';
-                                chips += '<div style="font-size:12px;color:var(--text-gray);margin-top:6px;">Numbers are assigned when your order is processed.</div>';
+                                const main = trunkFirstPick(trunk);
+                                let serverPicks = false;
+                                chips = (trunk.requests || []).map(r => {
+                                    if (requestPickComplete(r)) {
+                                        return r.dids.map(n => chip(n, tenDigits(n) === main)).join('');
+                                    }
+                                    // Short of its quantity — the page sends the
+                                    // customer back to finish picking
+                                    if (Array.isArray(r.dids)) {
+                                        const short = (parseInt(r.quantity, 10) || 0) - r.dids.length;
+                                        return r.dids.map(n => chip(n, tenDigits(n) === main)).join('')
+                                            + `<span class="number-chip">${escapeHtml(r.ratecenter)} (${escapeHtml(r.npa)}): ${short} more to pick</span>`;
+                                    }
+                                    serverPicks = true;
+                                    return `<span class="number-chip">${escapeHtml(r.ratecenter)} (${escapeHtml(r.npa)}) &times; ${escapeHtml(r.quantity)}</span>`;
+                                }).join('') || '<span class="number-chip">No numbers requested</span>';
+                                if (serverPicks) {
+                                    chips += '<div style="font-size:12px;color:var(--text-gray);margin-top:6px;">Numbers are assigned when your order is processed.</div>';
+                                }
                             }
-                            return `<div style="margin-bottom:12px;"><strong style="font-size:13px;color:#004a9f;">${trunk.name}</strong><div style="margin-top:6px;">${chips}</div></div>`;
+                            return `<div style="margin-bottom:12px;"><strong style="font-size:13px;color:#004a9f;">${escapeHtml(trunk.name)}</strong><div style="margin-top:6px;">${chips}</div></div>`;
                         }).join('');
                     }
                 } catch (e) {}
@@ -119,8 +141,8 @@
                         if (nums.length > 0) {
                             document.getElementById('revSelectedNumbers').innerHTML = nums.map(n =>
                                 n === revPrimary
-                                    ? `<span class="number-chip pilot">${n} (Main)</span>`
-                                    : `<span class="number-chip">${n}</span>`
+                                    ? `<span class="number-chip pilot">${escapeHtml(n)} (Main)</span>`
+                                    : `<span class="number-chip">${escapeHtml(n)}</span>`
                             ).join('');
                         }
                     } catch (e) {}
@@ -137,9 +159,9 @@
                         document.getElementById('usersReviewBody').innerHTML = users.map(user => {
                             const isPilot = String(user.id) === String(pilotUserId);
                             return `<tr>
-                                <td>${user.firstName} ${user.lastName}${isPilot ? '<span class="pilot-badge">Pilot User</span>' : ''}</td>
-                                <td style="font-family: 'Courier New', monospace;">${user.number || '--'}</td>
-                                <td>${packageNames[user.package] || user.package}</td>
+                                <td>${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}${isPilot ? '<span class="pilot-badge">Pilot User</span>' : ''}</td>
+                                <td style="font-family: 'Courier New', monospace;">${escapeHtml(user.number || '--')}</td>
+                                <td>${escapeHtml(packageNames[user.package] || user.package)}</td>
                             </tr>`;
                         }).join('');
                     }
@@ -148,7 +170,399 @@
         }
 
         function updateSubmitButton() {
-            document.getElementById('submitBtn').disabled = !document.getElementById('agreeTerms').checked;
+            document.getElementById('submitBtn').disabled = !document.getElementById('agreeTerms').checked
+                || didOrderingBlocked || returningToPicker;
+        }
+
+        // ============================================
+        // NUMBER ORDERING — readiness and refusals
+        // The customer picked specific numbers. Before the card is charged
+        // the server re-checks them (read-only), and the order checks them
+        // again; numbers that are gone send the customer back to pick
+        // replacements. Nothing taken is ever bought.
+        // ============================================
+        const DID_UNAVAILABLE_COPY = 'Number ordering is temporarily unavailable — please try again in a few minutes.';
+        const PAYMENT_UNAFFECTED = ' Your payment is unaffected and you won’t be charged again.';
+        const NOT_CHARGED = ' Your card has not been charged.';
+
+        // Set while espresso can't take orders: paying or submitting would
+        // charge for numbers we can't buy. Re-checked every minute so the
+        // page unblocks itself once ordering is back.
+        let didOrderingBlocked = false;
+        let didReadyTimer = null;
+        // Set once the customer is on their way back to number selection
+        let returningToPicker = false;
+        // A balance charge is under way — its button must not be re-enabled
+        let chargeInFlight = false;
+        // What the charge button says while a charge is under way, so a
+        // re-render (each promo keystroke re-prices) keeps it
+        let chargeButtonLabel = '';
+
+        // The charge button is rebuilt whenever the price is, so it is looked
+        // up fresh each time — one held across an await may be a detached
+        // node. A null argument leaves that property alone.
+        function updateChargeButton(label, disabled, background) {
+            if (label != null) chargeButtonLabel = label;
+            const btn = document.getElementById('chargeBalanceBtn');
+            if (!btn) return;
+            if (label != null) btn.textContent = label;
+            if (disabled != null) btn.disabled = disabled;
+            if (background != null) btn.style.background = background;
+        }
+
+        function chargeLabel(amount) {
+            return `Charge $${amount.toFixed(2)} to card on file`;
+        }
+
+        // Does submitting this order still buy numbers? Not when an earlier
+        // submit already placed the order, nor for a porting order with no
+        // number requests.
+        function orderBuysNumbers() {
+            if (getCookie('sip_didOrderId') || getCookie('sip_didOrderNumber')) return false;
+            const trunksList = loadTrunksFromCookie();
+            return trunksNeedNumbers(trunksList) && orderRequestSlots(trunksList).length > 0;
+        }
+
+        // Placed by an earlier submit — the trunks then describe that order
+        function orderAlreadyPlaced() {
+            return !!(getCookie('sip_didOrderId') || getCookie('sip_didOrderNumber'));
+        }
+
+        function alreadyPaid() {
+            return parseFloat(getCookie('iristel_payment_amount') || '0') > 0;
+        }
+
+        // What a refusal outside the charge says about money: a payment
+        // already taken stands and isn't repeated
+        function paymentNote() {
+            return alreadyPaid() ? PAYMENT_UNAFFECTED : NOT_CHARGED;
+        }
+
+        // One notice above the Submit button for ordering problems — created
+        // on first use, removed when the message is empty
+        function showOrderNotice(message) {
+            let el = document.getElementById('orderNotice');
+            if (!message) {
+                if (el) el.remove();
+                return;
+            }
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'orderNotice';
+                el.style.cssText = 'background:rgba(239,68,68,0.06);border-left:4px solid #EF4444;padding:12px 16px;' +
+                    'border-radius:0 4px 4px 0;margin:16px 0;font-size:13px;line-height:1.5;color:var(--rich-black);';
+                const nav = document.querySelector('.nav-buttons');
+                nav.parentNode.insertBefore(el, nav);
+            }
+            el.textContent = message;
+        }
+
+        function setDidOrderingBlocked(blocked) {
+            if (blocked && !didReadyTimer) didReadyTimer = setInterval(checkDidOrderingReady, 60000);
+            if (!blocked && didReadyTimer) {
+                clearInterval(didReadyTimer);
+                didReadyTimer = null;
+            }
+            if (blocked === didOrderingBlocked) return;
+            didOrderingBlocked = blocked;
+
+            showOrderNotice(blocked
+                ? DID_UNAVAILABLE_COPY + ' Payment and submission are paused until it is back, so you are never charged for numbers we can’t order.'
+                : '');
+            if (!chargeInFlight) updateChargeButton(null, blocked || returningToPicker);
+            const chargeNote = document.getElementById('chargeBlockedNote');
+            if (chargeNote) chargeNote.style.display = blocked ? 'block' : 'none';
+            updateSubmitButton();
+            if (blocked) {
+                console.warn('[order] espresso is not ready for DID orders — payment and submit paused');
+                if (window.IrisBridge) window.IrisBridge.error(DID_UNAVAILABLE_COPY);
+            } else {
+                console.log('[order] number ordering is available again');
+            }
+        }
+
+        async function checkDidOrderingReady() {
+            if (!orderBuysNumbers()) {
+                setDidOrderingBlocked(false);
+                return;
+            }
+            try {
+                const r = await fetch('/api/config');
+                if (!r.ok) return;
+                const cfg = await r.json();
+                setDidOrderingBlocked(cfg.didReady === false);
+            } catch (e) {
+                // Can't tell — leave it be: the order itself refuses safely
+                console.warn('Ordering readiness check failed:', e.message);
+            }
+        }
+
+        // Tell the customer, then take them back to number selection. The
+        // picker repeats the details from sip_orderRejection, so the wait
+        // here is short.
+        function returnToNumberSelection(message, title) {
+            returningToPicker = true;
+            updateSubmitButton();
+            updateChargeButton('Returning to number selection...', true);
+            showAlert(message + ' Taking you back to number selection…', 'error', title);
+            if (window.IrisBridge) window.IrisBridge.error(message);
+            setTimeout(() => { window.location.href = 'numberSelection.html'; }, 3500);
+        }
+
+        // A picked request short of its quantity can't be ordered: sent as a
+        // bare quantity, the server would pick random numbers and drop the
+        // customer's own. It gets here by Back, a reload while the page was
+        // on its way to the picker, or the status page's "Go to Review".
+        // Nothing is charged or ordered — the customer goes back to finish
+        // picking (the picker shows what each request still needs). Returns
+        // true when they were sent back.
+        function sendBackIfPicksIncomplete(trunksList, note) {
+            const incomplete = findIncompletePicks(trunksList);
+            // A trunk whose only request was dropped (no city, not enough
+            // numbers) would be billed for its channels and never provisioned
+            const empty = trunksList.filter(t => !(t.requests || []).length && !(t.numbers || []).length);
+            if (!incomplete.length && !empty.length) return false;
+            console.warn('[order] picks incomplete — back to number selection:', JSON.stringify(incomplete),
+                empty.length ? '| trunks without numbers: ' + empty.map(t => t.name).join(', ') : '');
+            const owed = incomplete.map(x => {
+                const short = x.quantity - x.picked;
+                return '"' + x.trunkName + '" still needs ' + short + ' more number' + (short === 1 ? '' : 's')
+                    + ' in ' + x.ratecenter + ' (' + x.npa + ')';
+            }).concat(empty.map(t => '"' + (t.name || 'A trunk') + '" has no numbers yet'));
+            returnToNumberSelection(owed.join('; ') + '. Please finish picking before ordering — no numbers have been ordered.'
+                + (note || ''), 'Numbers still to pick');
+            return true;
+        }
+
+        function listNumbers(numbers) {
+            return numbers.length === 1 ? 'The number ' + numbers[0] + ' is'
+                : 'The numbers ' + numbers.slice(0, -1).join(', ') + ' and ' + numbers[numbers.length - 1] + ' are';
+        }
+
+        // Picked numbers that can't be had any more come off their requests —
+        // the quantity stays, so the picker asks for replacements — and the
+        // picker learns which through sip_orderRejection. A server-picked
+        // request that came up short is dropped, as before, so the customer
+        // chooses another city. A number picked twice stays on its first
+        // request, once, and comes off the rest. Every entry carries its
+        // kind and whether payment was already taken (`paid`).
+        function sendBackToPickNumbers(trunksList, unavailable, shortfalls, paid, duplicateNumber) {
+            const rejection = [];
+            const gonePicked = [];
+            const gone = (unavailable || []).map(u => tenDigits(u && u.number)).filter(Boolean);
+            if (gone.length) {
+                removePicksFromTrunks(trunksList, gone).forEach(x => {
+                    gonePicked.push(...x.numbers);
+                    rejection.push(Object.assign(x, { reason: 'No longer available', kind: 'gone', paid: !!paid }));
+                });
+            }
+
+            const dup = duplicateNumber ? tenDigits(duplicateNumber) : '';
+            if (dup) {
+                const holders = [];
+                orderRequestSlots(trunksList).forEach((s, i) => {
+                    if ((s.source.dids || []).some(n => tenDigits(n) === dup)) holders.push({ s, i });
+                });
+                holders.forEach(({ s, i }, h) => {
+                    const r = s.source;
+                    if (h > 0) {
+                        removePicksFromTrunks(trunksList, [dup], i).forEach(x =>
+                            rejection.push(Object.assign(x, { reason: 'Picked more than once', kind: 'duplicate', paid: !!paid })));
+                        return;
+                    }
+                    // The first request keeps it — once, if it holds it twice
+                    const keep = r.dids.findIndex(n => tenDigits(n) === dup);
+                    const before = r.dids.length;
+                    r.dids = r.dids.filter((n, j) => j === keep || tenDigits(n) !== dup);
+                    if (r.dids.length < before) {
+                        rejection.push({ ratecenter: r.ratecenter, npa: r.npa, numbers: [dup],
+                            reason: 'Picked more than once', kind: 'duplicate', paid: !!paid });
+                    }
+                });
+            }
+
+            const slots = orderRequestSlots(trunksList);
+            const shortRequests = new Set();
+            const shortCities = [];
+            (shortfalls || []).forEach(s => {
+                const slot = slots[s.index];
+                if (!slot) return;
+                shortRequests.add(slot.source);
+                shortCities.push((s.ratecenter || slot.source.ratecenter) + ' (' + (s.npa || slot.source.npa) + ')');
+                rejection.push({
+                    ratecenter: s.ratecenter || slot.source.ratecenter, npa: s.npa || slot.source.npa, numbers: [],
+                    reason: 'Only ' + (s.found || 0) + ' of ' + s.wanted + ' numbers available', kind: 'shortfall', paid: !!paid
+                });
+            });
+            if (shortRequests.size) {
+                trunksList.forEach(t => { t.requests = (t.requests || []).filter(r => !shortRequests.has(r)); });
+            }
+            setCookie('sip_trunks', JSON.stringify(trunksList));
+            if (rejection.length) setCookie('sip_orderRejection', JSON.stringify(rejection));
+            console.warn('[order] picked numbers unavailable — back to number selection:', JSON.stringify(rejection));
+
+            let message = '';
+            if (gonePicked.length) message += listNumbers(gonePicked) + ' no longer available. ';
+            if (dup) message += dup + ' was picked more than once. ';
+            if (shortCities.length) message += 'There aren’t enough numbers available in ' + shortCities.join(', ') + '. ';
+            if (!message) message = 'Some of the numbers for this order are no longer available. ';
+            message += (shortCities.length && !gonePicked.length && !dup
+                ? 'Please choose another city.' : 'Please pick replacements.')
+                + (paid ? PAYMENT_UNAFFECTED : NOT_CHARGED);
+            returnToNumberSelection(message, 'Numbers no longer available');
+        }
+
+        // MIND has no city for a request's rate center, so no number there
+        // can be stored and none can be offered. The request the server
+        // names (index = position in orderRequestSlots) comes off its trunk,
+        // with any other for the same rate center and area code — they'd be
+        // refused the same way — and the picker asks for another city.
+        function sendBackForNoCity(trunksList, data, paid) {
+            const d = data || {};
+            const slots = orderRequestSlots(trunksList);
+            const slot = d.index != null ? slots[Number(d.index)] : null;
+            const ratecenter = String(d.ratecenter || (slot && slot.source.ratecenter) || '').trim();
+            const npa = String(d.npa || (slot && slot.source.npa) || '');
+            const sameCity = r => String(r.ratecenter || '').trim().toUpperCase() === ratecenter.toUpperCase()
+                && String(r.npa) === npa;
+            // The indexed request, unless the trunks changed under it
+            const named = slot && (!d.ratecenter || sameCity(slot.source)) ? slot.source : null;
+            const drop = new Set(slots.map(s => s.source).filter(r => r === named || (ratecenter && sameCity(r))));
+
+            // Its picks come off first, so a main number among them falls
+            // back to the trunk's next pick
+            const lost = [...drop].flatMap(r => (Array.isArray(r.dids) ? r.dids : []).map(tenDigits));
+            if (lost.length) removePicksFromTrunks(trunksList, lost);
+            trunksList.forEach(t => { t.requests = (t.requests || []).filter(r => !drop.has(r)); });
+            setCookie('sip_trunks', JSON.stringify(trunksList));
+
+            const where = ratecenter ? ratecenter + (npa ? ' (' + npa + ')' : '') : 'one of the cities you chose';
+            if (ratecenter) {
+                setCookie('sip_orderRejection', JSON.stringify([{
+                    ratecenter, npa, numbers: lost, reason: 'Numbers in ' + where + ' can’t be offered right now',
+                    kind: 'no-city', paid: !!paid
+                }]));
+            }
+            console.warn('[order] no MIND city for', where, '— removed', drop.size, 'request(s):', d.error);
+            returnToNumberSelection('Numbers in ' + where + ' can’t be offered right now' +
+                (drop.size ? ', so that city has been taken off your order' : '') + '. Please choose another city.'
+                + (paid ? PAYMENT_UNAFFECTED : NOT_CHARGED), 'Please choose another city');
+        }
+
+        // The customer's own order is still going (e.g. they came back and
+        // changed their picks after it was placed): nothing new is ordered —
+        // the trunks go back to that order's snapshot and the status page
+        // follows it.
+        async function followOrderInProgress(data, note) {
+            returningToPicker = true;
+            updateSubmitButton();
+            updateChargeButton(null, true);
+            const message = 'Number order ' + data.orderNumber + ' is already in progress for your account, '
+                + 'so your numbers can’t be changed now.' + note + ' Taking you to its status…';
+            showAlert(message, 'info', 'Order already in progress');
+            if (window.IrisBridge) window.IrisBridge.error(message);
+            const session = await fetchServerSession(customerEmail(getProvisioningContactData()));
+            const order = session && session.order;
+            if (order && order.orderNumber === data.orderNumber && Array.isArray(order.trunks) && order.trunks.length) {
+                setCookie('sip_trunks', JSON.stringify(order.trunks));
+            }
+            if (data.orderId) setCookie('sip_didOrderId', data.orderId);
+            else deleteCookie('sip_didOrderId');
+            setCookie('sip_didOrderNumber', data.orderNumber);
+            setTimeout(() => { window.location.href = 'provisioningStatus.html'; }, 3500);
+        }
+
+        // The number order — or its check before payment — was refused.
+        // Handles what the customer can act on (or wait out) and returns
+        // true; anything else returns false for the caller to report.
+        // `paid`: the card was already charged, so say it is unaffected.
+        function handleNumberOrderRefusal(status, data, trunksList, paid) {
+            const code = data && data.code;
+            const note = paid ? PAYMENT_UNAFFECTED : NOT_CHARGED;
+            if (code === 'NUMBERS_UNAVAILABLE') {
+                sendBackToPickNumbers(trunksList, data.unavailable, data.shortfalls, paid);
+                return true;
+            }
+            if (code === 'DUPLICATE_PICK') {
+                sendBackToPickNumbers(trunksList, [], [], paid, data.number);
+                return true;
+            }
+            if (code === 'NO_MIND_CITY') {
+                sendBackForNoCity(trunksList, data, paid);
+                return true;
+            }
+            // From the check before payment too: the card is not charged
+            // while another order is still going
+            if (code === 'ORDER_IN_PROGRESS') {
+                if (data.orderNumber) {
+                    followOrderInProgress(data, note);
+                    return true;
+                }
+                const message = 'A number order is already in progress for your account, so another one can’t be placed yet. ' +
+                    'Please wait a few minutes before trying again, or contact support.' + note;
+                showAlert(message, 'info', 'Order already in progress');
+                if (window.IrisBridge) window.IrisBridge.error(message);
+                return true;
+            }
+            if (status === 503) {
+                // ESPRESSO_BUSY, INVENTORY_FORBIDDEN, MIND_UNAVAILABLE, ...
+                console.warn('[order] number ordering unavailable:', code, data && data.error);
+                const message = (paid ? DID_UNAVAILABLE_COPY
+                    : 'We couldn’t confirm your numbers are still available — please try again shortly.') + note;
+                showAlert(message, 'error', 'Please try again shortly');
+                if (window.IrisBridge) window.IrisBridge.error(message);
+                return true;
+            }
+            return false;
+        }
+
+        // Before the card is charged: are the picked numbers still free?
+        // Read-only on the server. Resolves true when the charge may go
+        // ahead; otherwise the customer has been told why (and maybe sent
+        // back to pick) and nothing is charged.
+        async function checkPicksBeforeCharge() {
+            const trunksList = loadTrunksFromCookie();
+            // A top-up after an earlier payment: that payment stands
+            const paid = alreadyPaid();
+            if (!orderAlreadyPlaced() && sendBackIfPicksIncomplete(trunksList, paymentNote())) return false;
+            if (!orderBuysNumbers()) return true;
+            let response = null;
+            let data = null;
+            try {
+                response = await fetch('/api/did/check-picks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: customerEmail(getProvisioningContactData()),
+                        requests: flattenOrderRequests(trunksList)
+                    })
+                });
+                data = await response.json().catch(() => null);
+            } catch (e) {
+                console.error('Number check failed to send:', e.message);
+            }
+
+            if (response && response.ok && data) {
+                // Already ordered by an earlier submit — the order step re-uses it
+                if (data.orderNumber) {
+                    console.log('Numbers already ordered as', data.orderNumber, '— charging');
+                    return true;
+                }
+                if (data.ok) return true;
+                if ((data.unavailable || []).length) {
+                    sendBackToPickNumbers(trunksList, data.unavailable, [], paid);
+                    return false;
+                }
+            }
+            // 409 ORDER_IN_PROGRESS (another order still going), 422
+            // NO_MIND_CITY, 400 DUPLICATE_PICK, 503 — all before payment
+            if (!handleNumberOrderRefusal(response ? response.status : 503, data, trunksList, paid)) {
+                const message = 'We couldn’t check your numbers: ' + ((data && data.error) || ('HTTP ' + (response ? response.status : '?')))
+                    + '.' + NOT_CHARGED;
+                showAlert(message, 'error', 'Number check failed');
+                if (window.IrisBridge) window.IrisBridge.error(message);
+            }
+            return false;
         }
 
         // MIND stores Canadian postal codes as "A1A 1A1" — send them back in that shape
@@ -281,9 +695,9 @@
                             const { channels, dids: numbers, monthly: trunkCost } = getTrunkBilling(trunk);
 
                             rows += `<tr>
-                                <td class="pricing-trunk-label">${trunk.name}</td>
+                                <td class="pricing-trunk-label">${escapeHtml(trunk.name)}</td>
                                 <td style="text-align:center;">${channels} ch / ${numbers} DID${numbers === 1 ? '' : 's'}</td>
-                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/extra DID<div style="font-size:11px;color:#888;">1st DID included</div></td>
+                                <td style="text-align:right;">$${SIP_PRICING.CHANNEL_MONTHLY.toFixed(2)}/ch + $${SIP_PRICING.DID_MONTHLY.toFixed(2)}/DID</td>
                                 <td style="text-align:right;">$${trunkCost.toFixed(2)}</td>
                             </tr>`;
 
@@ -356,12 +770,20 @@
                     </tr>`;
 
                 if (!unreconciledCharge) {
+                    // Held while number ordering is down (setDidOrderingBlocked),
+                    // and while a charge is already under way — this re-renders
+                    // on every promo keystroke, mid-charge included
+                    const label = returningToPicker ? 'Returning to number selection...'
+                        : (chargeInFlight && chargeButtonLabel) || chargeLabel(remaining);
                     footerRows += `
                     <tr>
                         <td colspan="4" style="text-align:right;padding-top:12px;">
-                            <button class="btn-edit" id="chargeBalanceBtn" onclick="chargeRemainingBalance(${remaining})" style="background:var(--tufts-blue);color:#fff;padding:8px 20px;">
-                                Charge $${remaining.toFixed(2)} to card on file
+                            <button class="btn-edit" id="chargeBalanceBtn" onclick="chargeRemainingBalance(${remaining})" style="background:var(--tufts-blue);color:#fff;padding:8px 20px;"${didOrderingBlocked || returningToPicker || chargeInFlight ? ' disabled' : ''}>
+                                ${escapeHtml(label)}
                             </button>
+                            <div id="chargeBlockedNote" style="display:${didOrderingBlocked ? 'block' : 'none'};font-size:12px;color:#EF4444;margin-top:6px;">
+                                ${DID_UNAVAILABLE_COPY}
+                            </div>
                         </td>
                     </tr>`;
                 }
@@ -407,9 +829,12 @@
             return err;
         }
 
-        // Charge remaining balance using saved card token
+        // Charge remaining balance using saved card token. The button is
+        // re-rendered while this awaits, so it is only ever reached through
+        // updateChargeButton.
         async function chargeRemainingBalance(amount) {
-            const btn = document.getElementById('chargeBalanceBtn');
+            // One charge at a time, however many buttons were clicked
+            if (chargeInFlight) return;
             const token = getCookie('iristel_payment_token');
             const accountCode = getCookie('iristel_account_id') || '1204506';
 
@@ -432,8 +857,31 @@
                 return;
             }
 
-            btn.disabled = true;
-            btn.textContent = 'Processing...';
+            if (didOrderingBlocked) {
+                showAlert(DID_UNAVAILABLE_COPY + NOT_CHARGED, 'info', 'Please try again shortly');
+                return;
+            }
+
+            chargeInFlight = true;
+
+            // Numbers first: the card is never charged for picks that are
+            // already gone, or while ordering is down
+            updateChargeButton('Checking your numbers...', true);
+            let picksOk = false;
+            try {
+                picksOk = await checkPicksBeforeCharge();
+            } catch (err) {
+                console.error('Number check before payment failed:', err);
+                showAlert('We couldn’t check your numbers — please try again shortly.' + NOT_CHARGED, 'error', 'Please try again shortly');
+            }
+            if (!picksOk) {
+                chargeInFlight = false;
+                // The button may since show a re-priced balance
+                if (!returningToPicker) updateChargeButton(chargeLabel(window._remainingBalance || amount), didOrderingBlocked);
+                return;
+            }
+
+            updateChargeButton('Processing...');
 
             // Outside the try: the catch reports it, because it is the only handle
             // support has on a charge that may have gone through.
@@ -474,7 +922,11 @@
                             accountCode: accountCode,
                             amount: amount.toFixed(2),
                             creditCard: requestBody.creditCard,
-                            idempotencyKey: accountCode + '::' + amount.toFixed(2),
+                            // What was paid before is part of the key: a later
+                            // top-up of the same amount is a new charge, not
+                            // a repeat of the first one
+                            idempotencyKey: accountCode + '::'
+                                + parseFloat(getCookie('iristel_payment_amount') || '0').toFixed(2) + '::' + amount.toFixed(2),
                             // Lets the server tell a duplicate from a genuine
                             // second purchase: once an order is provisioned the
                             // guard is released, so buying again is charged.
@@ -511,8 +963,7 @@
                 if (window.IrisBridge) window.IrisBridge.paymentSuccess(reference, amount.toFixed(2));
 
                 // Update UI
-                btn.textContent = 'Charged successfully';
-                btn.style.background = 'var(--success-green)';
+                updateChargeButton('Charged successfully', null, 'var(--success-green)');
                 document.getElementById('payAmountDisplay').textContent = `$${newTotal.toFixed(2)} charged`;
 
                 // Replace remaining balance row with "Fully Paid"
@@ -538,11 +989,11 @@
                     return;
                 }
 
-                btn.disabled = false;
-                btn.textContent = `Charge $${amount.toFixed(2)} to card on file`;
-                btn.style.background = '';
+                updateChargeButton(chargeLabel(window._remainingBalance || amount), didOrderingBlocked || returningToPicker, '');
                 showAlert(err.message, 'error', 'Payment failed');
                 if (window.IrisBridge) window.IrisBridge.paymentFailed(err.message);
+            } finally {
+                chargeInFlight = false;
             }
         }
 
@@ -558,7 +1009,7 @@
 
         function resetSubmitButton() {
             const submitBtn = document.getElementById('submitBtn');
-            submitBtn.disabled = false;
+            submitBtn.disabled = didOrderingBlocked || returningToPicker;
             submitBtn.innerHTML = `
                 <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                 Submit Order
@@ -674,6 +1125,16 @@
                 return;
             }
 
+            if (returningToPicker) return;
+            // Picks left short (Back, a reload, "Go to Review") go back to
+            // the picker — never out as a quantity for the server to fill
+            if (!orderAlreadyPlaced() && sendBackIfPicksIncomplete(loadTrunksFromCookie(), paymentNote())) return;
+            if (didOrderingBlocked && orderBuysNumbers()) {
+                showAlert(DID_UNAVAILABLE_COPY, 'info', 'Please try again shortly');
+                if (window.IrisBridge) window.IrisBridge.error(DID_UNAVAILABLE_COPY);
+                return;
+            }
+
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
 
@@ -752,10 +1213,11 @@
                 }
 
                 // ---- STEP 3: Place the number order (espresso DID) ----
-                // espresso is ONLY the number source: rate center + NPA + quantity
-                // go in. The order is only PLACED here — the status page polls it,
-                // distributes the numbers and starts UBoss provisioning; the
-                // customer waits there, not on this button.
+                // espresso is ONLY the number source: the customer's picked
+                // numbers go in (a request without picks is picked by the
+                // server). The order is only PLACED here — the status page
+                // polls it, places the numbers on their trunks and starts UBoss
+                // provisioning; the customer waits there, not on this button.
                 let trunksList = loadTrunksFromCookie();
                 if (trunksList.length === 0) {
                     trunksList = [{ name: 'Trunk 1', channels: 1, requests: [], numbers: primaryNumber ? [primaryNumber] : [], primaryNumber: primaryNumber }];
@@ -765,19 +1227,26 @@
                 if (trunksNeedNumbers(trunksList)) {
                     // Re-use an order placed by an earlier submit attempt
                     // instead of ordering the numbers twice.
-                    let didOrderNumber = getCookie('sip_didOrderNumber');
-                    if (!didOrderNumber) {
+                    const existingOrder = getCookie('sip_didOrderId') || getCookie('sip_didOrderNumber');
+                    if (!existingOrder) {
+                        // Checked again against the trunks being sent: they
+                        // may have changed while the account was set up
+                        if (sendBackIfPicksIncomplete(trunksList, PAYMENT_UNAFFECTED)) {
+                            resetSubmitButton();
+                            return;
+                        }
                         updateStatusMessage('Placing your number order...');
-                        const allRequests = trunksList.flatMap(t => t.requests || []);
                         // The account and a stable key let the server recognise a
                         // repeat of THIS order and return the original instead of
                         // billing a second one — protection that survives the
-                        // browser losing its state entirely.
+                        // browser losing its state entirely. Each request names
+                        // its trunk; its position is how the status page maps
+                        // the delivered numbers back.
                         const orderResponse = await fetch('/api/did/order', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                requests: allRequests,
+                                requests: flattenOrderRequests(trunksList),
                                 email: customerEmail(contactData),
                                 accountRef: accountId || getCookie('iristel_account_id') || null,
                                 // Snapshot so another device can rebuild the
@@ -788,14 +1257,25 @@
                         });
                         const orderData = await orderResponse.json().catch(() => null);
                         if (!orderResponse.ok || !orderData || !orderData.orderNumber) {
+                            // Nothing was bought. Payment is already taken by
+                            // now, so the customer is told it is unaffected.
+                            if (handleNumberOrderRefusal(orderResponse.status, orderData, trunksList, true)) {
+                                resetSubmitButton();
+                                return;
+                            }
                             throw new Error('Number order failed: ' + ((orderData && orderData.error) || ('HTTP ' + orderResponse.status)));
                         }
-                        didOrderNumber = orderData.orderNumber;
-                        setCookie('sip_didOrderNumber', didOrderNumber);
-                        console.log('DID order placed:', didOrderNumber,
+                        // The id drives every status call; the ORD- number is
+                        // what people read
+                        if (orderData.orderId) setCookie('sip_didOrderId', orderData.orderId);
+                        setCookie('sip_didOrderNumber', orderData.orderNumber);
+                        // A new order: the status page's countdown starts
+                        // fresh, not from an earlier order's anchor
+                        deleteCookie('sip_provisionStartedAt');
+                        console.log('DID order placed:', orderData.orderNumber, orderData.orderId ? '(' + orderData.orderId + ')' : '',
                             orderData.duplicate ? '(existing order re-used — not billed again)' : '');
                     } else {
-                        console.log('Resuming DID order:', didOrderNumber);
+                        console.log('Resuming DID order:', getCookie('sip_didOrderNumber') || existingOrder);
                     }
                 } else if (!trunksList.some(t => t.numbers && t.numbers.length)) {
                     throw new Error('No trunk has number requests or numbers to provision.');
@@ -837,7 +1317,6 @@
                 deleteCookie('sip_provisionJobs');
                 deleteCookie('sip_provisionResult');
                 deleteCookie('sip_ubossAutoRetry');
-                deleteCookie('sip_tnCheckRound');
 
                 if (window.IrisBridge) window.IrisBridge.orderComplete(getCookie('sip_didOrderNumber') || getCookie('sip_ponNumber') || accountId);
 
@@ -869,4 +1348,11 @@
                 msg.textContent = 'Promo applied — $0.01 card verification charge';
                 msg.style.color = 'var(--success-green)';
             }
+
+            // Picks left short can't be paid for or ordered — back to the
+            // picker before anything else happens here
+            if (!orderAlreadyPlaced() && sendBackIfPicksIncomplete(loadTrunksFromCookie(), paymentNote())) return;
+
+            // Hold payment and submit while espresso can't take the order
+            checkDidOrderingReady();
         });

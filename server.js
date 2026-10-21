@@ -1,16 +1,17 @@
 // ============================================
 // OnlineOrdering server
 // ============================================
-// Serves the static ordering pages AND proxies the Iristel espresso SOAP
-// APIs as JSON: DID Ordering v3 under /api/did/*, LNP (number porting) v4
-// under /api/lnp/*.
+// Serves the static ordering pages AND proxies the Iristel espresso APIs as
+// JSON: DID inventory and orders over REST under /api/did/* (the rate-center
+// catalog still over SOAP v3), LNP (number porting) over SOAP v4 under
+// /api/lnp/*.
 //
-// The browser cannot talk to espresso directly: the endpoint sends no CORS
-// headers, speaks rpc/encoded SOAP, and the credentials must not ship in
-// client JS. This proxy is the one place that knows all three.
+// The browser cannot talk to espresso directly: there are no CORS headers,
+// SOAP is rpc/encoded, and the credentials must not ship in client JS. This
+// proxy is the one place that knows all three.
 //
-// Run:  ESPRESSO_USER=... ESPRESSO_PASS=... node server.js
-// Env:  ESPRESSO_MODE=test|production  (default test)
+// Run:  ESPRESSO_USER=... ESPRESSO_PASS=... ESPRESSO_CLIENT_ID=... ESPRESSO_CLIENT_SECRET=... node server.js
+// Env:  ESPRESSO_MODE=test|production  (default test; test = REST sandbox)
 //       PORT                           (default 3000)
 //
 // No npm dependencies — `npm start` works with no install step.
@@ -86,8 +87,8 @@ const ROOT = __dirname;
 //
 // Persisted to disk so a restart doesn't reopen the double-charge window.
 // Render's disk is ephemeral, so this survives restarts but not redeploys;
-// placeOrder additionally asks espresso for recent matching orders as a
-// backstop. A real datastore is the pre-launch answer — tracked separately.
+// an order whose create answer was lost is found again in espresso by its
+// reference. A real datastore is the pre-launch answer — tracked separately.
 // Render allows one disk per service, which is all this needs — both stores are
 // files in the same directory. Point STATE_DIR at the mount (e.g. /var/data)
 // and both land there; the individual paths remain overridable.
@@ -209,9 +210,12 @@ function markSessionDone(email) {
     return closed;
 }
 
+// Picked numbers are part of the shape: the same rate center with other
+// numbers is a different order
 function requestShape(requests) {
     return (requests || [])
-        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
+        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`
+            + (Array.isArray(r.dids) && r.dids.length ? '|' + r.dids.map(tenDigits).sort().join(',') : ''))
         .sort().join(';');
 }
 
@@ -384,115 +388,10 @@ function getCatalog() {
         .then(r => soapArray(r).map(x => ({ ratecenter: x.ratecenter, npa: x.npa })));
 }
 
-// Routing profiles change rarely; a fresh SOAP call per order is wasted
-// latency. Failures are never cached.
-const PROFILES_TTL_MS = 10 * 60 * 1000;
-let profilesCache = null;
-
-function getProfiles() {
-    if (profilesCache && Date.now() - profilesCache.at < PROFILES_TTL_MS) {
-        return Promise.resolve(profilesCache.list);
-    }
-    return espressoCall('<ns1:didGetRoutingProfiles/>', 'didGetRoutingProfiles')
-        .then(r => soapArray(r).map(x => (typeof x === 'string' ? x : x.profile || JSON.stringify(x))))
-        .then(list => { profilesCache = { list, at: Date.now() }; return list; });
-}
-
-// requests: [{ratecenter, npa, quantity}] — prefix/country_prefix are deprecated
-// but required by the schema; the manual says their values are ignored.
-// Duplicate detection against espresso is ADVISORY ONLY, never blocking.
-//
-// didGetOrders returns every order on the espresso *company* account, not the
-// orders of one customer — there is no per-customer filter. "TORONTO 647 x1"
-// is the most ordinary request imaginable, so two unrelated customers ordering
-// it the same day look identical here. Blocking on that would refuse a
-// legitimate order, which is worse than the duplicate it would prevent.
-//
-// So this only logs a warning for support to notice. The real guarantee is the
-// persisted order store plus the client's idempotency key. To close the
-// redeploy gap properly, point ORDER_STORE_PATH at a Render persistent disk.
-const DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
-
-function sameRequestShape(a, b) {
-    const norm = list => (list || [])
-        .map(r => `${String(r.ratecenter).toUpperCase()}|${r.npa}|${parseInt(r.quantity, 10) || 1}`)
-        .sort().join(';');
-    return norm(a) === norm(b);
-}
-
-async function findRecentMatchingOrder(requests) {
-    const now = new Date();
-    const pad = n => String(n).padStart(2, '0');
-    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
-        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    const from = new Date(now.getTime() - DUPLICATE_WINDOW_MS);
-
-    const body = `<ns1:didGetOrders>`
-        + `<startDate xsi:type="xsd:string">${fmt(from)}</startDate>`
-        + `<endDate xsi:type="xsd:string">${fmt(now)}</endDate></ns1:didGetOrders>`;
-    let recent;
-    try {
-        recent = soapArray(await espressoCall(body, 'didGetOrders'));
-    } catch (e) {
-        // 491 "no did requests between those dates" is the normal empty case
-        return null;
-    }
-    for (const o of recent) {
-        const reqs = soapArray(o.requests).map(r => ({
-            ratecenter: r.ratecenter, npa: r.npa, quantity: r.quantity
-        }));
-        // The order number comes back as `code`
-        if (sameRequestShape(reqs, requests)) return String(o.code || '');
-    }
-    return null;
-}
-
-async function placeOrder(profile, requests, opts) {
-    // Advisory only — see the note above on why this cannot block. Not
-    // awaited: the warning is for support to notice, so it must not cost the
-    // customer an espresso round trip on the order's critical path.
-    findRecentMatchingOrder(requests).then(similar => {
-        if (similar) {
-            console.warn('[order] NOTE: espresso already has a recent order with the same shape:', similar,
-                '— proceeding anyway (company-wide feed, cannot tell customers apart).',
-                'accountRef:', (opts && opts.accountRef) || 'unknown');
-        }
-    }).catch(() => { /* never let the advisory check block a real order */ });
-
-    if (!profile) profile = ESPRESSO_DID_PROFILE;
-    const profiles = await getProfiles();
-    if (!profile) {
-        if (!profiles.length) throw new Error('No routing profiles on this espresso account');
-        profile = profiles[0];
-    } else if (!profiles.includes(profile)) {
-        // Refusing beats ordering numbers that route somewhere unintended
-        throw new Error(`Routing profile "${profile}" not found on this account. Available: ${profiles.join(', ')}`);
-    }
-    const items = requests.map(r => `
-      <item xsi:type="ns1:didRequestArrayStructure">
-        <ratecenter xsi:type="xsd:string">${xmlEscape(r.ratecenter)}</ratecenter>
-        <npa xsi:type="xsd:string">${xmlEscape(r.npa)}</npa>
-        <quantity xsi:type="xsd:int">${parseInt(r.quantity, 10) || 1}</quantity>
-        <prefix xsi:type="xsd:string"></prefix>
-        <country_prefix xsi:type="xsd:string">No</country_prefix>
-      </item>`).join('');
-
-    const body = `<ns1:didOrderDids>
-  <didRequestArray xsi:type="ns1:didRequestArrayRoot" SOAP-ENC:arrayType="ns1:didRequestArrayRootStructure[1]">
-    <item xsi:type="ns1:didRequestArrayRootStructure">
-      <profile xsi:type="xsd:string">${xmlEscape(profile)}</profile>
-      <requests xsi:type="ns1:didRequestArrayStruct" SOAP-ENC:arrayType="ns1:didRequestArrayStructure[${requests.length}]">${items}
-      </requests>
-    </item>
-  </didRequestArray>
-</ns1:didOrderDids>`;
-
-    const r = await espressoCall(body, 'didOrderDids');
-    // didOrderDidsReturnStructure is an array of strings — the order number(s)
-    const orders = soapArray(r).map(String);
-    return { profile, orderNumbers: orders, orderNumber: orders[0] || null };
-}
-
+// ---- Legacy SOAP order reads ----
+// Orders are placed through the REST API below. These read orders placed
+// before the switch (SOAP order numbers, e.g. DID2610150200001) so anything
+// still in flight finishes; they can go once no such order is open.
 function getOrderStatus(orderNumber) {
     const body = `<ns1:didGetOrderStatus><didOrderId xsi:type="xsd:string">${xmlEscape(orderNumber)}</didOrderId></ns1:didGetOrderStatus>`;
     return espressoCall(body, 'didGetOrderStatus')
@@ -540,6 +439,896 @@ function getOrderProblems(orderNumber) {
 }
 
 // ============================================
+// espresso REST API — inventory + DID orders
+// ============================================
+// Orders go through espresso's REST API (JSON, OAuth2). What it adds over
+// SOAP is the live number inventory, so the customer picks the exact numbers
+// they want and MIND is checked BEFORE anything is bought. The rate-center
+// catalog and porting have no REST equivalent and stay on SOAP.
+//
+// Host follows ESPRESSO_MODE: production → api.espressodid.com, test → the
+// sandbox. The sandbox may need its own login, so ESPRESSO_REST_USER/PASS
+// override the SOAP credentials.
+const ESPRESSO_REST_URL = (process.env.ESPRESSO_REST_URL
+    || (ESPRESSO_MODE === 'production' ? 'https://api.espressodid.com' : 'https://api-sandbox.espressodid.com'))
+    .replace(/\/$/, '');
+const ESPRESSO_CLIENT_ID = process.env.ESPRESSO_CLIENT_ID || '';
+const ESPRESSO_CLIENT_SECRET = process.env.ESPRESSO_CLIENT_SECRET || '';
+const ESPRESSO_REST_USER = process.env.ESPRESSO_REST_USER || ESPRESSO_USER;
+const ESPRESSO_REST_PASS = process.env.ESPRESSO_REST_PASS || ESPRESSO_PASS;
+// Iristel's own numbers — the only OCN the order API accepts
+const ESPRESSO_OCN = process.env.ESPRESSO_OCN || '154E';
+const ESPRESSO_REST_CONFIGURED = !!(ESPRESSO_CLIENT_ID && ESPRESSO_CLIENT_SECRET
+    && ESPRESSO_REST_USER && ESPRESSO_REST_PASS);
+
+// err.apiCode is what the browser branches on (sent back as `code`)
+function espressoRestError(message, fields) {
+    return Object.assign(new Error(message), { status: 502 }, fields || {});
+}
+
+// 10-digit form for the browser, the store and UBoss; espresso and MIND
+// use 11 (mindDigits). The conversion happens only at those edges.
+function tenDigits(n) {
+    const d = String(n || '').replace(/\D/g, '');
+    return d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+}
+
+// ---- Token ----
+// espresso keeps at most 5 live tokens per user and revokes the oldest, so
+// one token is shared by every request and refreshed just before it expires.
+let restToken = null;         // { access, refresh, expiresAt }
+let restTokenPending = null;  // the one in-flight fetch everyone waits on
+
+async function requestRestToken(grant) {
+    const form = new URLSearchParams({
+        client_id: ESPRESSO_CLIENT_ID, client_secret: ESPRESSO_CLIENT_SECRET, ...grant
+    }).toString();
+    const r = await httpsRequest(`${ESPRESSO_REST_URL}/ws/v1/auth/token`, {
+        method: 'POST', headers: {
+            'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json',
+            'Content-Length': Buffer.byteLength(form)
+        }
+    }, form);
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status !== 200 || !data || !data.access_token) {
+        throw espressoRestError(`espresso REST login failed (HTTP ${r.status}): `
+            + ((data && (data.error_description || data.error)) || String(r.raw || '').slice(0, 200)),
+            { status: 503, apiCode: 'ESPRESSO_AUTH', espressoStatus: r.status });
+    }
+    restToken = {
+        access: data.access_token, refresh: data.refresh_token || null,
+        expiresAt: Date.now() + (Number(data.expires_in) || 3600) * 1000
+    };
+    return restToken.access;
+}
+
+function espressoRestToken() {
+    if (restToken && restToken.expiresAt - 60000 > Date.now()) return Promise.resolve(restToken.access);
+    if (!restTokenPending) {
+        const prev = restToken;
+        restTokenPending = (async () => {
+            if (prev && prev.refresh) {
+                try { return await requestRestToken({ grant_type: 'refresh_token', refresh_token: prev.refresh }); }
+                catch (e) { console.warn('[espresso] token refresh failed — logging in again:', e.message); }
+            }
+            return requestRestToken({ grant_type: 'password', username: ESPRESSO_REST_USER, password: ESPRESSO_REST_PASS });
+        })().finally(() => { restTokenPending = null; });
+    }
+    return restTokenPending;
+}
+
+// One REST call. Errors keep espresso's HTTP status and first error code
+// (espressoStatus / espressoCode); err.transport marks a call whose answer
+// never arrived — for an order that means "may or may not exist".
+async function espressoRest(method, apiPath, body) {
+    if (!ESPRESSO_REST_CONFIGURED) {
+        throw espressoRestError('espresso REST API not configured (set ESPRESSO_CLIENT_ID / ESPRESSO_CLIENT_SECRET)',
+            { status: 503, apiCode: 'ESPRESSO_NOT_CONFIGURED' });
+    }
+    const payload = body === undefined ? null : JSON.stringify(body);
+    let url = ESPRESSO_REST_URL + apiPath;
+    let reauthed = false, redirects = 0;
+    for (;;) {
+        const token = await espressoRestToken();
+        let r;
+        try {
+            r = await httpsRequest(url, {
+                method, headers: {
+                    'Authorization': `Bearer ${token}`, 'Accept': 'application/json',
+                    ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {})
+                }
+            }, payload);
+        } catch (e) {
+            throw espressoRestError(`espresso ${method} ${apiPath} — no answer: ${e.message}`,
+                { status: 503, transport: true });
+        }
+        // nginx 301s /ws/v1/dids/orders to the trailing-slash form. A
+        // redirect means nothing was processed, so the same request is sent
+        // again there — never to another host.
+        if (r.status >= 300 && r.status < 400 && r.headers.location && redirects < 2) {
+            const next = new URL(r.headers.location, url);
+            if (next.host === new URL(url).host) { url = next.href; redirects++; continue; }
+        }
+        // Expired or revoked token: rejected before any processing, so one
+        // fresh login and a retry is safe even when placing an order
+        if (r.status === 401 && !reauthed) { reauthed = true; restToken = null; continue; }
+        let data = null;
+        try { data = r.raw ? JSON.parse(r.raw) : {}; } catch (e) {}
+        if (r.status >= 200 && r.status < 300) {
+            if (data === null) {
+                throw espressoRestError(`espresso ${method} ${apiPath} answered HTTP ${r.status} with something that isn't JSON`,
+                    { apiCode: 'ESPRESSO_BAD_RESPONSE', espressoStatus: r.status });
+            }
+            return data;
+        }
+        const errs = data && Array.isArray(data.errors) ? data.errors : [];
+        throw espressoRestError(`espresso ${method} ${apiPath} → HTTP ${r.status}: `
+            + (errs.length ? errs.map(x => [x.code, x.message].filter(v => v != null && v !== '').join(' ')).join('; ')
+                : String(r.raw || '').slice(0, 200)),
+            { status: r.status >= 500 ? 503 : 502, espressoStatus: r.status,
+              espressoCode: errs[0] && errs[0].code != null ? String(errs[0].code) : null, errors: errs });
+    }
+}
+
+// ---- Company and routing profile ----
+// Resolved once and cached for an hour. The routing profile decides where the
+// numbers ring — a wrong one provisions fine but routes calls nowhere — so it
+// is matched by the pinned label (ESPRESSO_DID_PROFILE), never guessed.
+const REST_ACCOUNT_TTL_MS = 60 * 60 * 1000;
+let restAccount = null; // { companyId, routingProfileId, profileLabel, at }
+
+async function restRoutingProfiles(companyId) {
+    const q = new URLSearchParams({ from: '0', size: '1000', ...(companyId ? { company_id: companyId } : {}) });
+    const page = await espressoRest('GET', `/ws/v1/network/routing_profiles?${q}`);
+    return Array.isArray(page) ? page : (page && Array.isArray(page.data) ? page.data : []);
+}
+
+async function espressoRestAccount(fresh) {
+    if (!fresh && restAccount && Date.now() - restAccount.at < REST_ACCOUNT_TTL_MS) return restAccount;
+    let companyId = process.env.ESPRESSO_COMPANY_ID || '';
+    if (!companyId) {
+        const r = await espressoRest('GET', '/ws/v1/general/companies');
+        const active = (Array.isArray(r) ? r : (r && r.data) || []).filter(c => c && c.id && c.active !== false);
+        if (active.length !== 1) {
+            throw espressoRestError(`espresso lists ${active.length} active companies for this login — set ESPRESSO_COMPANY_ID`,
+                { status: 503, apiCode: 'ESPRESSO_NOT_READY' });
+        }
+        companyId = active[0].id;
+    }
+    let routingProfileId = process.env.ESPRESSO_ROUTING_PROFILE_ID || '';
+    let profileLabel = null;
+    if (!routingProfileId) {
+        const did = (await restRoutingProfiles(companyId)).filter(p => p && p.id && p.type === 'did' && p.active !== false);
+        const pin = ESPRESSO_DID_PROFILE.trim().toLowerCase();
+        const pick = pin ? did.find(p => String(p.label || '').trim().toLowerCase() === pin)
+            : (did.length === 1 ? did[0] : null);
+        if (!pick) {
+            throw espressoRestError(`Routing profile "${ESPRESSO_DID_PROFILE || '(not pinned)'}" not found among active DID profiles: `
+                + (did.map(p => p.label).join(', ') || 'none'), { status: 503, apiCode: 'ESPRESSO_NOT_READY' });
+        }
+        routingProfileId = pick.id;
+        profileLabel = pick.label;
+    }
+    restAccount = { companyId, routingProfileId, profileLabel, at: Date.now() };
+    return restAccount;
+}
+
+// ---- Inventory ----
+const invFilter = (name, value, eq = '=') =>
+    ({ category_name: name, category_operator: 'and', category_eq: eq, category_value: String(value) });
+
+// The spec's defaults are odd (limit 0, offset 1024), so both are always sent.
+// Documented as one object; a bare array or a {data:[…]} page parse too.
+async function inventorySearch(filters, { limit = 50, offset = 0 } = {}) {
+    const data = await espressoRest('POST', '/ws/v1/dids/inventory/search',
+        { limit, offset, order_by: ['number asc'], filter: filters });
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.data)) return data.data;
+    return data && data.number ? [data] : [];
+}
+
+// Free to sell: available, nobody's account, not vanity, Iristel's OCN
+function inventoryRowFree(row) {
+    return !!row && String(row.status || '').toLowerCase() === 'available' && !row.account
+        && row.vanity !== true && (!row.ocn || String(row.ocn).toUpperCase() === ESPRESSO_OCN.toUpperCase());
+}
+
+// ---- Readiness ----
+// Checked at startup and every 10 minutes; /api/config reports it so the
+// pages can say "ordering is unavailable" up front instead of after payment.
+//   pickReady — the inventory answers (the number picker works)
+//   didReady  — that, plus the company and routing profile resolve
+let espressoReadiness = { didReady: false, pickReady: false, checkedAt: 0, error: 'not checked yet' };
+let readinessPending = null;
+
+function checkEspressoReadiness() {
+    if (readinessPending) return readinessPending;
+    readinessPending = (async () => {
+        const out = { didReady: false, pickReady: false, checkedAt: Date.now(), error: null };
+        try {
+            await inventorySearch([invFilter('status', 'available')], { limit: 1 });
+            out.pickReady = true;
+            await espressoRestAccount(true);
+            out.didReady = true;
+        } catch (e) {
+            out.error = e.message;
+        }
+        if (out.didReady !== espressoReadiness.didReady || out.pickReady !== espressoReadiness.pickReady) {
+            console[out.didReady ? 'log' : 'warn']('[espresso] REST readiness — orders:', out.didReady ? 'ready' : 'NOT ready',
+                '| picker:', out.pickReady ? 'ready' : 'NOT ready', out.error ? '| ' + out.error : '');
+        }
+        espressoReadiness = out;
+        return out;
+    })().finally(() => { readinessPending = null; });
+    return readinessPending;
+}
+
+// ---- MIND, read-only ----
+// Pick time and submit time look only: nothing is added to MIND until the
+// numbers are bought. A number is free only when all three lookups agree —
+// a service carrying it, the reserved pool, and the account lookup (the one
+// that sees numbers held by wholesale accounts). Any error throws: an
+// unclear answer is never "free".
+async function mindPhoneAccountsStrict(number) {
+    const digits = mindDigits(number);
+    const r = await httpsRequest(`${BILLING_API_URL}/account-details-with-phone?telephoneNumber=${encodeURIComponent(digits)}`,
+        { headers: { 'x-api-key': UBOSS_API_KEY, 'Accept': 'application/json' } });
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status >= 200 && r.status < 300 && data && Array.isArray(data.accounts)) {
+        if (data.accounts.length) {
+            return data.accounts.map(a => ({ code: String(a.code || a.accountId || ''), product: (a.product && a.product.code) || null }));
+        }
+        if (data.isExist === false || /does not exist/i.test(String(data.message || ''))) return [];
+    }
+    const err = new Error(`MIND account lookup failed for ${digits} (HTTP ${r.status}): ${String(r.raw || '').slice(0, 200)}`);
+    err.status = 502;
+    throw err;
+}
+
+// Read-only calls are retried once when the answer never arrived
+async function retryRead(fn) {
+    try { return await fn(); }
+    catch (e) {
+        if (!/timeout|ECONNRESET|socket hang up|EAI_AGAIN|ETIMEDOUT/i.test(`${e.message} ${e.code || ''}`)) throw e;
+        return fn();
+    }
+}
+
+async function mindPickVerdict(number) {
+    const [rows, inv, accounts] = await Promise.all([
+        retryRead(() => mindNumberHolders(number)),
+        retryRead(() => mindInventoryEntry(number)),
+        retryRead(() => mindPhoneAccountsStrict(number))
+    ]);
+    if (rows.length) return { free: false, via: 'service' };
+    if (inv) return { free: false, via: 'inventory' };
+    if (accounts.length) return { free: false, via: 'account' };
+    return { free: true };
+}
+
+// The picker re-shows the same numbers on a reload, so verdicts are cached
+// briefly. Submit re-checks uncached.
+const PICK_VERDICT_TTL_MS = 3 * 60 * 1000;
+const pickVerdictCache = new Map(); // 11 digits → { at, verdict }
+
+async function cachedPickVerdict(digits) {
+    const hit = pickVerdictCache.get(digits);
+    if (hit && Date.now() - hit.at < PICK_VERDICT_TTL_MS) return hit.verdict;
+    const verdict = await mindPickVerdict(digits);
+    pickVerdictCache.set(digits, { at: Date.now(), verdict });
+    if (pickVerdictCache.size > 5000) pickVerdictCache.delete(pickVerdictCache.keys().next().value);
+    return verdict;
+}
+
+// Numbers on other customers' open orders — bought or being bought, but not
+// in MIND yet, so the MIND check can't see them
+function numbersOnOpenOrders(exceptEmail) {
+    const held = new Set();
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.startsWith('order:') || !v || v.status === 'done' || v.status === 'rejected') continue;
+        if (exceptEmail && v.email === exceptEmail) continue;
+        (v.requests || []).forEach(r => (r.dids || []).forEach(d => held.add(mindDigits(d))));
+    }
+    return held;
+}
+
+function shuffled(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(i + 1);
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+// Numbers a customer can pick in a rate center: available in espresso and
+// unknown to MIND. Walks the inventory a page at a time, MIND-checking a few
+// at once, until `want` pass or PICK_MAX_CHECKS were tried. Shuffled within a
+// page so two customers in the same rate center rarely see the same list.
+const PICK_PAGE = 50;
+const PICK_MAX_CHECKS = 200;
+const PICK_CONCURRENCY = 5;
+
+async function pickAvailableNumbers({ ratecenter, npa, want, exclude, email, fresh }) {
+    const skip = new Set([...(exclude || []).map(mindDigits), ...numbersOnOpenOrders(normEmail(email))]);
+    const filters = [invFilter('status', 'available'), invFilter('ratecenter', ratecenter),
+        invFilter('prefix', `1${npa}`), invFilter('provider_code', ESPRESSO_OCN)];
+    const verdictOf = fresh ? mindPickVerdict : cachedPickVerdict;
+    const picked = [];
+    let offset = 0, checked = 0, hidden = 0, failed = 0, lastError = null, exhausted = false, rowsSeen = 0, notFree = 0;
+    while (picked.length < want && checked < PICK_MAX_CHECKS) {
+        const rows = await inventorySearch(filters, { limit: PICK_PAGE, offset });
+        offset += PICK_PAGE;
+        rowsSeen += rows.length;
+        const free = rows.filter(inventoryRowFree);
+        notFree += rows.length - free.length;
+        const candidates = shuffled(free.map(r => mindDigits(r.number))
+            .filter(d => /^1\d{10}$/.test(d) && d.slice(1, 4) === String(npa) && !skip.has(d)));
+        for (let i = 0; i < candidates.length && picked.length < want && checked < PICK_MAX_CHECKS; i += PICK_CONCURRENCY) {
+            const batch = candidates.slice(i, i + Math.min(PICK_CONCURRENCY, PICK_MAX_CHECKS - checked));
+            checked += batch.length;
+            const verdicts = await Promise.all(batch.map(d => verdictOf(d).catch(e => ({ error: e }))));
+            batch.forEach((d, j) => {
+                const v = verdicts[j];
+                if (v.error) { failed++; lastError = v.error; return; }
+                if (!v.free) { hidden++; return; }
+                if (picked.length < want) { picked.push(d); skip.add(d); }
+            });
+        }
+        if (rows.length < PICK_PAGE) { exhausted = true; break; }
+    }
+    if (rowsSeen && rowsSeen === notFree) {
+        console.warn('[espresso] inventory for', ratecenter, npa, '—', rowsSeen, 'rows, none sellable (status/account/vanity/OCN)');
+    }
+    // Nothing could be verified at all: MIND is down, not the rate center empty
+    if (!picked.length && failed) {
+        throw Object.assign(new Error(`MIND could not be checked (${failed} lookup(s) failed): ${lastError && lastError.message}`),
+            { status: 503, apiCode: 'MIND_UNAVAILABLE' });
+    }
+    return {
+        numbers: picked.map(tenDigits),
+        exhausted: exhausted && picked.length < want,
+        hidden, unverified: failed, checked
+    };
+}
+
+// ---- MIND city for a rate center ----
+// Numbers are added to MIND under a city, and MIND has no city for many
+// espresso rate centers (CHATHAM among them). Resolution, per rate center:
+//   1. a MIND city of the same name (in the NPA's province)
+//   2. a nearby city from MIND_CITY_ALIASES
+//   3. the NPA's default city from NPA_MIND_CITY
+// Every city named below exists in MIND's list (checked 2026-10-20).
+const NPA_MIND_CITY = [
+    [['416', '437', '647', '942'], 'TORONTO', ['ON']],
+    [['905', '289', '365', '742'], 'HAMILTON', ['ON']],
+    [['519', '226', '548', '382'], 'LONDON', ['ON']],
+    [['613', '343', '753'], 'CARLETON', ['ON']],
+    [['705', '249', '683'], 'SUDBURY', ['ON']],
+    [['807'], 'THUNDER BAY', ['ON']],
+    [['514', '438', '263'], 'MONTREAL', ['QC']],
+    [['450', '579', '354'], 'LONGUEUIL', ['QC']],
+    [['418', '581', '367'], 'QUEBEC', ['QC']],
+    [['819', '873', '468'], 'SHERBROOKE', ['QC']],
+    [['204', '431', '584'], 'WINNIPEG', ['MB']],
+    [['306', '639', '474'], 'REGINA', ['SK']],
+    [['403', '587', '825', '368'], 'CALGARY', ['AB']],
+    [['780'], 'EDMONTON', ['AB']],
+    [['604', '778', '236', '672'], 'VANCOUVER', ['BC']],
+    [['250'], 'VICTORIA', ['BC']],
+    [['902', '782'], 'HALIFAX', ['NS', 'PE']],
+    [['506', '428'], 'MONCTON', ['NB']],
+    [['709', '879'], "ST. JOHN'S", ['NL']],
+    [['867'], 'WHITEHORSE', ['YT', 'NT', 'NU']]
+].reduce((map, [npas, city, provinces]) => {
+    npas.forEach(n => { map[n] = { city, provinces }; });
+    return map;
+}, {});
+
+// Rate centers MIND has no city for → the nearest one it has
+const MIND_CITY_ALIASES = {
+    CHATHAM: 'WINDSOR'
+};
+
+const cityKey = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// The list is large and MIND is slow to send it (24 s seen on 2026-10-21),
+// so it gets a longer timeout, and a failed hourly refresh keeps the last
+// good copy — cities rarely change.
+async function mindCities() {
+    if (mindCitiesCache && mindCitiesCache.at > Date.now() - 3600000) return mindCitiesCache;
+    let list = [], failure = null;
+    try {
+        const r = await retryRead(() => httpsRequest(`${BILLING_API_URL}/telephone-numbers/cities`,
+            { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' }, timeout: 60000 }));
+        try { list = (JSON.parse(r.raw).cities || []).filter(c => c && c.city && c.id != null); } catch (e) {}
+        if (!list.length) failure = `HTTP ${r.status}`;
+    } catch (e) {
+        failure = e.message;
+    }
+    if (list.length) {
+        mindCitiesCache = { at: Date.now(), byKey: new Map(list.map(c => [cityKey(c.city), c])) };
+        return mindCitiesCache;
+    }
+    if (mindCitiesCache) {
+        console.warn('[mind] city list refresh failed (' + failure + ') — keeping the copy from',
+            new Date(mindCitiesCache.at).toISOString());
+        return mindCitiesCache;
+    }
+    // Never had one: nothing to fall back on, and nothing is cached
+    throw Object.assign(new Error(`MIND city list unavailable: ${failure}`), { status: 503, apiCode: 'MIND_UNAVAILABLE' });
+}
+
+// → { id, city, via: 'exact' | 'alias' | 'npa' }, or null when nothing fits
+async function resolveMindCity({ ratecenter, npa }) {
+    const { byKey } = await mindCities();
+    const info = NPA_MIND_CITY[String(npa)] || null;
+    const fits = c => !info || !c.province || info.provinces.includes(String(c.province).toUpperCase());
+    const exact = ratecenter && byKey.get(cityKey(ratecenter));
+    if (exact && fits(exact)) return { id: exact.id, city: exact.city, via: 'exact' };
+    const alias = ratecenter && MIND_CITY_ALIASES[cityKey(ratecenter)];
+    const aliased = alias && byKey.get(cityKey(alias));
+    if (aliased && fits(aliased)) return { id: aliased.id, city: aliased.city, via: 'alias' };
+    const fallback = info && byKey.get(cityKey(info.city));
+    return fallback ? { id: fallback.id, city: fallback.city, via: 'npa' } : null;
+}
+
+// ---- Orders ----
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// REST orders are referred to by UUID or ORD-…; anything else is a SOAP order
+const isLegacyOrderRef = ref => !UUID_RE.test(ref) && !/^ORD-/i.test(ref);
+
+// The order: record for an espresso order id or ORD- number
+function findOrderRecord(ref) {
+    for (const [key, v] of Object.entries(orderStore)) {
+        if (key.startsWith('order:') && v && (v.orderId === ref || v.orderNumber === ref)) return { key, rec: v };
+    }
+    return null;
+}
+
+// Recent orders, newest-updated first — used to find an order by its
+// reference or ORD- number when the store doesn't have it
+async function recentRestOrders(match, pages = 3) {
+    const { companyId } = await espressoRestAccount();
+    for (let page = 1; page <= pages; page++) {
+        const q = new URLSearchParams({ accountId: companyId, page: String(page), size: '50' });
+        const r = await espressoRest('GET', `/ws/v1/dids/orders?${q}`);
+        const rows = (r && Array.isArray(r.data)) ? r.data : [];
+        const hit = rows.find(match);
+        if (hit) return hit;
+        if (rows.length < 50) break;
+    }
+    return null;
+}
+
+async function getRestOrder(ref) {
+    let id = UUID_RE.test(ref) ? ref : null;
+    if (!id) {
+        const hit = findOrderRecord(ref);
+        id = hit && hit.rec.orderId;
+    }
+    if (!id && /^ORD-/i.test(ref)) {
+        const found = await recentRestOrders(o => o.orderNumber === ref);
+        id = found && found.id;
+    }
+    if (!id) {
+        throw espressoRestError(`Order ${ref} not found`, { status: 404, apiCode: 'ORDER_NOT_FOUND' });
+    }
+    return espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(id)}`);
+}
+
+// espresso status → what the status page acts on:
+//   Completed   — numbers assigned
+//   Rejected    — nothing bought; the customer can pick other numbers
+//   NeedsReview — failed/expired, or ended with numbers assigned: stop and
+//                 let ops look (never send the customer to buy again)
+//   Processing  — still going
+function mapRestOrderStatus(order) {
+    const assigned = (order.numbers || []).filter(n => n.status === 'ASSIGNED').map(n => tenDigits(n.did));
+    const reason = order.rejectionReason || order.failureReason || null;
+    const base = {
+        orderId: order.id, orderNumber: order.orderNumber, espressoStatus: order.status,
+        reason: reason ? reason.message || reason.code || null : null, assigned
+    };
+    switch (String(order.status || '').toUpperCase()) {
+        case 'COMPLETED':
+            return { ...base, status: 'Completed', statusText: 'Your numbers are assigned' };
+        case 'REJECTED':
+        case 'CANCELLED':
+            return assigned.length
+                ? { ...base, status: 'NeedsReview', statusText: 'Our team is reviewing your number order' }
+                : { ...base, status: 'Rejected', statusText: 'Some numbers are no longer available' };
+        case 'FAILED':
+        case 'EXPIRED':
+            return { ...base, status: 'NeedsReview', statusText: 'Our team is reviewing your number order' };
+        case 'PROCESSING':
+            return { ...base, status: 'Processing', statusText: 'Assigning your numbers' };
+        default:
+            return { ...base, status: 'Processing', statusText: 'Reserving your numbers' };
+    }
+}
+
+// Numbers by request position, from numberRequestId → numberRequests[].index
+function numbersByRequest(order, statuses) {
+    const indexOf = new Map((order.numberRequests || []).map(r => [r.id, r.index]));
+    const groups = new Map();
+    for (const n of order.numbers || []) {
+        if (statuses && !statuses.includes(n.status)) continue;
+        const idx = indexOf.has(n.numberRequestId) ? indexOf.get(n.numberRequestId) : null;
+        if (!groups.has(idx)) groups.set(idx, []);
+        groups.get(idx).push(tenDigits(n.did));
+    }
+    return [...groups.entries()].map(([index, dids]) => ({ index, dids }));
+}
+
+// Which picked numbers can no longer be had — gone from espresso's
+// inventory, held in MIND, or on another customer's open order.
+// → [{ number (10 digits), reason: 'espresso' | 'mind' | 'taken' }]
+async function unavailablePicks(dids, email) {
+    const others = numbersOnOpenOrders(normEmail(email));
+    const out = [];
+    let i = 0;
+    const list = dids.map(mindDigits);
+    await Promise.all(Array.from({ length: Math.min(4, list.length) }, async () => {
+        while (i < list.length) {
+            const d = list[i++];
+            if (others.has(d)) { out.push({ number: tenDigits(d), reason: 'taken' }); continue; }
+            const rows = await inventorySearch([invFilter('did', d)], { limit: 5 });
+            const row = rows.find(x => mindDigits(x.number) === d);
+            if (!inventoryRowFree(row)) {
+                out.push({ number: tenDigits(d), reason: 'espresso', espressoStatus: row ? row.status : 'not found' });
+                continue;
+            }
+            const v = await mindPickVerdict(d).catch(e => {
+                throw Object.assign(new Error(`MIND could not be checked for ${d}: ${e.message}`),
+                    { status: 503, apiCode: 'MIND_UNAVAILABLE' });
+            });
+            pickVerdictCache.set(d, { at: Date.now(), verdict: v });
+            if (!v.free) out.push({ number: tenDigits(d), reason: 'mind', via: v.via });
+        }
+    }));
+    return out;
+}
+
+// Per-request problems of a REST order, by request position, with the
+// picked numbers that are gone (goneDids) when recheck is on
+async function restOrderProblems(order, rec, { recheck = true, email } = {}) {
+    const reqs = (rec && rec.requests) || [];
+    const reasons = new Map();
+    for (const nr of order.numberRequests || []) if (nr.error) reasons.set(nr.index, nr.error);
+    const rej = order.rejectionReason;
+    if (rej) {
+        const nr = (order.numberRequests || []).find(r => r.id === rej.numberRequestId);
+        if (nr && !reasons.has(nr.index)) reasons.set(nr.index, rej);
+        else if (!nr && !reasons.size) (order.numberRequests || []).forEach(r => reasons.set(r.index, rej));
+    }
+    const out = [];
+    for (const [index, reason] of reasons) {
+        const r = reqs[index] || {};
+        const dids = (r.dids || []).map(tenDigits);
+        let goneDids = null;
+        if (recheck && dids.length) {
+            goneDids = await unavailablePicks(dids, email || (rec && rec.email))
+                .then(list => list.map(x => x.number))
+                .catch(() => dids);  // can't tell — treat all as gone
+        }
+        out.push({
+            index, trunk: r.trunk != null ? r.trunk : null, ratecenter: r.ratecenter || null, npa: r.npa || null,
+            quantity: r.quantity || dids.length || null, dids, goneDids,
+            code: reason.code || null, rejectReason: reason.message || reason.code || null
+        });
+    }
+    if (!out.length && order.failureReason) {
+        out.push({ index: null, code: order.failureReason.code || null, rejectReason: order.failureReason.message || null });
+    }
+    return out;
+}
+
+// Problems for whatever order a record holds — REST or legacy SOAP. Used by
+// snag reports, so it never throws and never re-checks numbers.
+async function orderProblemsFor(rec) {
+    if (!rec) return [];
+    if (rec.orderId) {
+        try { return await restOrderProblems(await getRestOrder(rec.orderId), rec, { recheck: false }); }
+        catch (e) { console.warn('[snag] could not fetch order problems for', rec.orderNumber, '-', e.message); return []; }
+    }
+    return rec.orderNumber ? getOrderProblems(rec.orderNumber) : [];
+}
+
+// ---- Placing an order ----
+// Every request carries the customer's picked numbers (dids, 10 digits). A
+// request with only a quantity (porting temp numbers, a page from before the
+// picker) is picked here, with the same checks the picker runs. Then:
+//   1. duplicate guard — the same submit again returns the existing order
+//   2. re-check the picks: espresso still has them, MIND still doesn't — if
+//      any are gone → 409 NUMBERS_UNAVAILABLE and nothing is bought
+//   3. record "placing" with a reference, then create the order
+// The create is never retried blindly: when its answer is lost, the order is
+// looked up by its reference, so a retry can't buy the numbers twice.
+const placingNow = new Set();            // emails with a create in flight here
+const PLACING_STALE_MS = 2 * 60 * 1000;
+const OPEN_ORDER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function publicOrder(rec) {
+    return {
+        orderId: rec.orderId || null, orderNumber: rec.orderNumber || null,
+        status: rec.espressoStatus || null, profile: rec.profile || null,
+        requests: (rec.requests || []).map(r => ({
+            ratecenter: r.ratecenter, npa: r.npa, quantity: r.quantity, dids: r.dids || [],
+            trunk: r.trunk != null ? r.trunk : null
+        }))
+    };
+}
+
+// Validates and normalizes the browser's requests. Picked numbers must be
+// 10 digits in the request's area code, one per unit of quantity, and never
+// picked twice across the whole order.
+function normalizeOrderRequests(raw) {
+    if (!Array.isArray(raw) || !raw.length) return { error: 'requests[] is required' };
+    const seen = new Set();
+    const out = [];
+    for (const [i, r] of raw.entries()) {
+        if (!r || !r.ratecenter || !/^\d{3}$/.test(String(r.npa || ''))) {
+            return { error: 'each request needs ratecenter and a 3-digit npa' };
+        }
+        const req = {
+            ratecenter: String(r.ratecenter).trim(), npa: String(r.npa),
+            quantity: parseInt(r.quantity, 10) || 0, trunk: r.trunk != null ? r.trunk : null
+        };
+        if (Array.isArray(r.dids) && r.dids.length) {
+            const dids = r.dids.map(tenDigits);
+            if (dids.some(d => !/^\d{10}$/.test(d) || d.slice(0, 3) !== req.npa)) {
+                return { error: `request ${i + 1}: every number must be 10 digits in area code ${req.npa}` };
+            }
+            if (req.quantity && req.quantity !== dids.length) {
+                return { error: `request ${i + 1}: quantity ${req.quantity} but ${dids.length} number(s) picked` };
+            }
+            for (const d of dids) {
+                if (seen.has(d)) return { error: `${d} is picked twice`, code: 'DUPLICATE_PICK', number: d };
+                seen.add(d);
+            }
+            req.dids = dids;
+            req.quantity = dids.length;
+        } else if (req.quantity < 1 || req.quantity > 100) {
+            return { error: `request ${i + 1}: quantity must be 1 to 100` };
+        }
+        out.push(req);
+    }
+    return { requests: out };
+}
+
+// Another order in flight for this customer — a different pick must not buy
+// a second set of numbers while the first is still going
+function otherOpenOrder(email, key) {
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (k === key || !k.startsWith('order:') || !k.includes(`:${email}`) || !v) continue;
+        if (v.status === 'done' || v.status === 'rejected') continue;
+        const age = Date.now() - (v.updatedAt || v.createdAt || 0);
+        if (v.status === 'placing' ? age > PLACING_STALE_MS : !(v.orderId || v.orderNumber)) continue;
+        if (age > OPEN_ORDER_WINDOW_MS) continue;
+        return v;
+    }
+    return null;
+}
+
+function adoptOrder(key, base, order) {
+    const rec = stateSet(key, {
+        ...base, status: 'active', orderId: order.id,
+        orderNumber: order.orderNumber || order.id, espressoStatus: order.status || null
+    });
+    console.log('[order]', rec.orderNumber, `(${order.id})`, 'for', rec.email, '—',
+        (rec.requests || []).map(r => `${r.ratecenter} ${r.npa}: ${(r.dids || []).join(',')}`).join(' | '));
+    return publicOrder(rec);
+}
+
+// The browser-facing code for an espresso failure
+function espressoApiCode(e) {
+    if (e.apiCode) return e.apiCode;
+    if (e.espressoStatus === 401 || e.espressoStatus === 403) return 'INVENTORY_FORBIDDEN';
+    if (e.transport || e.espressoStatus >= 500 || e.espressoStatus === 409) return 'ESPRESSO_BUSY';
+    return null;
+}
+
+const busy = (message, fields) => Object.assign(new Error(message), { status: 503, apiCode: 'ESPRESSO_BUSY' }, fields || {});
+
+async function placeDidOrder(body) {
+    if (!body.email) return { status: 400, payload: { error: 'email is required' } };
+    const email = normEmail(body.email);
+    const norm = normalizeOrderRequests(body.requests);
+    if (norm.error) {
+        return { status: 400, payload: { error: norm.error, code: norm.code || 'INVALID_REQUEST', number: norm.number || null } };
+    }
+    const requests = norm.requests;
+
+    // 1. Keyed on email + the shape as sent — before anything is auto-picked
+    //    — so a retry of the same submit always finds the same record
+    const key = K.order(email, requests);
+    let seen = stateGet(key, { activeOnly: true });
+    if (seen && seen.status === 'rejected') seen = null;
+    // Backstop: a previous order that actually provisioned must not block this one
+    if (seen && await sessionAlreadyProvisioned(email)) { markSessionDone(email); seen = null; }
+    if (seen && (seen.orderId || seen.orderNumber)) {
+        console.log('[order] duplicate suppressed for', key, '→', seen.orderNumber);
+        return { status: 200, payload: { ...publicOrder(seen), duplicate: true } };
+    }
+    if (placingNow.has(email)) {
+        return { status: 409, payload: { error: 'This order is already being placed', code: 'ORDER_IN_PROGRESS' } };
+    }
+    placingNow.add(email);
+    try {
+        if (seen && seen.status === 'placing') {
+            // A create whose answer never arrived — adopt it if espresso has it
+            const found = await recentRestOrders(o => o.reference === seen.reference).catch(() => null);
+            if (found) {
+                const full = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(found.id)}`).catch(() => found);
+                return { status: 200, payload: adoptOrder(key, seen, full) };
+            }
+            if (Date.now() - (seen.updatedAt || 0) < PLACING_STALE_MS) {
+                return { status: 409, payload: { error: 'This order is already being placed', code: 'ORDER_IN_PROGRESS' } };
+            }
+        }
+        const other = otherOpenOrder(email, key);
+        if (other) {
+            return { status: 409, payload: {
+                error: other.orderNumber ? `Order ${other.orderNumber} is still in progress for this account`
+                    : 'An order is still in progress for this account',
+                code: 'ORDER_IN_PROGRESS', orderNumber: other.orderNumber || null, orderId: other.orderId || null
+            } };
+        }
+
+        // Every number is stored in MIND under a city — settle it now, not
+        // after the numbers are bought
+        for (const [index, r] of requests.entries()) {
+            const city = await resolveMindCity({ ratecenter: r.ratecenter, npa: r.npa });
+            if (!city) {
+                return { status: 422, payload: {
+                    error: `No MIND city for ${r.ratecenter} (${r.npa})`, code: 'NO_MIND_CITY',
+                    index, ratecenter: r.ratecenter, npa: r.npa
+                } };
+            }
+            r.mindCityId = city.id;
+            r.mindCity = city.city;
+        }
+
+        // Quantity-only requests are picked here, checked uncached
+        const chosen = requests.flatMap(r => r.dids || []);
+        const shortfalls = [];
+        for (const [index, r] of requests.entries()) {
+            if (r.dids) continue;
+            const got = await pickAvailableNumbers({ ratecenter: r.ratecenter, npa: r.npa, want: r.quantity, exclude: chosen, email, fresh: true });
+            if (got.numbers.length < r.quantity) {
+                shortfalls.push({ index, ratecenter: r.ratecenter, npa: r.npa, wanted: r.quantity, found: got.numbers.length });
+                continue;
+            }
+            r.dids = got.numbers;
+            r.autoPicked = true;
+            chosen.push(...got.numbers);
+        }
+        if (shortfalls.length) {
+            return { status: 409, payload: { error: 'Not enough numbers available', code: 'NUMBERS_UNAVAILABLE', unavailable: [], shortfalls } };
+        }
+
+        // 2. The customer's picks may have gone since they were shown
+        const picks = requests.filter(r => !r.autoPicked).flatMap(r => r.dids);
+        const unavailable = picks.length ? await unavailablePicks(picks, email) : [];
+        if (unavailable.length) {
+            console.warn('[order]', email, '— picked numbers no longer available:', JSON.stringify(unavailable));
+            reportServerError(email, 'did-unavailable',
+                new Error(`${unavailable.length} picked number(s) no longer available — customer sent back to pick again`),
+                { unavailable }, 'warning');
+            return { status: 409, payload: {
+                error: 'Some of the numbers you picked are no longer available', code: 'NUMBERS_UNAVAILABLE', unavailable
+            } };
+        }
+
+        // 3. Create
+        const acct = await espressoRestAccount();
+        const reference = `oo:${String(body.accountRef || 'na').replace(/[^\w-]/g, '').slice(0, 40)}:${crypto.randomBytes(6).toString('hex')}`;
+        const base = {
+            email, accountRef: body.accountRef || null, requests, reference, api: 'rest', profile: acct.profileLabel,
+            // Snapshot of the trunk layout so a customer returning on another
+            // device can be put back where they were
+            trunks: Array.isArray(body.trunks) ? body.trunks : null,
+            businessName: body.businessName || null
+        };
+        stateSet(key, { ...base, status: 'placing' });
+        const createBody = {
+            accountId: acct.companyId, countryId: '1', ocn: ESPRESSO_OCN, vanity: false, selectDids: false,
+            acquisitionType: 'BUY', routingProfileId: acct.routingProfileId, reference,
+            numberRequests: requests.map(r => ({
+                quantity: r.dids.length,
+                filters: [{ categoryName: 'did', categoryValue: r.dids.map(mindDigits) }]
+            }))
+        };
+        let order = null;
+        try {
+            order = await espressoRest('POST', '/ws/v1/dids/orders', createBody);
+            if (!order || !order.id) {
+                order = null;
+                throw espressoRestError('espresso accepted the order but sent back no order id', { apiCode: 'ESPRESSO_BAD_RESPONSE' });
+            }
+        } catch (e) {
+            // No answer, or a server error: the order may exist anyway
+            const ambiguous = !!(e.transport || e.apiCode === 'ESPRESSO_BAD_RESPONSE'
+                || (e.espressoStatus >= 500 && e.espressoCode !== 'ACCOUNT_MAPPING_UNAVAILABLE'));
+            if (ambiguous) {
+                const found = await recentRestOrders(o => o.reference === reference).catch(() => null);
+                if (found) {
+                    order = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(found.id)}`).catch(() => found);
+                }
+            }
+            if (!order) {
+                // Refused outright — nothing was created, so a new submit may go
+                if (!ambiguous) stateSet(key, { ...base, status: 'rejected', error: e.message });
+                reportServerError(email, 'did-order', e, { reference, ambiguous, requests: publicOrder(base).requests });
+                const code = espressoApiCode(e);
+                const err = (ambiguous || code === 'ESPRESSO_BUSY')
+                    ? busy(ambiguous ? `espresso didn't confirm the order (reference ${reference}) — ${e.message}` : e.message)
+                    : Object.assign(new Error(e.message), {
+                        status: code === 'INVENTORY_FORBIDDEN' ? 503 : 502, apiCode: code || 'ESPRESSO_REJECTED'
+                    });
+                err.reported = true;
+                throw err;
+            }
+        }
+        return { status: 200, payload: adoptOrder(key, base, order) };
+    } finally {
+        placingNow.delete(email);
+    }
+}
+
+// Keeps the order: record in step with espresso and raises the alerts a
+// final status needs — once each
+function noteOrderOutcome(order, mapped) {
+    const hit = findOrderRecord(order.id) || findOrderRecord(order.orderNumber);
+    if (!hit) return;
+    const { key, rec } = hit;
+    const patch = { ...rec, espressoStatus: order.status, updatedAt: Date.now() };
+    if (mapped.status === 'Rejected' && rec.status !== 'done') patch.status = 'rejected';
+    if (mapped.status === 'NeedsReview' && !rec.reviewReported) {
+        patch.status = rec.status === 'done' ? 'done' : 'review';
+        patch.reviewReported = true;
+        recordSnag(rec.email, 'did-needs-review',
+            `espresso order ${order.orderNumber} ended ${order.status}` + (mapped.reason ? ` (${mapped.reason})` : '')
+            + ` with ${mapped.assigned.length} number(s) assigned. The customer was stopped — check the order in espresso `
+            + 'before anything is re-ordered.',
+            { source: 'server', context: {
+                orderId: order.id, orderNumber: order.orderNumber, status: order.status,
+                numbers: (order.numbers || []).map(n => ({ did: n.did, status: n.status })),
+                failureReason: order.failureReason || null, rejectionReason: order.rejectionReason || null
+            } }).catch(e => console.error('[SNAG] needs-review report failed -', e.message));
+    }
+    if (mapped.status === 'Completed' && !rec.completionChecked) {
+        patch.completionChecked = true;
+        const picked = new Set((rec.requests || []).flatMap(r => r.dids || []).map(tenDigits));
+        const got = new Set(mapped.assigned);
+        const missing = [...picked].filter(d => !got.has(d));
+        const extra = [...got].filter(d => !picked.has(d));
+        if (missing.length || extra.length) {
+            reportServerError(rec.email, 'did-order-mismatch',
+                new Error(`espresso order ${order.orderNumber} completed with different numbers than picked`),
+                { orderId: order.id, missing, extra });
+        }
+    }
+    if (patch.status !== rec.status || patch.espressoStatus !== rec.espressoStatus
+        || patch.reviewReported !== rec.reviewReported || patch.completionChecked !== rec.completionChecked) {
+        orderStore[key] = patch;
+        saveOrderStore();
+    }
+}
+
+// Ops alerts that could fire on every page view (MIND down, inventory
+// refused) go out at most once per window
+const snagThrottle = new Map();
+function throttledServerError(throttleKey, windowMs, email, stage, err, context, severity) {
+    if (Date.now() - (snagThrottle.get(throttleKey) || 0) < windowMs) return;
+    snagThrottle.set(throttleKey, Date.now());
+    reportServerError(email || 'unknown', stage, err, context, severity);
+}
+
+// ============================================
 // LNP (Local Number Portability) API operations — v4 endpoint
 // ============================================
 // 1 = portable, 0 = ratecenter supported but not yet open, -1 = not portable
@@ -565,7 +1354,7 @@ async function lnpCreatePon(data) {
         if (!profiles.length) throw new Error('No LNP routing profiles on this espresso account');
         profileId = profiles[0].id;
     } else if (!profiles.some(p => p.id === profileId)) {
-        // Same reasoning as placeOrder: a wrong profile misroutes silently
+        // Same reasoning as the DID routing profile: a wrong one misroutes silently
         throw new Error(`LNP routing profile ${profileId} not found on this account. Available: `
             + profiles.map(p => `${p.id} (${p.label})`).join(', '));
     }
@@ -734,6 +1523,16 @@ async function chargeBalance(body) {
     if (seen && seen.outcome === 'unknown') {
         const err = new Error('A previous payment attempt for this amount did not return a result '
             + `(reference ${seen.reference}). Do not retry — contact support to confirm whether it went through.`);
+        err.status = 409; err.reference = seen.reference;
+        throw err;
+    }
+    // Still in flight — a browser that lost its connection mid-charge must
+    // not send the card through a second time
+    if (seen && seen.outcome === 'pending') {
+        const fresh = Date.now() - (seen.createdAt || 0) < 2 * 60 * 1000;
+        const err = new Error(fresh
+            ? `A payment for this amount is still being processed (reference ${seen.reference}). Wait a minute, then refresh the page.`
+            : `A previous payment attempt for this amount never finished (reference ${seen.reference}). Do not retry — contact support to confirm whether it went through.`);
         err.status = 409; err.reference = seen.reference;
         throw err;
     }
@@ -953,17 +1752,15 @@ async function createMindService(email, accountId, planCode, contact) {
 // MIND SERVICE QUANTITIES — channels and DIDs, set once the customer has paid
 // ============================================
 // The SIP trunk service carries one billable line per channel
-// (EXLNP_SBSIPTRNK) and one per additional DID (EXLNP_SBDID — the first DID
-// comes with the trunk). Their quantities are set
-// with PUT /accounts/{acct}/services/{svc}/quantity, from the order as placed
-// — the same rule the review page priced it with, so MIND bills what the
-// customer was charged. MIND has no read-back for quantities (the add-on list
-// doesn't carry them), so the PUT's own answer is the confirmation.
-// Every trunk includes one DID (mirrors SIP_PRICING.INCLUDED_DIDS in
-// js/sip-provisioning-common.js), so EXLNP_SBDID carries only the ADDITIONAL
-// DIDs (0 when each trunk has just its included one).
-const SIP_QTY_CODES = { channels: 'EXLNP_SBSIPTRNK', extraDids: 'EXLNP_SBDID' };
-const INCLUDED_DIDS_PER_TRUNK = 1;
+// (EXLNP_SBSIPTRNK) and one per DID (EXLNP_SBDID — every DID is billed, none
+// comes with the trunk). Their quantities are set with
+// PUT /accounts/{acct}/services/{svc}/quantity, from the order as placed —
+// the same rule the review page priced it with (getTrunkBilling in
+// js/sip-provisioning-common.js), so MIND bills what the customer was
+// charged. Get Services and the add-on list don't carry quantities; the
+// service journal (GET /accounts/{a}/services/{s}/log, field SRV_QUANTITY)
+// is the only read-back. New lines start at quantity 1.
+const SIP_QTY_CODES = { channels: 'EXLNP_SBSIPTRNK', dids: 'EXLNP_SBDID' };
 
 // Channels and DIDs for the customer's current order: the newest in-flight
 // order record's trunks, else the trunks the browser sent (an order that
@@ -972,20 +1769,18 @@ function orderQuantities(email, fallbackTrunks) {
     const e = normEmail(email);
     let newest = null;
     for (const [k, v] of Object.entries(orderStore)) {
-        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v || v.status === 'done') continue;
+        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v || v.status === 'done' || v.status === 'rejected') continue;
         if (!newest || (v.createdAt || 0) > (newest.createdAt || 0)) newest = v;
     }
     const trunks = (newest && Array.isArray(newest.trunks) && newest.trunks.length) ? newest.trunks
         : (Array.isArray(fallbackTrunks) ? fallbackTrunks : []);
-    let channels = 0, dids = 0, extraDids = 0;
+    let channels = 0, dids = 0;
     trunks.forEach(t => {
         channels += Math.max(1, parseInt(t.channels, 10) || 1);
-        const trunkDids = (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
+        dids += (t.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
             || (t.numbers || []).length;
-        dids += trunkDids;
-        extraDids += Math.max(0, trunkDids - INCLUDED_DIDS_PER_TRUNK);
     });
-    return { channels, dids, extraDids, trunks: trunks.length };
+    return { channels, dids, trunks: trunks.length };
 }
 
 // The billable lines on a service, e.g. ['EXLNP_SBSIPTRNK', 'EXLNP_SBDID']
@@ -1030,13 +1825,15 @@ async function setServiceQuantities(email, fallbackTrunks) {
 
     const key = `svcqty:${e}`;
     const seen = stateGet(key, { activeOnly: true });
-    if (seen && seen.complete && seen.serviceId === svc.serviceId && seen.channels === q.channels && seen.extraDids === q.extraDids) {
+    // A record from before every DID was billed (it has extraDids) is redone
+    if (seen && seen.complete && seen.serviceId === svc.serviceId && seen.channels === q.channels && seen.dids === q.dids
+        && !('extraDids' in seen)) {
         return { ...seen, reused: true };
     }
 
     const lines = await mindServiceLines(svc.accountId, svc.serviceId);
     const result = { serviceId: svc.serviceId, accountId: svc.accountId, channels: q.channels, dids: q.dids,
-        extraDids: q.extraDids, lines, set: {}, problems: [] };
+        lines, set: {}, problems: [] };
     for (const [what, code] of Object.entries(SIP_QTY_CODES)) {
         const qty = q[what];
         if (!lines.includes(code)) {
@@ -1056,7 +1853,7 @@ async function setServiceQuantities(email, fallbackTrunks) {
     }
     result.complete = result.problems.length === 0;
     stateSet(key, { email: e, ...result });
-    console.log('[mind] quantities for service', svc.serviceId, '— channels', q.channels, 'DIDs', q.dids, '(extra', q.extraDids + ')',
+    console.log('[mind] quantities for service', svc.serviceId, '— channels', q.channels, 'DIDs', q.dids,
         result.complete ? 'set' : 'INCOMPLETE: ' + result.problems.join('; '));
     if (!result.complete) {
         const err = new Error('Channel/DID quantities not fully set: ' + result.problems.join('; '));
@@ -1118,23 +1915,39 @@ async function activateMindStatuses(email) {
 // which service the numbers belong to. This is the missing link (per Shoam):
 // PATCH /accounts/{accountId}/services/{serviceId}/telephone-number attaches
 // a number (MSISDN) to the service so it shows on the account in MIND.
-// Cities (with Shivam's numeric ids, live 2026-09-14) — cached for an hour.
-// The id is required by the inventory add; names match espresso ratecenters.
-let mindCitiesCache = null; // { at, byName: Map<UPPER name, id> }
-async function mindCityId(cityName) {
-    if (!cityName) return null;
-    if (!mindCitiesCache || mindCitiesCache.at < Date.now() - 3600000) {
-        const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers/cities`,
-            { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
-        const byName = new Map();
-        try {
-            (JSON.parse(r.raw).cities || []).forEach(c => {
-                if (c && c.city && c.id != null) byName.set(String(c.city).toUpperCase(), c.id);
-            });
-        } catch (e) { /* leave empty — caller falls through */ }
-        mindCitiesCache = { at: Date.now(), byName };
+// Cities (Shivam's numeric ids) are cached for an hour by mindCities(); the
+// id is required by the inventory add. resolveMindCity (espresso REST
+// section) maps a rate center MIND has no city for to a nearby one.
+let mindCitiesCache = null; // { at, byKey: Map<cityKey, city> }
+
+// The order request a number was picked under, if any
+function orderRequestForNumber(email, digits) {
+    const e = normEmail(email);
+    for (const [k, v] of Object.entries(orderStore)) {
+        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v || v.status === 'rejected') continue;
+        for (const r of v.requests || []) {
+            if ((r.dids || []).some(d => mindDigits(d) === digits)) return r;
+        }
     }
-    return mindCitiesCache.byName.get(String(cityName).toUpperCase().trim()) ?? null;
+    return null;
+}
+
+// The MIND city a number goes in: the one resolved when it was ordered, else
+// resolved now from its rate center and its own NPA. Fails closed — a number
+// is never added to MIND without a city.
+async function mindCityForNumber(email, number, ratecenterHint) {
+    const digits = mindDigits(number);
+    const req = orderRequestForNumber(email, digits);
+    if (req && req.mindCityId != null) return { id: req.mindCityId, city: req.mindCity || null };
+    const ratecenter = (req && req.ratecenter) || ratecenterHint || null;
+    const city = await resolveMindCity({ ratecenter, npa: digits.slice(1, 4) });
+    if (!city) {
+        const err = new Error(`MIND has no city for ${ratecenter || 'this rate center'} (${digits.slice(1, 4)}) `
+            + 'and no nearby city is mapped — add one to MIND_CITY_ALIASES or NPA_MIND_CITY');
+        err.status = 502;
+        throw err;
+    }
+    return city;
 }
 
 // Numbers must exist in the IristelX (MIND) database before they can be
@@ -1147,14 +1960,14 @@ async function ensureNumbersInMindInventory(email, numbers, cityHint) {
     const pending = numbers.filter(n => !added.has(n));
     if (!pending.length) return { added: [...added], reused: true };
 
-    // No MIND city for this rate center: the add still runs, without a
-    // cityId — the API doesn't require one and MIND is what matters
-    const cityId = await mindCityId(cityHint);
-    if (cityId == null) console.warn('[mind] no cityId found for', cityHint, '— adding without one');
+    let cityId = seen.cityId || null;
     for (const digits of pending) {
+        // Each number goes in under its own request's city
+        const city = await mindCityForNumber(email, digits, cityHint);
+        cityId = city.id;
         // A number MIND already had is not this customer's to claim — it
         // stays out of `added`, which is what marks a number as ours
-        if (await mindInventoryAdd(digits, cityId, cityHint) === 'inserted') added.add(digits);
+        if (await mindInventoryAdd(digits, city.id, city.city) === 'inserted') added.add(digits);
         else console.warn('[mind] inventory already had', digits, '— not recorded as this customer\'s');
     }
     stateSet(key, { email: normEmail(email), cityId, added: [...added] });
@@ -1169,9 +1982,13 @@ async function ensureNumbersInMindInventory(email, numbers, cityHint) {
 //                IGNORED: the lookups that ran before the add already catch
 //                numbers that are in the pool, and MIND is what matters.
 // MIND's layer is the verdict ('inserted' | 'exists'); anything else throws.
-async function mindInventoryAdd(digits, cityId, cityHint) {
-    const entry = { start: digits, end: digits };
-    if (cityId != null) entry.cityId = cityId;
+async function mindInventoryAdd(digits, cityId, cityName) {
+    if (cityId == null) {
+        const err = new Error(`MIND inventory add for ${digits} needs a city`);
+        err.status = 502;
+        throw err;
+    }
+    const entry = { start: digits, end: digits, cityId };
     const payload = JSON.stringify({ telephoneNumbers: [entry] });
     const r = await httpsRequest(`${BILLING_API_URL}/telephone-numbers`,
         { method: 'POST', headers: {
@@ -1189,14 +2006,12 @@ async function mindInventoryAdd(digits, cityId, cityHint) {
     const inserted = (data && Array.isArray(data.telephoneNumbers) ? data.telephoneNumbers : [])
         .some(t => /INSERTED IN MIND/i.test(String(t && t.status || '')));
     if (r.status < 200 || r.status >= 300 || mindErrors.length || !inserted) {
-        const noCity = cityId == null;
-        const err = new Error(`MIND inventory add failed for ${digits} (HTTP ${r.status})`
-            + (noCity ? ` — MIND has no city for ${cityHint || 'this rate center'}, ask the MIND team to add it` : '')
-            + `: ${String(r.raw || '').slice(0, 200)}`);
+        const err = new Error(`MIND inventory add failed for ${digits} (HTTP ${r.status}, city ${cityName || cityId}): `
+            + String(r.raw || '').slice(0, 200));
         err.status = 502;
         throw err;
     }
-    console.log('[mind] inventory added', digits, cityId != null ? `(cityId ${cityId})` : '(no cityId)');
+    console.log('[mind] inventory added', digits, `(${cityName || 'city'} ${cityId})`);
     return 'inserted';
 }
 
@@ -1282,11 +2097,13 @@ async function mindPhoneAccounts(number) {
 // numbers it holds in states no lookup returns (e.g. run 1's numbers sat on
 // a wholesale account), and a successful add claims the number for this
 // customer. Step 2: the add is confirmed by reading the pool back.
-async function numberVerdict(email, number, serviceId, cityId, cityHint) {
+async function numberVerdict(email, number, serviceId, cityHint) {
     const [rows, inv] = await Promise.all([mindNumberHolders(number), mindInventoryEntry(number)]);
     if (!rows.length && !inv) {
         const digits = mindDigits(number);
-        if (await mindInventoryAdd(digits, cityId, cityHint) === 'exists') {
+        const city = await mindCityForNumber(email, digits, cityHint);
+        const cityId = city.id;
+        if (await mindInventoryAdd(digits, cityId, city.city) === 'exists') {
             return { verdict: 'taken', via: 'mind', holderServiceId: null, holderPlan: null };
         }
         // Shivam's step 2: Get Number — the pool must now show it
@@ -1314,15 +2131,14 @@ async function numberVerdict(email, number, serviceId, cityId, cityHint) {
     return { verdict: rows.length || inv ? 'ours' : 'free' };
 }
 
-// The gate before a delivered number goes anywhere (MIND, UBoss). A taken
-// number was still bought from espresso, which has no API to hand it back —
-// so it is listed under didrelease: and reported once, for a manual
-// disconnect in the EspressoDID portal. Only the holder's service id and
+// The gate before a delivered number goes anywhere (MIND, UBoss), and the
+// step that stores the numbers in MIND. Numbers were checked when picked and
+// again at submit, so a taken one here is a rare race: it is listed under
+// didrelease: and reported once for ops. Only the holder's service id and
 // plan are kept: the rows also carry the other customer's contact details.
 async function checkNumbersInMind(email, numbers, serviceId, cityHint) {
     const e = normEmail(email);
-    const cityId = await mindCityId(cityHint);
-    const lookups = await Promise.all(numbers.map(async n => ({ number: n, ...(await numberVerdict(e, n, serviceId, cityId, cityHint)) })));
+    const lookups = await Promise.all(numbers.map(async n => ({ number: n, ...(await numberVerdict(e, n, serviceId, cityHint)) })));
     const out = { free: [], ours: [], taken: [] };
     for (const { number, verdict, via, holderServiceId, holderPlan } of lookups) {
         if (verdict !== 'taken') { out[verdict].push(number); continue; }
@@ -1336,9 +2152,10 @@ async function checkNumbersInMind(email, numbers, serviceId, cityHint) {
     return out;
 }
 
-// A taken number was still bought from espresso, which has no API to hand it
-// back — list it under didrelease: and report it once, for a manual disconnect
-// in the EspressoDID portal.
+// A number bought from espresso that MIND refuses — it passed the pick-time
+// and submit-time checks, so something took it in between. Provisioning
+// stops; it is listed under didrelease: and reported once for ops to resolve
+// (free it in MIND, or disconnect it in the EspressoDID portal).
 function flagTakenNumber(email, entry) {
     const releaseKey = `didrelease:${email}`;
     const release = (stateGet(releaseKey) || {}).numbers || [];
@@ -1354,8 +2171,9 @@ function flagTakenNumber(email, entry) {
                 ? `is already in MIND's number inventory, attached to service ${entry.holderServiceId}`
                 : "is already in MIND's number inventory (an extra DID on another order)";
     recordSnag(email, 'mind-tn-taken',
-        `Number ${entry.number} ${where}. It was bought from espresso but cannot be used — `
-        + 'disconnect it in the EspressoDID portal (DID Disconnect). A replacement is being ordered automatically.',
+        `Number ${entry.number} ${where}. It was bought from espresso but MIND refused it, so provisioning `
+        + 'for this order is halted. Resolve it in MIND, or disconnect it in the EspressoDID portal (DID Disconnect) '
+        + 'and place a new order for the customer.',
         { source: 'server', severity: 'error', context: entry })
         .catch(err => console.error('[SNAG] taken-number report failed -', err.message));
 }
@@ -1367,7 +2185,7 @@ function orderRatecenter(email) {
     const e = normEmail(email);
     let best = null;
     for (const [k, v] of Object.entries(orderStore)) {
-        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v) continue;
+        if (!k.startsWith('order:') || !k.includes(`:${e}`) || !v || v.status === 'rejected') continue;
         const req0 = (v.requests || [])[0];
         if (!req0 || !req0.ratecenter) continue;
         const rank = [v.status !== 'done' ? 1 : 0, v.createdAt || 0];
@@ -1396,8 +2214,7 @@ async function assignNumbersToMindService(email, serviceId, accountId, numbers, 
     // Never attach a number another customer's service already carries —
     // the status page checks first, but resume/catch-up calls land here too.
     const primary = normalized[0];
-    const cityId = await mindCityId(cityHint);
-    if ((await numberVerdict(email, primary, serviceId, cityId, cityHint)).verdict === 'taken') {
+    if ((await numberVerdict(email, primary, serviceId, cityHint)).verdict === 'taken') {
         const err = new Error(`Number ${primary} is already held elsewhere in MIND — not attaching it`);
         err.takenNumber = primary;
         throw err;
@@ -1448,8 +2265,15 @@ async function assignNumbersToMindService(email, serviceId, accountId, numbers, 
     // number is still being established, so it never blocks.
     let verify = null;
     try {
-        const after = await mindInventoryEntry(primary);
-        const confirmed = !!(after && after.inUse && String(after.serviceId || '') === String(serviceId));
+        const attached = e => !!(e && e.inUse && String(e.serviceId || '') === String(serviceId));
+        let after = await mindInventoryEntry(primary);
+        // The pool lags the PATCH by a few seconds (2026-10-21) — look again
+        // before calling it unconfirmed
+        if (!attached(after)) {
+            await new Promise(r => setTimeout(r, 5000));
+            after = await mindInventoryEntry(primary);
+        }
+        const confirmed = attached(after);
         const step4 = await mindPhoneAccounts(primary);
         verify = { confirmed, inUse: after ? after.inUse : null, poolServiceId: after ? after.serviceId : null, step4 };
         console.log('[mind] attach verify for', primary, '—', confirmed ? 'confirmed' : 'NOT confirmed',
@@ -1646,14 +2470,19 @@ async function recordSnag(email, stage, detail, { source = 'client', severity = 
     const report = {
         id: crypto.randomUUID(), at: new Date().toISOString(), email: e, stage, system: snagSystem(stage),
         source, severity, context, detail: String(detail || '').slice(0, 2000),
-        account: null, orderNumber: null, numbers: [], provisionJobs: [], businessName: null,
+        account: null, orderNumber: null, orderId: null, numbers: [], provisionJobs: [], businessName: null,
         orderProblems: []
     };
+    let orderRec = null;
     for (const [k, v] of Object.entries(orderStore)) {
         if (!k.includes(`:${e}`) || !v) continue;
         if (k.startsWith('account:')) report.account = v.accountId;
-        else if (k.startsWith('order:')) {
+        // A rejected order counts only when there is no newer one
+        else if (k.startsWith('order:') && (v.status !== 'rejected' || !orderRec)) {
+            orderRec = v;
             report.orderNumber = v.orderNumber;
+            report.orderId = v.orderId || null;
+            report.numbers = [];
             report.businessName = v.businessName || report.businessName;
             (v.trunks || []).forEach(t => (t.numbers || []).forEach(n => report.numbers.push(n)));
         }
@@ -1661,7 +2490,7 @@ async function recordSnag(email, stage, detail, { source = 'client', severity = 
     }
     // For espresso failures the reject reason is the actionable part
     if (report.orderNumber && /espresso|order|number/i.test(stage)) {
-        report.orderProblems = await getOrderProblems(report.orderNumber);
+        report.orderProblems = await orderProblemsFor(orderRec);
     }
     snagStore.push(report);
     try {
@@ -1868,7 +2697,7 @@ function httpsRequest(urlStr, options, bodyStr) {
         const u = new URL(urlStr);
         const req = https.request({
             hostname: u.hostname, path: u.pathname + u.search, method: options.method || 'GET',
-            headers: options.headers || {}, agent: KEEPALIVE_AGENT, timeout: 30000
+            headers: options.headers || {}, agent: KEEPALIVE_AGENT, timeout: options.timeout || 30000
         }, res => {
             let d = ''; res.on('data', c => d += c);
             res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, raw: d }));
@@ -1976,7 +2805,7 @@ async function crmSyncOrder(body) {
     for (const [k, v] of Object.entries(orderStore)) {
         if (!k.includes(`:${email}`) || !v) continue;
         if (k.startsWith('account:')) info.accountId = v.accountId;
-        else if (k.startsWith('order:')) {
+        else if (k.startsWith('order:') && v.status !== 'rejected') {
             info.orderNumber = v.orderNumber;
             info.businessName = v.businessName || info.businessName;
             (v.trunks || []).forEach(t => {
@@ -2092,8 +2921,19 @@ async function handleApi(req, res, pathname) {
         // credentials — it exists so the port-in page can tell the customer
         // (or whoever is demoing) that a request is simulated rather than real.
         if (pathname === '/api/config' && req.method === 'GET') {
-            return sendJson(res, 200, { didMode: ESPRESSO_MODE, lnpMode: ESPRESSO_LNP_MODE });
+            // Ordering readiness — awaited (up to 5 s) on the first call after
+            // a start, re-checked in the background when stale
+            if (!espressoReadiness.checkedAt) {
+                await Promise.race([checkEspressoReadiness(), new Promise(r => setTimeout(r, 5000))]);
+            } else if (Date.now() - espressoReadiness.checkedAt > (espressoReadiness.didReady ? 10 * 60000 : 60000)) {
+                checkEspressoReadiness().catch(() => {});
+            }
+            return sendJson(res, 200, {
+                didMode: ESPRESSO_MODE, lnpMode: ESPRESSO_LNP_MODE, didApi: 'rest',
+                didReady: espressoReadiness.didReady, pickReady: espressoReadiness.pickReady
+            });
         }
+        // Rate centers stay on SOAP (REST has no catalog)
         if (pathname === '/api/did/catalog' && req.method === 'GET') {
             let catalog = await getCatalog();
             // UbossRobot can only provision NPAs whose "+1-<npa>" number pool
@@ -2105,85 +2945,110 @@ async function handleApi(req, res, pathname) {
             if (UBOSS_POOL_NPAS.length) {
                 catalog = catalog.filter(c => UBOSS_POOL_NPAS.includes(String(c.npa)));
             }
+            // Numbers are stored in MIND under a city; an NPA with no city
+            // mapped would fail after purchase, so it isn't offered
+            const unmapped = [...new Set(catalog.filter(c => !NPA_MIND_CITY[String(c.npa)]).map(c => String(c.npa)))];
+            if (unmapped.length) {
+                console.warn('[catalog] not offered — no MIND city mapped for NPA', unmapped.join(', '));
+                catalog = catalog.filter(c => NPA_MIND_CITY[String(c.npa)]);
+            }
             return sendJson(res, 200, { catalog });
         }
         if (pathname === '/api/did/profiles' && req.method === 'GET') {
-            return sendJson(res, 200, { profiles: await getProfiles() });
+            const acct = await espressoRestAccount().catch(() => null);
+            const list = await restRoutingProfiles(acct && acct.companyId);
+            return sendJson(res, 200, {
+                pinned: acct && acct.profileLabel,
+                profiles: list.filter(p => p && p.type === 'did').map(p => ({ id: p.id, label: p.label, active: p.active !== false }))
+            });
+        }
+        // Numbers the customer can pick in a rate center: available in
+        // espresso and unknown to MIND (read-only checks; nothing is held)
+        if (pathname === '/api/did/available' && req.method === 'GET') {
+            const q = new URL(req.url, 'http://x').searchParams;
+            const ratecenter = String(q.get('ratecenter') || '').trim();
+            const npa = String(q.get('npa') || '').trim();
+            const quantity = Math.min(Math.max(parseInt(q.get('quantity'), 10) || 1, 1), 50);
+            const email = normEmail(q.get('email'));
+            const exclude = String(q.get('exclude') || '').split(',').map(tenDigits).filter(d => /^\d{10}$/.test(d));
+            if (!ratecenter || !/^\d{3}$/.test(npa)) {
+                return sendJson(res, 400, { error: 'ratecenter and a 3-digit npa are required' });
+            }
+            try {
+                const mindCity = await resolveMindCity({ ratecenter, npa });
+                if (!mindCity) {
+                    throttledServerError(`nocity:${ratecenter}:${npa}`, 60 * 60000, email, 'did-available',
+                        new Error(`No MIND city for ${ratecenter} (${npa}) — add a nearby city to MIND_CITY_ALIASES`), { ratecenter, npa });
+                    return sendJson(res, 422, { error: `Numbers in ${ratecenter} can't be offered right now`, code: 'NO_MIND_CITY' });
+                }
+                const found = await pickAvailableNumbers({ ratecenter, npa, want: Math.max(quantity * 2, 10), exclude, email });
+                return sendJson(res, 200, { ratecenter, npa, ...found, mindCity });
+            } catch (e) {
+                const code = espressoApiCode(e) || 'ESPRESSO_BUSY';
+                if (code === 'MIND_UNAVAILABLE') {
+                    throttledServerError('mind-pick', 15 * 60000, email, 'mind-pick-check', e, { ratecenter, npa });
+                } else {
+                    throttledServerError(`pick:${code}`, 15 * 60000, email, 'did-available', e, { ratecenter, npa, code });
+                }
+                return sendJson(res, 503, { error: e.message, code });
+            }
+        }
+        // Read-only pre-check the review page runs BEFORE taking payment:
+        // are the picked numbers still free? The order re-checks anyway; this
+        // just keeps a customer from paying for numbers that are already gone.
+        if (pathname === '/api/did/check-picks' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            const norm = normalizeOrderRequests(body.requests);
+            if (norm.error) {
+                return sendJson(res, 400, { error: norm.error, code: norm.code || 'INVALID_REQUEST', number: norm.number || null });
+            }
+            const email = normEmail(body.email);
+            // Already ordered (a resumed submit): the order call returns it
+            const seen = email && stateGet(K.order(email, norm.requests), { activeOnly: true });
+            if (seen && seen.status !== 'rejected' && (seen.orderId || seen.orderNumber)) {
+                return sendJson(res, 200, { ok: true, unavailable: [], orderNumber: seen.orderNumber });
+            }
+            // Same guard the order applies — refuse before payment, not after
+            const other = email && otherOpenOrder(email, K.order(email, norm.requests));
+            if (other) {
+                return sendJson(res, 409, {
+                    error: other.orderNumber ? `Order ${other.orderNumber} is still in progress for this account`
+                        : 'An order is still in progress for this account',
+                    code: 'ORDER_IN_PROGRESS', orderNumber: other.orderNumber || null, orderId: other.orderId || null
+                });
+            }
+            try {
+                for (const [index, r] of norm.requests.entries()) {
+                    if (!(await resolveMindCity({ ratecenter: r.ratecenter, npa: r.npa }))) {
+                        return sendJson(res, 422, {
+                            error: `No MIND city for ${r.ratecenter} (${r.npa})`, code: 'NO_MIND_CITY',
+                            index, ratecenter: r.ratecenter, npa: r.npa
+                        });
+                    }
+                }
+                const picks = norm.requests.flatMap(r => r.dids || []);
+                const unavailable = picks.length ? await unavailablePicks(picks, email) : [];
+                return sendJson(res, 200, { ok: !unavailable.length, unavailable });
+            } catch (e) {
+                const code = espressoApiCode(e) || 'ESPRESSO_BUSY';
+                throttledServerError(`checkpicks:${code}`, 15 * 60000, email, code === 'MIND_UNAVAILABLE' ? 'mind-pick-check' : 'did-check-picks', e, { code });
+                return sendJson(res, 503, { error: e.message, code });
+            }
         }
         if (pathname === '/api/did/order' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
-            const requests = Array.isArray(body.requests) ? body.requests : [];
-            if (!requests.length) return sendJson(res, 400, { error: 'requests[] is required' });
-            for (const r of requests) {
-                if (!r.ratecenter || !r.npa) return sendJson(res, 400, { error: 'each request needs ratecenter and npa' });
+            try {
+                const { status, payload } = await placeDidOrder(body);
+                return sendJson(res, status, payload);
+            } catch (e) {
+                const code = espressoApiCode(e);
+                if (!e.reported) {
+                    reportServerError(body.email, code === 'MIND_UNAVAILABLE' ? 'mind-pick-check' : 'did-order', e,
+                        { accountRef: body.accountRef || null, code });
+                }
+                const retryable = ['ESPRESSO_BUSY', 'INVENTORY_FORBIDDEN', 'MIND_UNAVAILABLE'].includes(code);
+                return sendJson(res, retryable ? 503 : (e.status >= 400 ? e.status : 502), { error: e.message, code: code || null });
             }
-
-            // Never place the same order twice. Keyed on EMAIL so it holds
-            // across devices and cleared browsers, where an account id would
-            // change and let a duplicate through.
-            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
-            const key = K.order(body.email, requests);
-            let seen = stateGet(key, { activeOnly: true });
-            // Backstop: if the client never told us it finished, ask UbossRobot.
-            // A previous order that actually provisioned must not block this one.
-            if (seen && await sessionAlreadyProvisioned(body.email)) {
-                markSessionDone(body.email);
-                seen = null;
-            }
-            // force is set ONLY by the pool-collision auto-retry on the
-            // provisioning page: the previous number is burnt in the UBoss
-            // pool, so a genuinely new order is required. The fresh record
-            // overwrites the same key, keeping session resume consistent.
-            if (seen && seen.orderNumber && !body.force) {
-                console.log('[order] duplicate suppressed for', key, '→', seen.orderNumber);
-                return sendJson(res, 200, { ...seen, duplicate: true });
-            }
-            if (body.force) console.log('[order] forced re-order for', key, '— previous:', seen && seen.orderNumber);
-
-            const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef })
-                .catch(reportAndRethrow(body.email, 'did-order', { requests, accountRef: body.accountRef || null }));
-            stateSet(key, {
-                orderNumber: result.orderNumber,
-                orderNumbers: result.orderNumbers,
-                profile: result.profile,
-                email: normEmail(body.email),
-                accountRef: body.accountRef || null,
-                requests: requests,
-                // Snapshot of the trunk layout so a customer returning on
-                // another device can be put back where they were, rather than
-                // rebuilding it by hand (or ordering again).
-                trunks: Array.isArray(body.trunks) ? body.trunks : null,
-                businessName: body.businessName || null
-            });
-            return sendJson(res, 200, result);
-        }
-        // Replacements for delivered numbers MIND says are already taken.
-        // Kept out of order: — every reader treats that record as THE order —
-        // and keyed on the taken set, so a reload never buys the same
-        // replacement twice.
-        if (pathname === '/api/did/replace' && req.method === 'POST') {
-            const body = JSON.parse(await readBody(req) || '{}');
-            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
-            const taken = Array.isArray(body.taken) ? body.taken.map(String) : [];
-            const requests = Array.isArray(body.requests) ? body.requests : [];
-            if (!taken.length || !requests.length) {
-                return sendJson(res, 400, { error: 'taken[] and requests[] are required' });
-            }
-            for (const r of requests) {
-                if (!r.ratecenter || !r.npa) return sendJson(res, 400, { error: 'each request needs ratecenter and npa' });
-            }
-            const email = normEmail(body.email);
-            const key = `didreplace:${email}::${taken.slice().sort().join(',')}`;
-            const seen = stateGet(key, { activeOnly: true });
-            if (seen && seen.orderNumber) {
-                console.log('[order] replacement already placed for', key, '→', seen.orderNumber);
-                return sendJson(res, 200, { ...seen, duplicate: true });
-            }
-            const result = await placeOrder(body.profile, requests, { accountRef: body.accountRef })
-                .catch(reportAndRethrow(email, 'mind-tn-replace', { taken, requests }));
-            console.warn('[order] replacement for MIND-taken', taken.join(', '), '→', result.orderNumber);
-            stateSet(key, { orderNumber: result.orderNumber, orderNumbers: result.orderNumbers, email, taken, requests });
-            return sendJson(res, 200, result);
         }
         // Read-only MIND account lookup, proxied because api.iristelx.com
         // sends no CORS headers — a browser fetch dies on the preflight and
@@ -2250,7 +3115,7 @@ async function handleApi(req, res, pathname) {
             for (const [k, v] of Object.entries(orderStore)) {
                 if (!k.includes(`:${email}`) || !v) continue;
                 if (k.startsWith('account:')) accountId = v.accountId;
-                else if (k.startsWith('order:')) {
+                else if (k.startsWith('order:') && v.status !== 'rejected') {
                     (v.trunks || []).forEach(t => {
                         if (!primary && t.primaryNumber) primary = t.primaryNumber;
                         (t.numbers || []).forEach(n => numbers.push(n));
@@ -2274,8 +3139,8 @@ async function handleApi(req, res, pathname) {
             try {
                 return sendJson(res, 200, await assignNumbersToMindService(email, serviceId, accountId, wanted, cityHint));
             } catch (e) {
-                // A number MIND won't attach is taken: the status page
-                // replaces it before UBoss, like a failed check
+                // A number MIND won't attach is taken: the status page stops
+                // before UBoss and ops resolve it, like a failed check
                 if (e.takenNumber) {
                     const entry = { number: e.takenNumber, via: 'mind', holderServiceId: null, holderPlan: null };
                     flagTakenNumber(email, entry);
@@ -2358,7 +3223,12 @@ async function handleApi(req, res, pathname) {
                 if (!k.includes(`:${email}`)) continue;
                 if (k.startsWith('account:')) out.account = v;      // always reusable
                 else if (v && v.status === 'done') continue;         // finished — not resumable
-                else if (k.startsWith('order:')) out.order = v;
+                else if (k.startsWith('order:')) {
+                    // A rejected order was replaced by a new pick; one still
+                    // being placed has nothing to resume yet
+                    if (v.status === 'rejected' || v.status === 'placing') continue;
+                    if (!out.order || (v.createdAt || 0) > (out.order.createdAt || 0)) out.order = v;
+                }
                 else if (k.startsWith('pon:')) out.pon = v;
                 else if (k.startsWith('provision:')) out.provisions.push(v);
             }
@@ -2386,7 +3256,7 @@ async function handleApi(req, res, pathname) {
             let updated = 0;
             for (const [k, v] of Object.entries(orderStore)) {
                 if (!k.startsWith('order:') || !k.includes(`:${email}`)) continue;
-                if (v && v.status === 'done') continue;
+                if (v && (v.status === 'done' || v.status === 'rejected' || v.status === 'placing')) continue;
                 orderStore[k] = { ...v, trunks: body.trunks, updatedAt: Date.now() };
                 updated++;
             }
@@ -2422,20 +3292,50 @@ async function handleApi(req, res, pathname) {
                 orders: Object.entries(orderStore).map(([key, v]) => ({ key, ...v }))
             });
         }
+        // Order reads take the espresso order id (UUID) or its ORD- number;
+        // anything else is an order placed over SOAP before the switch.
         let m = pathname.match(/^\/api\/did\/order\/([^/]+)\/status$/);
         if (m && req.method === 'GET') {
-            return sendJson(res, 200, await getOrderStatus(decodeURIComponent(m[1])));
+            const ref = decodeURIComponent(m[1]);
+            if (isLegacyOrderRef(ref)) {
+                const legacy = await getOrderStatus(ref);
+                // A rejected SOAP order is over: the customer re-picks, and
+                // the open-order guard must not keep blocking that
+                const hit = /rejected|cancel/i.test(legacy.status) && findOrderRecord(ref);
+                if (hit && hit.rec.status !== 'done' && hit.rec.status !== 'rejected') {
+                    orderStore[hit.key] = { ...hit.rec, status: 'rejected', updatedAt: Date.now() };
+                    saveOrderStore();
+                }
+                return sendJson(res, 200, legacy);
+            }
+            const order = await getRestOrder(ref);
+            const { assigned, ...mapped } = mapRestOrderStatus(order);
+            noteOrderOutcome(order, { ...mapped, assigned });
+            return sendJson(res, 200, mapped);
         }
+        // Assigned numbers, and which request each belongs to (byRequest),
+        // so the status page puts every number on the trunk it was picked for
         m = pathname.match(/^\/api\/did\/order\/([^/]+)\/details$/);
         if (m && req.method === 'GET') {
-            return sendJson(res, 200, await getOrderDetails(decodeURIComponent(m[1])));
+            const ref = decodeURIComponent(m[1]);
+            if (isLegacyOrderRef(ref)) return sendJson(res, 200, await getOrderDetails(ref));
+            const order = await getRestOrder(ref);
+            const byRequest = numbersByRequest(order, ['ASSIGNED']);
+            return sendJson(res, 200, {
+                orderId: order.id, orderNumber: order.orderNumber, status: order.status,
+                numbers: byRequest.flatMap(g => g.dids), byRequest, ranges: []
+            });
         }
-        // Per-request rejection reasons (e.g. "not enough available numbers
-        // in the specified rate center") — lets the status page send the
-        // customer back to pick a different city instead of snagging.
+        // Per-request rejection reasons, with the picked numbers that are
+        // gone (goneDids) — the status page sends the customer back to
+        // replace just those.
         m = pathname.match(/^\/api\/did\/order\/([^/]+)\/problems$/);
         if (m && req.method === 'GET') {
-            return sendJson(res, 200, { problems: await getOrderProblems(decodeURIComponent(m[1])) });
+            const ref = decodeURIComponent(m[1]);
+            if (isLegacyOrderRef(ref)) return sendJson(res, 200, { problems: await getOrderProblems(ref) });
+            const order = await getRestOrder(ref);
+            const hit = findOrderRecord(order.id) || findOrderRecord(order.orderNumber);
+            return sendJson(res, 200, { problems: await restOrderProblems(order, hit && hit.rec) });
         }
         m = pathname.match(/^\/api\/lnp\/portability\/(\d{6})$/);
         if (m && req.method === 'GET') {
@@ -2483,6 +3383,7 @@ async function handleApi(req, res, pathname) {
         // Carry the payment reference through: on an unknown outcome it is the
         // only handle support has on a charge that may have gone through.
         const payload = { error: err.message };
+        if (err.apiCode) payload.code = err.apiCode;
         if (err.reference) payload.reference = err.reference;
         sendJson(res, err.status || 500, payload);
     }
@@ -2524,14 +3425,22 @@ server.listen(PORT, () => {
     // profile should be obvious from the log, not discovered via a bad order.
     console.log(`OnlineOrdering server on :${PORT} — espresso mode: ${ESPRESSO_MODE}` +
         (ESPRESSO_USER ? '' : ' (NO CREDENTIALS SET — /api/did/* will return 503)'));
-    console.log('  DID orders : ' + ESPRESSO_MODE
-        + (ESPRESSO_MODE === 'production' ? '  ← orders are real and billed' : ''));
+    console.log('  DID orders : ' + ESPRESSO_MODE + ' via REST ' + ESPRESSO_REST_URL
+        + (ESPRESSO_MODE === 'production' ? '  ← orders are real and billed' : '')
+        + (ESPRESSO_REST_CONFIGURED ? '' : '  ⚠ ESPRESSO_CLIENT_ID / ESPRESSO_CLIENT_SECRET not set — ordering is off'));
     console.log('  LNP ports  : ' + ESPRESSO_LNP_MODE
         + (ESPRESSO_LNP_MODE === 'production'
             ? '  ⚠ PORT REQUESTS ARE REAL — they notify the losing carrier'
             : '  (sandbox — safe to demo)'));
-    console.log('  DID profile: ' + (ESPRESSO_DID_PROFILE || '(not pinned — will use the account\'s first profile)'));
+    console.log('  DID profile: ' + (process.env.ESPRESSO_ROUTING_PROFILE_ID
+        ? 'id ' + process.env.ESPRESSO_ROUTING_PROFILE_ID
+        : (ESPRESSO_DID_PROFILE || '(not pinned — only works when the company has exactly one DID profile)')));
     console.log('  LNP profile: ' + (ESPRESSO_LNP_PROFILE || '(not pinned — will use the account\'s first profile)'));
     console.log('  state dir  : ' + STATE_DIR
         + (STATE_DIR === ROOT ? '  ⚠ not a persistent disk — records are lost on redeploy' : ''));
+    // espresso REST readiness: now, then every 10 minutes
+    if (ESPRESSO_REST_CONFIGURED) {
+        checkEspressoReadiness().catch(() => {});
+        setInterval(() => checkEspressoReadiness().catch(() => {}), 10 * 60000).unref();
+    }
 });

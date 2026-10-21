@@ -35,16 +35,42 @@
             return users.filter(u => u.id !== excludeUserId && u.number).map(u => u.number);
         }
 
+        // Safe for text and for quoted attribute values (quotes are escaped)
+        function escapeHtml(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, ch =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+        }
+
+        // Last 10 digits of a phone number, or '' for anything else (a slot
+        // placeholder such as "TORONTO (647) — Number 1")
+        function numberDigits(num) {
+            const s = String(num || '');
+            if (!/^[\d\s()+\-.]+$/.test(s)) return '';
+            const d = s.replace(/\D/g, '');
+            const ten = d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+            return ten.length === 10 ? ten : '';
+        }
+
+        // (204) 555-0001 for a phone number; placeholders show as they are
+        function numberLabel(num) {
+            const d = numberDigits(num);
+            return d ? '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6) : String(num || '');
+        }
+
+        function numberOption(num, selectedNum) {
+            return `<option value="${escapeHtml(num)}" ${selectedNum === num ? 'selected' : ''}>${escapeHtml(numberLabel(num))}</option>`;
+        }
+
         function buildNumberOptions(selectedNum, userId) {
             const used = getUsedNumbers(userId);
             if (trunkGroups.length > 1) {
                 return '<option value="">Select number</option>' +
                     trunkGroups.map(g =>
-                        `<optgroup label="${g.trunkName}">` +
+                        `<optgroup label="${escapeHtml(g.trunkName)}">` +
                         g.numbers.map(num => {
                             const taken = used.includes(num);
                             if (taken && num !== selectedNum) return '';
-                            return `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`;
+                            return numberOption(num, selectedNum);
                         }).join('') +
                         '</optgroup>'
                     ).join('');
@@ -53,7 +79,7 @@
                     availableNumbers.map(num => {
                         const taken = used.includes(num);
                         if (taken && num !== selectedNum) return '';
-                        return `<option value="${num}" ${selectedNum === num ? 'selected' : ''}>${num}</option>`;
+                        return numberOption(num, selectedNum);
                     }).join('');
             }
         }
@@ -76,11 +102,11 @@
                 tbody.innerHTML = users.map(user => `
                     <tr>
                         <td>
-                            <input type="text" placeholder="First name" value="${user.firstName}"
+                            <input type="text" placeholder="First name" value="${escapeHtml(user.firstName)}"
                                    onchange="updateUser(${user.id}, 'firstName', this.value)">
                         </td>
                         <td>
-                            <input type="text" placeholder="Last name" value="${user.lastName}"
+                            <input type="text" placeholder="Last name" value="${escapeHtml(user.lastName)}"
                                    onchange="updateUser(${user.id}, 'lastName', this.value)">
                         </td>
                         <td>
@@ -115,8 +141,8 @@
 
             users.forEach(user => {
                 if (user.firstName && user.lastName && user.number) {
-                    const label = `${user.firstName} ${user.lastName} - ${user.number}`;
-                    pilotSelect.innerHTML += `<option value="${user.id}" ${currentValue == user.id ? 'selected' : ''}>${label}</option>`;
+                    const label = escapeHtml(`${user.firstName} ${user.lastName} - ${numberLabel(user.number)}`);
+                    pilotSelect.innerHTML += `<option value="${escapeHtml(user.id)}" ${currentValue == user.id ? 'selected' : ''}>${label}</option>`;
                 }
             });
         }
@@ -152,11 +178,13 @@
             loadUserInfoBar();
 
             // Load numbers — try multi-trunk format first.
-            // With espresso ordering, concrete numbers don't exist yet: the
-            // trunk carries rate-center requests instead. Build placeholder
-            // SLOTS from those requests ("TORONTO (647) — Number 1"); each slot
-            // maps positionally to the number assigned when the order
-            // completes, since numbers are distributed in request order.
+            // The order hasn't completed yet, so trunk.numbers is empty; the
+            // numbers come from the trunk's requests instead. Picked requests
+            // carry the actual numbers (requests[].dids, raw 10 digits).
+            // Older auto-pick requests have none yet: build placeholder SLOTS
+            // for those ("TORONTO (647) — Number 1"); each slot maps
+            // positionally to the number assigned when the order completes,
+            // since numbers are distributed in request order.
             const trunksData = getCookie('sip_trunks');
             if (trunksData) {
                 try {
@@ -166,6 +194,9 @@
                             let nums = t.numbers || [];
                             if (!nums.length && Array.isArray(t.requests)) {
                                 nums = t.requests.flatMap(r => {
+                                    if (Array.isArray(r.dids) && r.dids.length) {
+                                        return r.dids.map(d => String(d).replace(/\D/g, '').slice(-10));
+                                    }
                                     const qty = parseInt(r.quantity, 10) || 0;
                                     return Array.from({ length: qty }, (_, i) =>
                                         `${r.ratecenter} (${r.npa}) — Number ${i + 1}`);
@@ -199,6 +230,18 @@
                 } catch (e) {
                     users = [];
                 }
+            }
+
+            // A number saved before the picks changed (an old slot, or a number
+            // since replaced) is no longer on offer — clear it so every user
+            // gets one of the numbers actually being ordered. The same number
+            // in another format is kept, as the offered value.
+            if (availableNumbers.length) {
+                users.forEach(u => {
+                    if (!u.number || availableNumbers.includes(u.number)) return;
+                    const d = numberDigits(u.number);
+                    u.number = (d && availableNumbers.find(n => numberDigits(n) === d)) || '';
+                });
             }
 
             if (users.length === 0) {

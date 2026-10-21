@@ -6,30 +6,27 @@
 
 // ============================================
 // Pricing — single source of truth for the whole ordering flow.
-// A SIP trunk always includes one DID; channels and additional DIDs are
-// billed on top: a trunk's monthly cost is
-//   channels * CHANNEL_MONTHLY + (dids - INCLUDED_DIDS) * DID_MONTHLY.
-// server.js mirrors INCLUDED_DIDS for MIND's EXLNP_SBDID quantity.
+// Channels and DIDs are both billed — no DID comes with the trunk:
+//   channels * CHANNEL_MONTHLY + dids * DID_MONTHLY.
+// server.js bills MIND the same way (EXLNP_SBDID = every DID).
 // ============================================
 const SIP_PRICING = {
     CHANNEL_MONTHLY: 25.00,
-    DID_MONTHLY: 2.00,       // per DID beyond the included one
-    INCLUDED_DIDS: 1,        // every trunk comes with this many
+    DID_MONTHLY: 2.00,       // per DID
     TAX_RATE: 0.13
 };
 window.SIP_PRICING = SIP_PRICING;
 
 // One trunk's monthly cost, before tax. DIDs are the requested quantity,
-// else the numbers already on the trunk; the first is included. The review
-// page prices with this, UBoss gets it as monthlyRecurringPrice, and the
-// server applies the same rule to MIND's channel/DID quantities.
+// else the numbers already on the trunk. The review page prices with this,
+// UBoss gets it as monthlyRecurringPrice, and the server applies the same
+// rule to MIND's channel/DID quantities.
 function getTrunkBilling(trunk) {
     const channels = Math.max(1, parseInt(trunk.channels, 10) || 1);
     const dids = (trunk.requests || []).reduce((s, r) => s + (parseInt(r.quantity, 10) || 0), 0)
         || (trunk.numbers || []).length || 0;
-    const extraDids = Math.max(0, dids - SIP_PRICING.INCLUDED_DIDS);
-    const monthly = channels * SIP_PRICING.CHANNEL_MONTHLY + extraDids * SIP_PRICING.DID_MONTHLY;
-    return { channels, dids, extraDids, monthly: Math.round(monthly * 100) / 100 };
+    const monthly = channels * SIP_PRICING.CHANNEL_MONTHLY + dids * SIP_PRICING.DID_MONTHLY;
+    return { channels, dids, monthly: Math.round(monthly * 100) / 100 };
 }
 
 // ============================================
@@ -164,8 +161,10 @@ async function startUbossProvisioning(contactData, phoneNumbers, accountId, chan
     console.log('Provisioning Response:', data);
 
     if (!response.ok || !data || !data.jobId) {
-        throw new Error((data && data.error)
+        const err = new Error((data && data.error)
             || `UbossRobot provisioning failed to start (HTTP ${response.status})`);
+        err.httpStatus = response.status;
+        throw err;
     }
     if (data.reused) console.log('Existing provisioning job reused — no duplicate started');
 
@@ -199,6 +198,9 @@ async function startAllUbossProvisioning(contactData, trunksList, accountId, onP
             const failure = new Error('Provisioning failed for "' + (trunk.name || ('Trunk ' + (i + 1))) + '": ' + err.message
                 + (started ? '\n\nAlready started: ' + started : ''));
             failure.snagStage = 'uboss-start';
+            // The server reports its own 5xx answers; only a partial start
+            // (which trunks went through) adds anything for ops
+            failure.snagReported = err.httpStatus >= 500 && !provisionJobs.length;
             throw failure;
         }
     }
@@ -215,9 +217,10 @@ function tenDigits(n) {
     return String(n || '').replace(/\D/g, '').slice(-10);
 }
 
-// Distribute an espresso DID order's numbers across the trunks in request
-// order, topping each trunk up to its requested count — so the same pass
-// places a first delivery and the replacements for numbers MIND rejected.
+// Distribute numbers across the trunks in request order, topping each trunk
+// up to its requested count. placeOrderedNumbers uses it for whatever it
+// can't match to a request; it is also the whole placement for numbers that
+// come with no request mapping (a resumed order's provisioned numbers).
 // Numbers already on a trunk are skipped. Mutates trunksList and persists
 // the cookies the rest of the flow reads.
 function distributeOrderedNumbers(trunksList, numbers) {
@@ -255,43 +258,160 @@ function trunksNeedNumbers(trunksList) {
 }
 
 // Any trunk with requests still holding fewer numbers than it asked for —
-// e.g. after MIND-taken numbers were dropped awaiting their replacements
+// numbers stay off the trunks until the DID order delivers them
 function trunksShortOfNumbers(trunksList) {
     return trunksList.some(t => (t.requests || []).length && (t.numbers || []).length < trunkWantedCount(t));
 }
 
-// What to re-order for numbers MIND says are taken: one each, from the
-// trunk's request in the same area code (else its first request). A number
-// on a trunk with no request can't be re-ordered and is left out — the
-// caller compares the counts. Pure: the trunks are not touched.
-function replacementRequests(trunksList, taken) {
-    const drop = new Set(taken.map(tenDigits));
-    const byKey = new Map();
-    trunksList.forEach(trunk => {
-        const reqs = trunk.requests || [];
-        (trunk.numbers || []).forEach(n => {
-            const d = tenDigits(n);
-            if (!drop.has(d)) return;
-            const req = reqs.find(r => String(r.npa) === d.slice(0, 3)) || reqs[0];
-            if (!req) return;
-            const key = req.ratecenter + '|' + req.npa;
-            const entry = byKey.get(key) || { ratecenter: req.ratecenter, npa: req.npa, quantity: 0 };
-            entry.quantity++;
-            byKey.set(key, entry);
-        });
-    });
-    return [...byKey.values()];
+// ============================================
+// Picked numbers. The customer picks specific DIDs; they live ONLY in
+// trunk.requests[].dids until the order delivers them. A request is in
+// picked mode when it has a dids array, and complete when it holds as many
+// numbers as its quantity. A request without dids is picked by the server.
+// ============================================
+function requestPickComplete(r) {
+    const quantity = parseInt(r && r.quantity, 10) || 0;
+    return !!r && Array.isArray(r.dids) && quantity > 0 && r.dids.length === quantity;
 }
 
-// Take MIND-taken numbers off their trunks so distributeOrderedNumbers tops
-// them up from the replacement order. Persists like distributeOrderedNumbers.
-function removeNumbersFromTrunks(trunksList, taken) {
-    const drop = new Set(taken.map(tenDigits));
-    trunksList.forEach(trunk => {
-        trunk.numbers = (trunk.numbers || []).filter(n => !drop.has(tenDigits(n)));
-        if (drop.has(tenDigits(trunk.primaryNumber))) trunk.primaryNumber = trunk.numbers[0] || '';
+// Every request in order — trunks in order, then each trunk's requests. A
+// request's position here is the index the server reports back (byRequest,
+// problems, NO_MIND_CITY), so sending and mapping back both walk this one
+// list.
+function orderRequestSlots(trunksList) {
+    const slots = [];
+    (trunksList || []).forEach((trunk, t) => {
+        (trunk.requests || []).forEach((r, i) => slots.push({ trunk: t, request: i, source: r }));
+    });
+    return slots;
+}
+
+// Picked requests still short of their quantity — numbers came off them
+// (gone, picked twice) and the customer hasn't picked the rest. They can't
+// be ordered: the customer must finish picking first. Same rule as the
+// picker's isRequestIncomplete. [{index, trunk, trunkName, ratecenter, npa,
+// quantity, picked}], index = position in orderRequestSlots.
+function findIncompletePicks(trunksList) {
+    return orderRequestSlots(trunksList).map((s, index) => ({ s, index })).filter(({ s }) =>
+        Array.isArray(s.source.dids) && s.source.dids.length < (parseInt(s.source.quantity, 10) || 0)
+    ).map(({ s, index }) => ({
+        index, trunk: s.trunk, trunkName: (trunksList[s.trunk] && trunksList[s.trunk].name) || ('Trunk ' + (s.trunk + 1)),
+        ratecenter: s.source.ratecenter, npa: s.source.npa,
+        quantity: parseInt(s.source.quantity, 10) || 0, picked: s.source.dids.length
+    }));
+}
+
+// The requests for /api/did/check-picks and /api/did/order. A picked
+// request always goes with its picks; only a request without a dids array
+// (porting temp numbers, a page from before the picker) goes as a bare
+// quantity for the server to pick. A picked request is never downgraded to
+// a quantity — the server would pick random numbers and drop the
+// customer's own — so an incomplete one throws (err.incompletePicks):
+// callers check findIncompletePicks first and send the customer back.
+function flattenOrderRequests(trunksList) {
+    const incomplete = findIncompletePicks(trunksList);
+    if (incomplete.length) {
+        const err = new Error('Some numbers are still to be picked: ' + incomplete.map(x =>
+            x.ratecenter + ' (' + x.npa + ') ' + x.picked + ' of ' + x.quantity).join(', '));
+        err.incompletePicks = incomplete;
+        throw err;
+    }
+    return orderRequestSlots(trunksList).map(({ trunk, source: r }) => {
+        const out = { ratecenter: r.ratecenter, npa: r.npa, quantity: parseInt(r.quantity, 10) || 0, trunk: trunk };
+        if (Array.isArray(r.dids)) out.dids = r.dids.map(tenDigits);
+        return out;
+    });
+}
+
+// A trunk's main number: its first pick, in requests order then dids order
+function trunkFirstPick(trunk) {
+    for (const r of (trunk && trunk.requests) || []) {
+        if (Array.isArray(r.dids) && r.dids.length) return tenDigits(r.dids[0]);
+    }
+    return '';
+}
+
+// Put an order's delivered numbers on the trunks. A picked number goes to
+// the trunk whose request picked it; a server-picked one to the trunk of
+// the request espresso filed it under (details.byRequest index = position
+// in flattenOrderRequests). Anything left tops up a short trunk. Numbers
+// land in pick order; a trunk's main number is its first pick when that
+// arrived, else its first number. Persists like distributeOrderedNumbers.
+function placeOrderedNumbers(trunksList, details) {
+    const d = details || {};
+    const groups = (d.byRequest || []).filter(g => g && Array.isArray(g.dids));
+    const delivered = [...new Set((d.numbers || []).concat(groups.flatMap(g => g.dids))
+        .map(tenDigits).filter(n => n.length === 10))];
+    const isDelivered = new Set(delivered);
+    const slots = orderRequestSlots(trunksList);
+
+    // An exact pick wins over the request espresso filed the number under
+    const pickedBy = new Map();
+    slots.forEach((s, i) => (Array.isArray(s.source.dids) ? s.source.dids : []).forEach(n => {
+        if (!pickedBy.has(tenDigits(n))) pickedBy.set(tenDigits(n), i);
+    }));
+    const filedUnder = new Map();
+    groups.forEach(g => {
+        if (g.index == null) return;
+        const list = filedUnder.get(Number(g.index)) || [];
+        filedUnder.set(Number(g.index), list.concat(g.dids.map(tenDigits)));
+    });
+
+    const placed = new Set(trunksList.flatMap(t => (t.numbers || []).map(tenDigits)));
+    slots.forEach((s, i) => {
+        const own = (Array.isArray(s.source.dids) ? s.source.dids.map(tenDigits) : [])
+            .filter(n => pickedBy.get(n) === i)
+            .concat((filedUnder.get(i) || []).filter(n => !pickedBy.has(n)));
+        const trunk = trunksList[s.trunk];
+        own.forEach(n => {
+            if (!isDelivered.has(n) || placed.has(n)) return;
+            trunk.numbers = (trunk.numbers || []).concat(n);
+            placed.add(n);
+        });
+    });
+
+    // The main number is the trunk's first pick when it was delivered. A
+    // pick that never arrived — or a main number that isn't on the trunk —
+    // gives way to the trunk's first delivered number. A trunk with no
+    // picks keeps a main number it already holds.
+    trunksList.forEach(t => {
+        const nums = t.numbers || [];
+        if (!nums.length) return;
+        const on = n => nums.find(x => tenDigits(x) === tenDigits(n));
+        const firstPick = trunkFirstPick(t);
+        if (firstPick && on(firstPick)) t.primaryNumber = on(firstPick);
+        else if (firstPick || !t.primaryNumber || !on(t.primaryNumber)) t.primaryNumber = nums[0];
+    });
+    distributeOrderedNumbers(trunksList, delivered.filter(n => !placed.has(n)));
+}
+
+// Take picked numbers that are no longer available off the requests that
+// picked them — only the request at flattened position `index` when one is
+// given. The quantity stays, so the request is left incomplete and the
+// picker makes the customer choose the rest. A trunk whose main number went
+// falls back to its first remaining pick. Returns what came off, per
+// request: [{ratecenter, npa, numbers}]. Persists sip_trunks.
+function removePicksFromTrunks(trunksList, numbers, index) {
+    const drop = new Set((numbers || []).map(tenDigits));
+    const removed = [];
+    orderRequestSlots(trunksList).forEach((s, i) => {
+        if (index != null && i !== index) return;
+        const r = s.source;
+        if (!Array.isArray(r.dids)) return;
+        const gone = [...new Set(r.dids.map(tenDigits).filter(n => drop.has(n)))];
+        if (!gone.length) return;
+        r.dids = r.dids.filter(n => !drop.has(tenDigits(n)));
+        removed.push({ ratecenter: r.ratecenter, npa: r.npa, numbers: gone });
+    });
+    const off = new Set(removed.flatMap(x => x.numbers));
+    trunksList.forEach(t => {
+        if (t.primaryNumber && off.has(tenDigits(t.primaryNumber))) t.primaryNumber = trunkFirstPick(t);
     });
     setCookie('sip_trunks', JSON.stringify(trunksList));
-    if (trunksList[0] && trunksList[0].primaryNumber) setCookie('sip_primaryNumber', trunksList[0].primaryNumber);
-    else deleteCookie('sip_primaryNumber');
+    if (off.has(tenDigits(getCookie('sip_primaryNumber')))) {
+        const main = trunksList[0] && (trunksList[0].primaryNumber || trunkFirstPick(trunksList[0]));
+        if (main) setCookie('sip_primaryNumber', main);
+        else deleteCookie('sip_primaryNumber');
+    }
+    return removed;
 }

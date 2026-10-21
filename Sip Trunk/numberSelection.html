@@ -539,6 +539,156 @@
 
         .primary-hint strong { color: var(--tufts-blue); }
 
+        /* Live number picker */
+        .btn-search:disabled { background: var(--medium-gray); color: var(--text-gray); cursor: not-allowed; }
+        .btn-search:disabled:hover { background: var(--medium-gray); }
+
+        .picker-banner {
+            background-color: rgba(209, 21, 90, 0.06);
+            border-left: 4px solid var(--magenta-glow);
+            padding: 14px 20px;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: var(--rich-black);
+            line-height: 1.5;
+        }
+
+        .picker-panel {
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .picker-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .picker-selected-count { font-size: 12px; font-weight: 500; color: var(--text-gray); }
+
+        .picker-message {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 13px;
+            color: var(--text-gray);
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+        .picker-message.warning { color: #B45309; }
+        .picker-message.error { color: var(--magenta-glow); }
+
+        .picker-spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--medium-gray);
+            border-top-color: var(--tufts-blue);
+            border-radius: 50%;
+            animation: picker-spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+        @keyframes picker-spin { to { transform: rotate(360deg); } }
+
+        .picker-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 8px;
+            max-height: 320px;
+            overflow-y: auto;
+            padding: 2px;
+            margin-bottom: 16px;
+        }
+        .picker-list:empty { display: none; }
+
+        .picker-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--white);
+            border: 1px solid var(--medium-gray);
+            border-radius: 6px;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .picker-item:hover { border-color: var(--tufts-blue); }
+        .picker-item input { width: 16px; height: 16px; accent-color: var(--tufts-blue); flex-shrink: 0; cursor: pointer; }
+        .picker-item .number-value { font-size: 15px; margin-bottom: 0; }
+        .picker-item.unavailable { opacity: 0.55; cursor: not-allowed; }
+        .picker-item.unavailable:hover { border-color: var(--medium-gray); }
+        .picker-item.unavailable input { cursor: not-allowed; }
+        .picker-item-note { margin-left: auto; font-size: 11px; color: var(--text-gray); }
+
+        .picker-actions { display: flex; justify-content: flex-end; }
+
+        /* Picked numbers, one group per rate center + NPA */
+        .request-groups { display: flex; flex-direction: column; gap: 12px; }
+
+        .request-group {
+            background: var(--white);
+            border: 1px solid var(--medium-gray);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .request-group.incomplete { border-color: #F59E0B; }
+        .request-group .selected-chip { background: var(--light-gray); white-space: nowrap; }
+        .request-group .selected-chip.primary { background: rgba(45, 212, 191, 0.1); }
+
+        .request-group-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .request-group-header + .selected-list { margin-top: 10px; }
+        .request-group-title { font-size: 14px; font-weight: 600; color: var(--rich-black); }
+        .request-group-status { font-size: 13px; color: var(--text-gray); }
+        .request-group.incomplete .request-group-status { color: #B45309; font-weight: 500; }
+
+        .request-group-remove {
+            margin-left: auto;
+            background: transparent;
+            border: none;
+            color: var(--text-gray);
+            cursor: pointer;
+            padding: 0;
+            display: flex;
+            transition: color 0.2s;
+        }
+        .request-group-remove:hover { color: var(--magenta-glow); }
+        .request-group-remove svg { width: 16px; height: 16px; }
+
+        .btn-pick-more {
+            background: transparent;
+            border: 1px solid var(--tufts-blue);
+            color: var(--tufts-blue);
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-family: 'Ubuntu', 'Heebo', sans-serif;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-pick-more:hover { background: rgba(0, 74, 159, 0.06); }
+
+        @media (max-width: 600px) {
+            /* Keep the remove button on the title's row when the header wraps */
+            .request-group-header { position: relative; padding-right: 40px; }
+            .request-group-remove { position: absolute; top: -10px; right: -8px; min-width: 40px; min-height: 40px; align-items: center; justify-content: center; }
+            .btn-pick-more { padding: 8px 14px; font-size: 14px; }
+            .picker-item { padding: 12px; }
+        }
+
         .nav-buttons {
             display: flex;
             justify-content: space-between;
@@ -640,11 +790,11 @@
                 <p class="page-subtitle" id="pageSubtitle">Choose phone numbers from our available inventory for your SIP trunk.</p>
 
                 <div class="temp-numbers-notice" id="tempNotice" style="display: none;">
-                    <p><strong>Temporary Numbers:</strong> Since you're porting your existing numbers, select temporary numbers below to test your service while the port is processing. These will be replaced once your port completes.</p>
+                    <p><strong>Temporary Numbers:</strong> Since you're porting your existing numbers, pick temporary numbers below to test your service while the port is processing. These will be replaced once your port completes.</p>
                 </div>
 
                 <div class="info-box" id="newNumbersInfo">
-                    <p>Choose how many concurrent call channels your trunk needs, then pick the city (rate center), area code and how many numbers you need. Your numbers are assigned when the order is processed — you'll see them on the order status page.</p>
+                    <p>Choose how many concurrent call channels your trunk needs, then pick the city (rate center) and area code to see the numbers available right now. Tick the ones you want and add them to your trunk.</p>
                 </div>
 
                 <!-- Trunk Manager -->
@@ -676,50 +826,71 @@
                         <div class="trunk-summary-bar" id="trunkSummaryBar">
                             <span class="trunk-summary-item">Total Trunks: <strong id="totalTrunksCount">1</strong></span>
                             <span class="trunk-summary-item">Channels: <strong id="currentChannelCount">1</strong> <span style="font-size:12px;color:var(--text-gray);">@ $25/mo</span></span>
-                            <span class="trunk-summary-item">Numbers (DIDs): <strong id="currentTrunkNumberCount">0</strong> <span style="font-size:12px;color:var(--text-gray);">1st included, then $2/mo each</span></span>
+                            <span class="trunk-summary-item">Numbers (DIDs): <strong id="currentTrunkNumberCount">0</strong> <span style="font-size:12px;color:var(--text-gray);">$2/mo each</span></span>
                             <span class="trunk-summary-item">Est. Monthly: <strong id="estMonthlyCost">$0.00</strong></span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Number request builder -->
+                <!-- Live number picker -->
                 <div class="tab-content active" id="standardTab">
+                    <!-- Shown while /api/config says espresso's inventory can't be read -->
+                    <div class="picker-banner" id="pickerBanner" style="display:none;">
+                        Number selection is temporarily unavailable — please try again in a few minutes.
+                    </div>
+
                     <div class="filter-row">
                         <div class="filter-group" style="flex:2;">
                             <label class="filter-label">Rate Center (city)</label>
                             <input type="text" class="filter-input" id="rateCenterFilter" list="rateCenterList"
-                                   placeholder="Start typing — e.g. TORONTO" oninput="updateNpaOptions()" autocomplete="off">
+                                   placeholder="Start typing — e.g. TORONTO" oninput="onRateCenterInput()" autocomplete="off">
                             <datalist id="rateCenterList"></datalist>
                         </div>
                         <div class="filter-group">
                             <label class="filter-label">Area Code (NPA)</label>
-                            <select class="filter-select" id="npaFilter">
+                            <select class="filter-select" id="npaFilter" onchange="resetPicker()">
                                 <option value="">Pick rate center first</option>
                             </select>
                         </div>
-                        <div class="filter-group" style="max-width:120px;">
-                            <label class="filter-label">Quantity</label>
+                        <div class="filter-group" style="max-width:140px;">
+                            <label class="filter-label">How many numbers</label>
                             <input type="number" class="filter-input" id="quantityInput" min="1" max="100" value="1">
                         </div>
-                        <button class="btn-search" onclick="addNumberRequest()">
-                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
-                            Add to Trunk
+                        <button class="btn-search" id="showNumbersBtn" onclick="showAvailableNumbers()">
+                            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+                            <span id="showNumbersLabel">Show available numbers</span>
                         </button>
                     </div>
 
                     <div class="numbers-grid" id="catalogStatus" style="display:block;max-height:none;">
                         <!-- Catalog load status -->
                     </div>
+
+                    <!-- Numbers available in the chosen rate center + NPA -->
+                    <div class="picker-panel" id="pickerPanel" style="display:none;">
+                        <div class="picker-header">
+                            <span id="pickerTitle">Available numbers</span>
+                            <span class="picker-selected-count" id="pickerSelectedCount"></span>
+                        </div>
+                        <div class="picker-message" id="pickerMessage"></div>
+                        <div class="picker-list" id="pickerList"></div>
+                        <div class="picker-actions" id="pickerActions" style="display:none;">
+                            <button class="btn-search" id="addSelectedBtn" onclick="addSelectedNumbers()">
+                                <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+                                Add selected numbers
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Requested Numbers for Current Trunk -->
+                <!-- Picked Numbers for Current Trunk -->
                 <div class="selected-numbers">
                     <div class="selected-numbers-title">
-                        <span>Requested Numbers — <strong id="selectedTrunkLabel">Trunk 1</strong></span>
+                        <span>Your Numbers — <strong id="selectedTrunkLabel">Trunk 1</strong></span>
                         <span class="selected-count" id="selectedCount">0</span>
                     </div>
-                    <div class="selected-list" id="selectedList">
-                        <span class="no-selection">No numbers requested yet</span>
+                    <div class="request-groups" id="selectedList">
+                        <span class="no-selection">No numbers picked yet</span>
                     </div>
                 </div>
 
@@ -735,13 +906,13 @@
             <div class="gradient-circle cyan"></div>
             <div class="promo-content">
                 <div class="promo-text">
-                    <h2 class="promo-headline">Request Your <span>Numbers</span></h2>
-                    <p class="promo-description">Order numbers from any rate center Iristel serves across Canada. Pick your city, area code and quantity.</p>
+                    <h2 class="promo-headline">Choose Your <span>Numbers</span></h2>
+                    <p class="promo-description">Pick numbers from any rate center Iristel serves across Canada. Choose your city and area code, then the exact numbers you want.</p>
                     <ul class="feature-list">
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Local numbers in any area code</li>
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Rate centers across every province</li>
                         <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>As many numbers as you need per trunk</li>
-                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>Numbers assigned as your order completes</li>
+                        <li><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>See and choose your exact numbers</li>
                     </ul>
                 </div>
             </div>

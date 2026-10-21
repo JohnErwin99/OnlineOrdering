@@ -551,21 +551,30 @@
         // email. Step-level narration is deliberately gone (director request).
         const LEAVE_COPY = 'You don’t need to wait here — it’s safe to close this page. ' +
             'We’ll email your confirmation and credentials as soon as everything is ready.';
+        // While the numbers are being reserved — usually under a minute
+        const KEEP_OPEN_COPY = 'Please keep this page open while we reserve your numbers — it usually takes ' +
+            'less than a minute. You can close it once setup has started.';
 
         // ============================================
         // SNAG — the only failure state the customer ever sees.
         // Every espresso/UBoss error lands here: generic message, no detail,
         // no retry button. The full report goes to the server's snag store
         // for the provisioning team to follow up manually.
+        // options.reported: this one is on file already (the server filed a
+        // DID order needing review or a number MIND refused itself; a pool
+        // collision or a legacy replacement order was reported on an earlier
+        // visit) — reporting again would duplicate the ops alert.
+        // options.title / options.customerMessage replace the generic copy.
         // ============================================
-        function showSnag(stage, detail) {
+        function showSnag(stage, detail, options) {
+            const opts = options || {};
             stopPolling();
             stopEta();
             showNavAwayNotice(false);
-            console.error('[snag]', stage, '—', detail);
+            console.error('[snag]', stage, '—', detail, opts.reported ? '(already reported)' : '');
 
             const email = getCookie('sip_billingEmail') || getCookie('iristel_user_email') || '';
-            if (email) {
+            if (email && !opts.reported) {
                 fetch('/api/notify-snag', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -576,10 +585,10 @@
             const icon = document.getElementById('statusIcon');
             icon.className = 'status-icon queued';
             icon.innerHTML = ICON_CLOCK;
-            document.getElementById('statusTitle').textContent = 'Oops — we hit a snag';
-            document.getElementById('statusSubtitle').textContent =
-                'A representative will contact you within the next 2 hours to finish your setup. ' +
-                'Nothing is lost — you don’t need to do anything.';
+            document.getElementById('statusTitle').textContent = opts.title || 'Oops — we hit a snag';
+            document.getElementById('statusSubtitle').textContent = opts.customerMessage ||
+                ('A representative will contact you within the next 2 hours to finish your setup. ' +
+                'Nothing is lost — you don’t need to do anything.');
             document.getElementById('errorBox').style.display = 'none';
             document.getElementById('emailNotice').style.display = 'none';
             document.getElementById('btnRow').innerHTML =
@@ -625,7 +634,7 @@
         // Number API) — without this the number provisions in UBoss but never
         // shows on the service in MIND. A failure is support's problem, never
         // the customer's — except a number MIND refuses as taken, which the
-        // response lists in `taken` for ensureNumbersFree to replace. Resolves
+        // response lists in `taken` and ensureNumbersFree halts on. Resolves
         // to the server's answer (null when skipped). De-duped by the number
         // set so reloads don't re-PATCH.
         function assignNumbersToMind(trunksList) {
@@ -674,8 +683,8 @@
         // ============================================
         // Countdown — anchored to when the job actually started, so a reload
         // resumes the countdown instead of restarting it. Every retry path
-        // (timeout, pool collision, manual Try Again) clears the anchor so a
-        // fresh job restarts the clock at 10:00.
+        // (timeout, manual Try Again) clears the anchor so a fresh job
+        // restarts the clock at 10:00.
         // ============================================
         const ETA_TOTAL_MS = 10 * 60 * 1000;
         let etaTimerHandle = null;
@@ -804,7 +813,7 @@
 
             // An order is only placed after the service step, so a recorded
             // order is proof that step succeeded.
-            if (session.order && session.order.orderNumber && !getOrderStepResult('service')) {
+            if (session.order && (session.order.orderId || session.order.orderNumber) && !getOrderStepResult('service')) {
                 const plan = getCookie('iristel_selected_plan_name')
                     || getCookie('iristel_selected_plan') || 'SIP Trunk';
                 setOrderStepResult('service', 'done', plan + ' active on your account');
@@ -818,32 +827,35 @@
         //
         // The provision record is preferred — it is exactly what was sent to
         // UBoss — and the DID order is the fallback for orders that never got
-        // as far as provisioning.
+        // as far as provisioning. Either way each number goes back on the
+        // trunk that picked it.
         async function recoverNumbersIfMissing(trunksList, session) {
             if (!trunksNeedNumbers(trunksList)) return trunksList;
 
-            let numbers = [];
+            let details = null;
             const provisioned = (session && session.provisions) || [];
             if (provisioned.length) {
-                numbers = provisioned.flatMap(p => (p.phoneNumbers || [])
-                    .map(n => String(n).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1')));
+                details = { numbers: provisioned.flatMap(p => (p.phoneNumbers || [])
+                    .map(n => String(n).replace(/\D/g, '').replace(/^1(\d{10})$/, '$1'))) };
             }
 
-            if (!numbers.length) {
-                const order = getCookie('sip_didOrderNumber')
-                    || (session && session.order && session.order.orderNumber);
+            if (!details || !details.numbers.length) {
+                const sessionOrder = (session && session.order) || {};
+                const order = getCookie('sip_didOrderId') || getCookie('sip_didOrderNumber')
+                    || sessionOrder.orderId || sessionOrder.orderNumber;
                 if (!order) return trunksList;
                 try {
                     const r = await fetch(`/api/did/order/${encodeURIComponent(order)}/details`);
                     const d = await r.json().catch(() => null);
-                    if (r.ok && d && d.numbers) numbers = d.numbers;
+                    if (r.ok && d && d.numbers) details = d;
                 } catch (e) {
                     console.warn('Could not recover the ordered numbers:', e.message);
                 }
             }
 
+            const numbers = (details && details.numbers) || [];
             if (!numbers.length) return trunksList;
-            distributeOrderedNumbers(trunksList, numbers);
+            placeOrderedNumbers(trunksList, details);
             saveTrunksToServer(trunksList);
             console.log('Recovered', numbers.length, 'number(s) for the resumed order');
             return trunksList;
@@ -1047,7 +1059,6 @@
                 // Completed instead. Nothing left to send from here.
                 setCookie('sip_welcomeEmailSent', jobId);
                 deleteCookie('sip_ubossAutoRetry');
-                deleteCookie('sip_poolRetry');
                 showFinalCompleted(completedData);
 
             } else if (statusIs(data, UBOSS_STATUS.PARTIAL)) {
@@ -1063,7 +1074,6 @@
                 // Same close-out as Completed — duplicate guards must release
                 markOrderComplete();
                 deleteCookie('sip_ubossAutoRetry');
-                deleteCookie('sip_poolRetry');
                 showFinalCompleted(data);
 
                 // Silent recovery: re-send the welcome letter so the SIP
@@ -1073,27 +1083,20 @@
                     console.error('[UBoss] silent welcome-letter retry failed — support must send job', jobId, ':', err.message));
 
             } else if (statusIs(data, UBOSS_STATUS.FAILED)) {
+                // Already given up on this job (an earlier visit filed the
+                // snag): stop at the same place — no new job, no new report
+                if (getCookie('sip_ubossFailSnagJob') === String(jobId)) {
+                    stopPolling();
+                    showSnag('uboss-provisioning', data.errorMessage || 'UBoss job failed', { reported: true });
+                    return;
+                }
                 // POOL COLLISION — the number is burnt in the UBoss pool
-                // forever, so retrying with it can never succeed. Order a
-                // fresh number from espresso (same ratecenter/npa shape) and
-                // re-provision, at most 3 attempts total, before snagging.
+                // forever, so retrying with it can never succeed, and there
+                // is no automatic re-order any more. Stop here for ops.
                 const isPoolCollision = /already exist in the number pool/i.test(data.errorMessage || '');
                 if (isPoolCollision) {
-                    const poolAttempts = parseInt(getCookie('sip_poolRetry') || '1', 10);
-                    if (poolAttempts < 3) {
-                        stopPolling();
-                        console.warn('[UBoss] pool collision on attempt', poolAttempts, 'of 3 —',
-                            'ordering a replacement number.', 'Job error:', data.errorMessage);
-                        setCookie('sip_poolRetry', String(poolAttempts + 1));
-                        replaceNumbersAndRetry().catch(err => {
-                            console.error('[UBoss] replacement order failed:', err.message);
-                            deleteCookie('sip_poolRetry');
-                            showSnag('uboss-pool-retry', 'Replacement number order failed after pool collision: ' + err.message);
-                        });
-                        return;
-                    }
-                    deleteCookie('sip_poolRetry');
-                    showSnag('uboss-pool', `[after ${poolAttempts} attempts] ` + (data.errorMessage || 'UBoss job failed'));
+                    stopPolling();
+                    haltOnPoolCollision(data);
                     return;
                 }
                 // TIMEOUT failures are transient portal hangs (Mostapha raised
@@ -1121,6 +1124,7 @@
                 // a rep follows up manually. No retry button — a blind retry
                 // burns the number in the UBoss pool.
                 deleteCookie('sip_ubossAutoRetry');
+                setCookie('sip_ubossFailSnagJob', String(jobId));
                 showSnag('uboss-provisioning',
                     (isTimeout ? `[after ${attempts} attempts] ` : '') + (data.errorMessage || 'UBoss job failed'));
             }
@@ -1212,7 +1216,10 @@
 
         // ============================================
         // Phase A: espresso DID number order — the customer waits HERE, not on
-        // the review page. Polls until Completed, then distributes the numbers.
+        // the review page. Polls until Completed, then puts each number on the
+        // trunk that picked it. Rejected sends the customer back to re-pick
+        // (a rejected legacy replacement order stops for ops instead);
+        // NeedsReview stops for ops.
         // ============================================
         function setNumbersStep(state, label, detail) {
             setStepState(document.getElementById('stepNumbersIcon'), state,
@@ -1220,109 +1227,277 @@
                 label, detail);
         }
 
-        // Espresso rejected the order (typically "not enough available
-        // numbers in the specified rate center"). Pull the per-request
-        // reject reasons, drop the failed requests from the trunks, and send
-        // the customer back to number selection to pick a different city —
-        // WITHOUT re-charging: payment already settled and the corrected
-        // order re-places only the numbers, never the charge. Returns true
-        // when the redirect happened; false falls through to the snag flow.
-        async function redirectToReselection(didOrderNumber, trunksList) {
-            let problems = [];
-            try {
-                const pr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/problems`);
-                const pd = await pr.json().catch(() => null);
-                problems = (pd && pd.problems) || [];
-            } catch (e) { /* fall through to snag */ }
-            if (!problems.length) return false;
+        // The DID order is finished with (delivered, or the customer is
+        // re-picking) — both references go together
+        function clearDidOrderCookies() {
+            deleteCookie('sip_didOrderId');
+            deleteCookie('sip_didOrderNumber');
+        }
 
-            // Remove the failed requests so the customer replaces them. The
-            // trunk keeps its channel count: channels are chosen (and priced)
-            // independently of the number of DIDs.
-            const failed = problems.map(p => (p.ratecenter || '') + '|' + (p.npa || ''));
+        // The DID order reads (status, details, problems) ride out a blip —
+        // a dropped connection, a deploy, espresso or MIND briefly away
+        // (5xx, 503) — by asking again at the poll interval. Only
+        // DID_READ_TRIES failures in a row (about a minute) give up. A 4xx
+        // is a definitive answer (404 ORDER_NOT_FOUND: no such order) and
+        // gives up at once; 408/429 just mean "later". Resolves to the
+        // parsed body; rejects with the last failure (status, code, tries).
+        const DID_POLL_MS = 10000;
+        const DID_READ_TRIES = 6;
+
+        async function readDidOrder(didOrderRef, what) {
+            for (let attempt = 1; ; attempt++) {
+                let r = null, d = null, failure = null;
+                try {
+                    r = await fetch(`/api/did/order/${encodeURIComponent(didOrderRef)}/${what}`);
+                    d = await r.json().catch(() => null);
+                } catch (e) {
+                    failure = e; // no answer at all
+                }
+                if (r && r.ok && d) return d;
+                if (r) {
+                    failure = new Error(((d && d.error) || ('HTTP ' + r.status + (r.ok ? ' with an unreadable body' : '')))
+                        + (d && d.code ? ' (' + d.code + ')' : ''));
+                    failure.status = r.status;
+                    failure.code = (d && d.code) || null;
+                }
+                const definitive = !!r && r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429;
+                failure.tries = attempt;
+                if (definitive || attempt >= DID_READ_TRIES) throw failure;
+                console.warn('[order]', what, 'for', didOrderRef, 'failed (try', attempt, 'of', DID_READ_TRIES + ') — retrying:', failure.message);
+                await new Promise(res => setTimeout(res, DID_POLL_MS));
+            }
+        }
+
+        // " after N tries" for an ops message when a read was retried
+        function afterTries(e) {
+            return e && e.tries > 1 ? ' after ' + e.tries + ' tries' : '';
+        }
+
+        // A legacy replacement or top-up order. Before the REST switch this
+        // page re-ordered numbers MIND refused (sip_tnCheckRound counted the
+        // rounds) or that hit the UBoss pool, so the trunk it was for may
+        // already hold the numbers that were delivered. Re-picking can't fix
+        // a rejected one: with numbers on the trunk trunksNeedNumbers is
+        // false, so the new picks would never be ordered. Only a legacy
+        // (SOAP) reference honours the old cookie — nothing clears it, so a
+        // stale one must not catch a new order. Returns null when this is
+        // not one; otherwise the short trunks already holding numbers.
+        function legacyTopUpTrunks(trunksList, didOrderRef) {
+            const holding = trunksList.filter(t => (t.requests || []).length
+                && (t.numbers || []).length && t.numbers.length < trunkWantedCount(t));
+            const legacyRef = !getCookie('sip_didOrderId') && !/^ORD-/i.test(didOrderRef || '');
+            if (!holding.length && !(legacyRef && getCookie('sip_tnCheckRound'))) return null;
+            return holding;
+        }
+
+        // Espresso rejected the order: nothing was bought, and the customer
+        // can pick again. Pull the per-request problems and send the customer
+        // back to number selection — WITHOUT re-charging: payment already
+        // settled and the corrected order re-places only the numbers.
+        //   REST problems carry the request's position in the order (index)
+        //   and the picked numbers that are gone (goneDids): only those come
+        //   off that request, which keeps its quantity so the picker asks for
+        //   replacements. A request the server picked for is dropped instead,
+        //   so the customer chooses again.
+        //   Legacy SOAP problems name only a rate center: those requests are
+        //   dropped, as before.
+        // Every entry left for the picker says what happened (kind) and that
+        // payment was already taken (paid) — this page only runs after it.
+        // Returns true when the redirect happened; false (nothing the
+        // customer can re-pick) falls through to the snag flow. Problems that
+        // can't be read even after retrying reject instead: that is not
+        // "nothing to re-pick".
+        async function redirectToReselection(didOrderRef, trunksList) {
+            const pd = await readDidOrder(didOrderRef, 'problems');
+            const problems = Array.isArray(pd.problems) ? pd.problems : [];
+            if (!problems.length) return false;
+            // Resumed on another device: this browser has no record of the
+            // payment, so the review page would ask for it again. Ops take
+            // the re-pick from here instead.
+            if (!(parseFloat(getCookie('iristel_payment_amount') || '0') > 0)) {
+                const err = new Error('Number order ' + (getCookie('sip_didOrderNumber') || didOrderRef) + ' was rejected '
+                    + '(' + problems.map(p => (p.ratecenter || '?') + ' ' + (p.npa || '') + ': ' + (p.rejectReason || 'unavailable')).join('; ')
+                    + ') and this browser has no payment record (order resumed on another device) — '
+                    + 'help the customer pick replacement numbers without charging them again');
+                err.snagStage = 'espresso-order';
+                // The order cookies stay, so a reload stops here again —
+                // reported once per order
+                err.snagReported = getCookie('sip_rejectSnagOrder') === String(didOrderRef);
+                setCookie('sip_rejectSnagOrder', String(didOrderRef));
+                err.snagTitle = 'Some of your numbers are no longer available';
+                err.customerMessage = 'A few of the numbers you picked were taken before your order completed. '
+                    + 'Our team will contact you to choose replacements — you won’t be charged again.';
+                throw err;
+            }
+
+            const slots = orderRequestSlots(trunksList);
+            const rejection = [];
+            const dropped = new Set();
+            const legacyFailed = [];
+            problems.forEach(p => {
+                if (p.index == null) {
+                    // Legacy SOAP — or an order-level failure with no request
+                    if (p.ratecenter) {
+                        legacyFailed.push(p.ratecenter + '|' + (p.npa || ''));
+                        rejection.push({ ratecenter: p.ratecenter, npa: p.npa, numbers: [],
+                            reason: p.rejectReason || 'Not enough numbers available', kind: 'shortfall', paid: true });
+                    }
+                    return;
+                }
+                const slot = slots[p.index];
+                // The same request only if it still looks like the one ordered
+                const sameRequest = slot && (!p.ratecenter || (slot.source.ratecenter === p.ratecenter
+                    && String(slot.source.npa) === String(p.npa)));
+                // Sent as a bare quantity (no picks — or, in an order placed
+                // before picks were required, incomplete ones), so the server
+                // picked these numbers — the customer never saw them
+                if (sameRequest && !requestPickComplete(slot.source)) {
+                    dropped.add(slot.source);
+                    rejection.push({ ratecenter: slot.source.ratecenter, npa: slot.source.npa, numbers: [],
+                        reason: p.rejectReason || 'Not enough numbers available', kind: 'shortfall', paid: true });
+                    return;
+                }
+                const gone = Array.isArray(p.goneDids) ? p.goneDids : [];
+                if (!gone.length) return;
+                // Numbers are unique across the order, so a request that has
+                // moved can still be found by its numbers
+                removePicksFromTrunks(trunksList, gone, sameRequest ? p.index : null).forEach(x =>
+                    rejection.push(Object.assign(x, { reason: p.rejectReason || 'No longer available', kind: 'gone', paid: true })));
+            });
+            // Nothing to re-pick — sending the customer back would only place
+            // the same order again
+            if (!rejection.length) return false;
+
+            // The trunk keeps its channel count: channels are chosen (and
+            // priced) independently of the number of DIDs.
             trunksList.forEach(t => {
-                t.requests = (t.requests || []).filter(r => !failed.includes(r.ratecenter + '|' + r.npa));
+                t.requests = (t.requests || []).filter(r =>
+                    !dropped.has(r) && !legacyFailed.includes(r.ratecenter + '|' + r.npa));
             });
             setCookie('sip_trunks', JSON.stringify(trunksList));
             saveTrunksToServer(trunksList);
 
-            setCookie('sip_orderRejection', JSON.stringify(problems));
-            deleteCookie('sip_didOrderNumber'); // corrected order re-places, not re-bills
-            console.warn('[order] espresso rejected', didOrderNumber, '— sending customer back to reselect:', problems);
+            setCookie('sip_orderRejection', JSON.stringify(rejection));
+            clearDidOrderCookies(); // corrected order re-places, not re-bills
+            console.warn('[order] espresso rejected', didOrderRef, '— sending customer back to reselect:', problems);
             // The page keeps running until the navigation lands — stop the
-            // remaining steps here, or they fail and file a bogus snag
+            // remaining steps here, or they fail and file a bogus snag. The
+            // countdown goes too: the corrected order starts a fresh 10:00.
             navigatingAway = true;
+            stopEta();
             window.location.href = 'numberSelection.html';
             return true;
         }
 
         async function waitForNumberOrder(trunksList) {
-            const didOrderNumber = getCookie('sip_didOrderNumber');
-            // "Short", not just "empty": a replacement order tops up a trunk
-            // that still holds its other numbers
-            if (!didOrderNumber || !trunksShortOfNumbers(trunksList)) {
+            // The order id drives the calls; the ORD- number is for people.
+            // A legacy SOAP order has only its number.
+            const didOrderRef = getCookie('sip_didOrderId') || getCookie('sip_didOrderNumber');
+            let orderLabel = getCookie('sip_didOrderNumber') || didOrderRef;
+            // Numbers stay off the trunks until the order delivers them
+            if (!didOrderRef || !trunksShortOfNumbers(trunksList)) {
                 setNumbersStep('done', 'Numbers ready', 'Your numbers are assigned');
                 return trunksList;
             }
 
-            setNumbersStep('active', 'Ordering your numbers...', 'Order ' + didOrderNumber + ' — waiting for Iristel to assign numbers');
+            setNumbersStep('active', 'Ordering your numbers...', 'Order ' + orderLabel + ' — waiting for Iristel to assign numbers');
 
             for (;;) {
-                const sr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/status`);
-                const sd = await sr.json().catch(() => null);
-                if (!sr.ok) {
-                    const err = new Error('Number order status failed: ' + ((sd && sd.error) || ('HTTP ' + sr.status)));
+                let sd;
+                try {
+                    sd = await readDidOrder(didOrderRef, 'status');
+                } catch (e) {
+                    const err = new Error('Number order ' + orderLabel + ' status failed' + afterTries(e) + ': ' + e.message);
                     err.snagStage = 'did-order-status';
                     throw err;
                 }
+                if (sd.orderNumber && sd.orderNumber !== orderLabel) {
+                    orderLabel = sd.orderNumber;
+                    if (!getCookie('sip_didOrderNumber')) setCookie('sip_didOrderNumber', sd.orderNumber);
+                }
                 const orderStatus = String(sd.status || '');
-                console.log('DID order', didOrderNumber, 'status:', orderStatus);
+                console.log('DID order', orderLabel, 'status:', orderStatus, sd.espressoStatus ? '(espresso ' + sd.espressoStatus + ')' : '');
                 if (/^completed$/i.test(orderStatus)) break;
-                if (/rejected|canceled/i.test(orderStatus) && getCookie('sip_tnCheckRound')) {
-                    // A REPLACEMENT order — the customer's order is already
-                    // paid and placed, so sending them back to pick numbers
-                    // would be wrong. Support takes it from here.
-                    deleteCookie('sip_didOrderNumber');
-                    const err = new Error('Replacement number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase());
-                    err.snagStage = 'mind-tn-replace';
+                if (/^needsreview$/i.test(orderStatus)) {
+                    // Failed, expired, or ended with numbers assigned — some
+                    // may already be bought, so the customer is NEVER sent to
+                    // pick again. The server filed the ops snag already.
+                    const err = new Error('Number order ' + orderLabel + ' needs review (espresso ' + (sd.espressoStatus || 'status unknown')
+                        + (sd.reason ? ': ' + sd.reason : '') + ')');
+                    err.snagStage = 'did-needs-review';
+                    err.snagReported = true;
+                    err.snagTitle = 'We’re reviewing your number order';
+                    err.customerMessage = 'Our team is reviewing your number order and will contact you to finish your setup. ' +
+                        'Nothing is lost — you don’t need to do anything.';
                     throw err;
                 }
-                if (/rejected|canceled/i.test(orderStatus)) {
-                    // A rejection is almost always "not enough available
-                    // numbers in the rate center" — recoverable by picking a
-                    // different city, so route the customer back to number
-                    // selection instead of the dead-end snag flow.
-                    const redirected = await redirectToReselection(didOrderNumber, trunksList);
-                    if (redirected) return trunksList;
-                    deleteCookie('sip_didOrderNumber');
+                if (/rejected|canceled|cancelled/i.test(orderStatus)) {
+                    const outcome = orderStatus.toLowerCase() + (sd.reason ? ' (' + sd.reason + ')' : '');
+                    // A legacy replacement or top-up: never back to the
+                    // picker. The order references stay, so a reload lands on
+                    // this same stop, and it is reported once per order.
+                    const holding = legacyTopUpTrunks(trunksList, didOrderRef);
+                    if (holding) {
+                        const reported = getCookie('sip_replaceSnagOrder') === didOrderRef;
+                        setCookie('sip_replaceSnagOrder', didOrderRef);
+                        const held = holding.map(t => '"' + (t.name || 'trunk') + '" holds ' + t.numbers.join(', ')
+                            + ' (' + t.numbers.length + ' of ' + trunkWantedCount(t) + ')').join('; ');
+                        const err = new Error('Replacement number order ' + orderLabel + ' was ' + outcome + '. '
+                            + 'It is a legacy replacement/top-up order (placed before the REST switch, for numbers MIND refused '
+                            + 'or that hit the UBoss number pool), so the customer was not sent back to pick numbers — '
+                            + 'new picks would never be ordered. '
+                            + (held ? 'Already delivered: ' + held + '. ' : '')
+                            + 'Provisioning is halted: order the missing number(s) for the customer, put them on the trunk, then provision.');
+                        err.snagStage = 'mind-tn-replace';
+                        err.snagReported = reported;
+                        throw err;
+                    }
+                    // Nothing was bought: some picked numbers went before the
+                    // order got them (legacy SOAP: the rate center ran out).
+                    // Recoverable by picking again, so route the customer back
+                    // to number selection instead of the dead-end snag flow.
+                    let unreadable = '';
+                    try {
+                        if (await redirectToReselection(didOrderRef, trunksList)) return trunksList;
+                    } catch (e) {
+                        // A deliberate stop (no payment record here) goes out as is
+                        if (e && e.snagStage) throw e;
+                        unreadable = '; its problems could not be read' + afterTries(e) + ' (' + e.message + ')';
+                    }
+                    clearDidOrderCookies();
                     // Tagged so the server-side snag report fetches espresso's
                     // reject reasons (e.g. rate-center inventory exhausted)
-                    const err = new Error('Number order ' + didOrderNumber + ' was ' + orderStatus.toLowerCase());
+                    const err = new Error('Number order ' + orderLabel + ' was ' + outcome + unreadable);
                     err.snagStage = 'espresso-order';
                     throw err;
                 }
-                setNumbersStep('active', 'Ordering your numbers (' + (orderStatus || 'Processing') + ')...',
-                    'Order ' + didOrderNumber + ' — last checked ' + new Date().toLocaleTimeString());
-                await new Promise(r => setTimeout(r, 10000));
+                setNumbersStep('active', (sd.statusText || 'Ordering your numbers (' + (orderStatus || 'Processing') + ')') + '...',
+                    'Order ' + orderLabel + ' — last checked ' + new Date().toLocaleTimeString());
+                await new Promise(r => setTimeout(r, DID_POLL_MS));
             }
 
-            const dr = await fetch(`/api/did/order/${encodeURIComponent(didOrderNumber)}/details`);
-            const dd = await dr.json().catch(() => null);
-            const numbers = (dr.ok && dd && dd.numbers) || [];
-            if (!dr.ok || !dd || !numbers.length) {
-                const err = new Error(!dr.ok || !dd
-                    ? 'Could not retrieve the ordered numbers: ' + ((dd && dd.error) || ('HTTP ' + dr.status))
-                    : 'Number order completed but returned no numbers. Please contact support with order ' + didOrderNumber + '.');
+            let dd;
+            try {
+                dd = await readDidOrder(didOrderRef, 'details');
+            } catch (e) {
+                const err = new Error('Could not retrieve the ordered numbers for ' + orderLabel + afterTries(e) + ': ' + e.message);
+                err.snagStage = 'did-order-numbers';
+                throw err;
+            }
+            const numbers = Array.isArray(dd.numbers) ? dd.numbers : [];
+            if (!numbers.length) {
+                const err = new Error('Number order completed but returned no numbers. Please contact support with order ' + orderLabel + '.');
                 err.snagStage = 'did-order-numbers';
                 throw err;
             }
             console.log('DID order delivered', numbers.length, 'numbers');
 
-            distributeOrderedNumbers(trunksList, numbers);
+            // Each number onto the trunk that picked it
+            placeOrderedNumbers(trunksList, dd);
             // Send the assigned numbers back so a resume on another device
             // shows them straight away instead of an empty field.
             saveTrunksToServer(trunksList);
-            deleteCookie('sip_didOrderNumber');
+            clearDidOrderCookies();
             setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered');
             document.getElementById('detailNumber').textContent = displayPrimaryNumber(trunksList) || '--';
             return trunksList;
@@ -1330,89 +1505,55 @@
 
         // ============================================
         // Phase A2: make sure MIND doesn't already have a delivered number on
-        // another customer's service. A taken one is dropped and re-ordered —
-        // espresso has no API to hand it back, so the server flags it for a
-        // manual disconnect. Must finish before UBoss, which burns every
-        // number it sees. The replacement count survives a reload, and the
-        // server's guard means a reload mid-replacement re-uses the order.
+        // another customer's service, then link them to this one. The picks
+        // were checked against MIND when chosen and again at submit, so a
+        // taken number here is a rare race: it was bought, and nothing is
+        // re-ordered — provisioning stops and ops resolve it (the server
+        // flags the number). Must finish before UBoss, which burns every
+        // number it sees.
         // ============================================
-        const MAX_TN_REPLACEMENTS = 3;
-
         async function ensureNumbersFree(trunksList) {
+            orchestrationPhase = 'mind-tn-check';
             const email = getProvisioningContactData().emailAddress;
-            for (;;) {
-                orchestrationPhase = 'mind-tn-check';
-                const numbers = [...new Set(trunksList.flatMap(t => t.numbers || []))];
-                if (!numbers.length) return trunksList;
-                setNumbersStep('active', 'Verifying your numbers...', 'Checking ' + numbers.length + ' number(s) are free to use');
+            const numbers = [...new Set(trunksList.flatMap(t => t.numbers || []))];
+            if (!numbers.length) return trunksList;
+            setNumbersStep('active', 'Verifying your numbers...', 'Checking ' + numbers.length + ' number(s) are free to use');
 
-                const r = await fetch('/api/mind/check-numbers', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email, numbers: numbers, serviceId: getCookie('sip_serviceId') || '' })
-                });
-                const d = await r.json().catch(() => null);
-                if (!r.ok || !d) {
-                    // Fail closed — an unverified number never reaches UBoss
-                    const err = new Error('Could not verify the numbers in MIND: ' + ((d && d.error) || ('HTTP ' + r.status)));
-                    err.snagStage = 'mind-tn-check';
-                    throw err;
-                }
-                let taken = (d.taken || []).map(t => t.number);
-                if (!taken.length) {
-                    // Link them in MIND now, still before UBoss: MIND can
-                    // refuse a number the checks passed ("no longer
-                    // available"), and that one gets replaced too
-                    const link = await assignNumbersToMind(trunksList);
-                    taken = ((link && link.taken) || []).map(t => t.number);
-                }
-                if (!taken.length) {
-                    deleteCookie('sip_tnCheckRound');
-                    setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered and verified');
-                    return trunksList;
-                }
-
-                const replaced = parseInt(getCookie('sip_tnCheckRound') || '0', 10);
-                const requests = replacementRequests(trunksList, taken);
-                const replaceable = requests.reduce((s, q) => s + q.quantity, 0);
-                if (replaced >= MAX_TN_REPLACEMENTS || replaceable < taken.length) {
-                    const err = new Error('Number(s) ' + taken.join(', ') + ' already in use in MIND'
-                        + (replaceable < taken.length ? ' and cannot be re-ordered (no number request on the trunk)'
-                            : ' after ' + replaced + ' replacement order(s)'));
-                    err.snagStage = 'mind-tn-taken';
-                    throw err;
-                }
-
-                console.warn('[mind] number(s) already in use elsewhere:', taken.join(', '), '— ordering replacements');
-                setNumbersStep('active', 'Replacing unavailable numbers...', taken.length + ' number(s) were already in use — ordering new ones');
-                // Ordering and waiting for the replacement is espresso work:
-                // an untagged failure from here on belongs there, not to MIND
-                orchestrationPhase = 'mind-tn-replace';
-                // Ordered BEFORE the trunks change: a reload in between finds
-                // the same taken set and gets this same order back.
-                const or = await fetch('/api/did/replace', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: email,
-                        accountRef: getCookie('iristel_account_id') || null,
-                        taken: taken,
-                        requests: requests
-                    })
-                });
-                const order = await or.json().catch(() => null);
-                if (!or.ok || !order || !order.orderNumber) {
-                    const err = new Error('Replacement number order failed: ' + ((order && order.error) || ('HTTP ' + or.status)));
-                    err.snagStage = 'mind-tn-replace';
-                    throw err;
-                }
-
-                removeNumbersFromTrunks(trunksList, taken);
-                setCookie('sip_tnCheckRound', String(replaced + 1));
-                setCookie('sip_didOrderNumber', order.orderNumber);
-                saveTrunksToServer(trunksList);
-                await waitForNumberOrder(trunksList);
+            const r = await fetch('/api/mind/check-numbers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, numbers: numbers, serviceId: getCookie('sip_serviceId') || '' })
+            });
+            const d = await r.json().catch(() => null);
+            if (!r.ok || !d) {
+                // Fail closed — an unverified number never reaches UBoss
+                const err = new Error('Could not verify the numbers in MIND: ' + ((d && d.error) || ('HTTP ' + r.status)));
+                err.snagStage = 'mind-tn-check';
+                // The server already reported its own error answers
+                err.snagReported = r.status >= 500;
+                throw err;
             }
+            let taken = (d.taken || []).map(t => t.number);
+            if (!taken.length) {
+                // Link them in MIND now, still before UBoss: MIND can refuse
+                // a number the checks passed ("no longer available")
+                const link = await assignNumbersToMind(trunksList);
+                taken = ((link && link.taken) || []).map(t => t.number);
+            }
+            if (taken.length) {
+                // The server filed this itself (flagTakenNumber, once per
+                // number), so a reload stops here again without re-reporting
+                const err = new Error('Number(s) ' + taken.join(', ') + ' were bought but MIND refused them — '
+                    + 'provisioning is halted; our team will resolve it');
+                err.snagStage = 'mind-tn-taken';
+                err.snagReported = true;
+                err.snagTitle = 'We’re reviewing your numbers';
+                err.customerMessage = 'One of your new numbers needs a check by our team before your trunk can be set up. ' +
+                    'We’ll contact you to finish your setup. Nothing is lost — you don’t need to do anything.';
+                throw err;
+            }
+            setNumbersStep('done', 'Numbers assigned', numbers.length + ' number(s) delivered and verified');
+            return trunksList;
         }
 
         // ============================================
@@ -1465,59 +1606,27 @@
             window.location.reload();
         }
 
-        // Pool-collision recovery: the burnt number is abandoned, a fresh DID
-        // of the same shape is ordered from espresso (force bypasses the
-        // server's duplicate guard — this is the one legitimate re-order),
-        // and the page reloads into the normal flow: waitForNumberOrder polls
-        // the new order, distributes the fresh numbers onto the cleared
-        // trunks, and a new UBoss job starts (new numbers = new guard key).
-        async function replaceNumbersAndRetry() {
-            const trunksList = loadTrunksFromCookie();
-            const requests = trunksList.flatMap(t => t.requests || []);
-            if (!requests.length) throw new Error('No number requests on the trunks to re-order.');
-
-            const contactData = getProvisioningContactData();
-            const email = contactData.emailAddress;
-            if (!email) throw new Error('No customer email on file.');
-
-            // Abandon the burnt numbers so distributeOrderedNumbers refills
-            trunksList.forEach(t => {
-                if ((t.requests || []).length) { t.numbers = []; t.primaryNumber = ''; }
-            });
-            deleteCookie('sip_primaryNumber');
-
-            const r = await fetch('/api/did/order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    requests: requests,
-                    email: email,
-                    accountRef: getCookie('iristel_account_id') || null,
-                    trunks: trunksList,
-                    businessName: getProvisioningBusinessName(),
-                    force: true
-                })
-            });
-            const order = await r.json().catch(() => null);
-            if (!r.ok || !order || !order.orderNumber) {
-                throw new Error((order && (order.error || order.message)) || `Replacement order failed (HTTP ${r.status})`);
-            }
-            console.warn('[UBoss] replacement DID order placed:', order.orderNumber);
-
-            setCookie('sip_didOrderNumber', order.orderNumber);
-            setCookie('sip_trunks', JSON.stringify(trunksList));
-            // A whole new set of numbers — MIND-check replacements start over
-            deleteCookie('sip_tnCheckRound');
-            await saveTrunksToServer(trunksList, email);
-
-            // Same job-state reset as the timeout retry
-            setCookie('sip_forceReprovision', '1');
-            deleteCookie('sip_provisionJobId');
-            deleteCookie('sip_provisionJobs');
-            deleteCookie('sip_provisionResult');
-            // Fresh job, fresh 10:00 countdown
-            deleteCookie('sip_provisionStartedAt');
-            window.location.reload();
+        // Pool collision: UBoss already has the number in its pool, so every
+        // job with it fails, and replacement numbers are no longer ordered
+        // from here (no forced re-order). Provisioning stops — the job state
+        // stays as it is, so a reload lands on this same stop instead of
+        // looping, and reports it once per job — and ops resolve it: clear
+        // the number from the UBoss pool and re-run the job, or order the
+        // customer new numbers.
+        function haltOnPoolCollision(data) {
+            const numbers = [...new Set(loadTrunksFromCookie().flatMap(t => t.numbers || []))];
+            console.error('[UBoss] pool collision — provisioning halted, no re-order. Job error:', data && data.errorMessage);
+            const reported = !!jobId && getCookie('sip_poolSnagJob') === jobId;
+            if (jobId) setCookie('sip_poolSnagJob', jobId);
+            setStepState(document.getElementById('stepProvisionIcon'), 'error',
+                document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
+                'Configuring trunk on platform', 'We hit a snag setting up your trunk');
+            showSnag('uboss-pool',
+                'UBoss job ' + (jobId || '?') + ' failed: number(s) ' + (numbers.join(', ') || 'unknown')
+                + ' already in the UBoss number pool. Provisioning is halted and nothing was re-ordered — '
+                + 'ops must resolve it (clear the pool entry and re-run the job, or order new numbers). '
+                + 'Job error: ' + ((data && data.errorMessage) || 'unknown'),
+                { reported: reported });
         }
 
         // Set when the page has sent the customer elsewhere (espresso rejected
@@ -1531,8 +1640,16 @@
         function showOrchestrationError(err) {
             if (navigatingAway) return;
             // Every orchestration failure (number order rejected, UBoss start
-            // failed, session recovery...) is a snag to the customer.
-            showSnag(err && err.snagStage || orchestrationPhase, err && err.message);
+            // failed, session recovery...) is a snag to the customer. One
+            // already on file (a DID order needing review or a number MIND
+            // refused, both filed by the server; a legacy replacement order
+            // reported on an earlier visit) isn't reported twice, and may
+            // carry its own customer copy.
+            showSnag(err && err.snagStage || orchestrationPhase, err && err.message, {
+                reported: !!(err && err.snagReported),
+                title: err && err.snagTitle,
+                customerMessage: err && err.customerMessage
+            });
         }
 
         // Initialize
@@ -1559,9 +1676,9 @@
             }
 
             jobId = getCookie('sip_provisionJobId');
-            const didOrderNumber = getCookie('sip_didOrderNumber');
+            const didOrderRef = getCookie('sip_didOrderId') || getCookie('sip_didOrderNumber');
             const trunksList = loadTrunksFromCookie();
-            const hasWork = jobId || didOrderNumber || trunksList.some(t => t.numbers && t.numbers.length);
+            const hasWork = jobId || didOrderRef || trunksList.some(t => t.numbers && t.numbers.length);
 
             if (!hasWork) {
                 document.getElementById('statusTitle').textContent = 'No Provisioning Job Found';
@@ -1621,7 +1738,9 @@
                     // Phase A: wait out the number order, then Phase B: start UBoss.
                     // The customer sees only the general headline per phase.
                     document.getElementById('statusTitle').textContent = 'Reserving your phone numbers...';
-                    document.getElementById('statusSubtitle').textContent = LEAVE_COPY;
+                    // Not LEAVE_COPY yet: if a number is taken in the
+                    // meantime, choosing a replacement happens from this page
+                    document.getElementById('statusSubtitle').textContent = KEEP_OPEN_COPY;
                     setStepState(document.getElementById('stepProvisionIcon'), 'waiting',
                         document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
                         'Configuring trunk on platform', 'Starts once your numbers are assigned');
@@ -1632,7 +1751,7 @@
                     if (navigatingAway) return;
                     // Nothing goes further until MIND confirms no one else
                     // already has these numbers and has linked them to the
-                    // service (taken ones get replaced)
+                    // service (a taken one stops provisioning for ops)
                     orchestrationPhase = 'mind-tn-check';
                     await ensureNumbersFree(trunksList);
                     document.getElementById('statusTitle').textContent = 'Currently provisioning your trunk...';
@@ -1657,10 +1776,15 @@
             } catch (err) {
                 if (navigatingAway) return;
                 // Mark the step that actually failed, not always "numbers"
-                if ((err && err.snagStage || orchestrationPhase).startsWith('uboss')) {
+                const failedStage = err && err.snagStage || orchestrationPhase;
+                if (failedStage.startsWith('uboss')) {
                     setStepState(document.getElementById('stepProvisionIcon'), 'error',
                         document.getElementById('stepProvisionLabel'), document.getElementById('stepProvisionDetail'),
                         'Configuring trunk on platform', 'We hit a snag setting up your trunk');
+                } else if (failedStage === 'did-needs-review') {
+                    setNumbersStep('error', 'Number order under review', 'Our team is reviewing your number order');
+                } else if (failedStage === 'mind-tn-taken') {
+                    setNumbersStep('error', 'Numbers under review', 'Our team is checking one of your numbers');
                 } else {
                     setNumbersStep('error', 'Number order problem', 'We hit a snag ordering your numbers');
                 }

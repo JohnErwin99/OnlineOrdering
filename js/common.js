@@ -115,6 +115,10 @@ function applyServerSession(session) {
         put('iristel_account_id', session.account.accountId);
     }
     if (session.order) {
+        // The id drives the order calls, the number is for display. Never
+        // pair one order's id with a different order's number.
+        const knownNumber = getCookie('sip_didOrderNumber');
+        if (!knownNumber || knownNumber === session.order.orderNumber) put('sip_didOrderId', session.order.orderId);
         put('sip_didOrderNumber', session.order.orderNumber);
         if (session.order.businessName) put('sip_businessName', session.order.businessName);
         if (Array.isArray(session.order.trunks) && session.order.trunks.length && !getCookie('sip_trunks')) {
