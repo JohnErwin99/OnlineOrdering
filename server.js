@@ -458,6 +458,12 @@ const ESPRESSO_REST_USER = process.env.ESPRESSO_REST_USER || ESPRESSO_USER;
 const ESPRESSO_REST_PASS = process.env.ESPRESSO_REST_PASS || ESPRESSO_PASS;
 // Iristel's own numbers — the only OCN the order API accepts
 const ESPRESSO_OCN = process.env.ESPRESSO_OCN || '154E';
+// espresso's nginx answers the order collection, /ws/v1/dids/orders, with a
+// 301 to /ws/v1/dids/orders/ — a static Swagger docs folder (GET 200 HTML,
+// POST 405) — so creating and listing orders never reach the API. The app
+// answers at /index.php/ws/v1/dids/orders (seen 2026-10-21 on both hosts).
+// Single orders (/ws/v1/dids/orders/{id}) and every other path work as published.
+const ESPRESSO_REST_ROUTED = { '/ws/v1/dids/orders': '/index.php/ws/v1/dids/orders' };
 const ESPRESSO_REST_CONFIGURED = !!(ESPRESSO_CLIENT_ID && ESPRESSO_CLIENT_SECRET
     && ESPRESSO_REST_USER && ESPRESSO_REST_PASS);
 
@@ -527,8 +533,10 @@ async function espressoRest(method, apiPath, body) {
             { status: 503, apiCode: 'ESPRESSO_NOT_CONFIGURED' });
     }
     const payload = body === undefined ? null : JSON.stringify(body);
-    let url = ESPRESSO_REST_URL + apiPath;
-    let reauthed = false, redirects = 0;
+    const qAt = apiPath.indexOf('?');
+    const path = qAt < 0 ? apiPath : apiPath.slice(0, qAt);
+    const url = ESPRESSO_REST_URL + (ESPRESSO_REST_ROUTED[path] || path) + (qAt < 0 ? '' : apiPath.slice(qAt));
+    let reauthed = false;
     for (;;) {
         const token = await espressoRestToken();
         let r;
@@ -543,12 +551,12 @@ async function espressoRest(method, apiPath, body) {
             throw espressoRestError(`espresso ${method} ${apiPath} — no answer: ${e.message}`,
                 { status: 503, transport: true });
         }
-        // nginx 301s /ws/v1/dids/orders to the trailing-slash form. A
-        // redirect means nothing was processed, so the same request is sent
-        // again there — never to another host.
-        if (r.status >= 300 && r.status < 400 && r.headers.location && redirects < 2) {
-            const next = new URL(r.headers.location, url);
-            if (next.host === new URL(url).host) { url = next.href; redirects++; continue; }
+        // The API answers in place. A redirect means the request went to
+        // something that isn't the API (see ESPRESSO_REST_ROUTED); nothing
+        // was processed, so it is refused as not ambiguous, never followed.
+        if (r.status >= 300 && r.status < 400) {
+            throw espressoRestError(`espresso ${method} ${apiPath} was redirected to ${r.headers.location || '(nowhere)'} instead of reaching the API`,
+                { status: 503, apiCode: 'ESPRESSO_MISROUTED', espressoStatus: r.status });
         }
         // Expired or revoked token: rejected before any processing, so one
         // fresh login and a retry is safe even when placing an order
@@ -638,7 +646,8 @@ function inventoryRowFree(row) {
 // Checked at startup and every 10 minutes; /api/config reports it so the
 // pages can say "ordering is unavailable" up front instead of after payment.
 //   pickReady — the inventory answers (the number picker works)
-//   didReady  — that, plus the company and routing profile resolve
+//   didReady  — that, plus the company and routing profile resolve and the
+//               order collection answers
 let espressoReadiness = { didReady: false, pickReady: false, checkedAt: 0, error: 'not checked yet' };
 let readinessPending = null;
 
@@ -649,7 +658,10 @@ function checkEspressoReadiness() {
         try {
             await inventorySearch([invFilter('status', 'available')], { limit: 1 });
             out.pickReady = true;
-            await espressoRestAccount(true);
+            const { companyId } = await espressoRestAccount(true);
+            // Orders are created and listed on the order collection, so it
+            // must answer too (a misrouted collection blocks every order)
+            await espressoRest('GET', `/ws/v1/dids/orders?${new URLSearchParams({ accountId: companyId, page: '1', size: '1' })}`);
             out.didReady = true;
         } catch (e) {
             out.error = e.message;

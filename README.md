@@ -31,6 +31,14 @@ espresso keeps at most 5 live REST tokens per user and revokes the oldest, so
 the server shares one token across every request and refreshes it just before
 it expires.
 
+espresso's nginx answers the order collection, `/ws/v1/dids/orders`, with a 301
+to a static Swagger docs folder (GET 200 HTML, POST 405), so creating and
+listing orders never reached the API. The server sends those two calls to
+`/index.php/ws/v1/dids/orders`, which does (`ESPRESSO_REST_ROUTED`, seen
+2026-10-21 on both hosts), and never follows a redirect. The readiness check
+lists one order, so if the route breaks again the pages say ordering is
+unavailable before payment rather than failing after it.
+
 ## Configuration
 
 | Variable | Purpose |
