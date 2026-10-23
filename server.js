@@ -607,10 +607,18 @@ async function espressoRestAccount(fresh) {
     let routingProfileId = process.env.ESPRESSO_ROUTING_PROFILE_ID || '';
     let profileLabel = null;
     if (!routingProfileId) {
-        const did = (await restRoutingProfiles(companyId)).filter(p => p && p.id && p.type === 'did' && p.active !== false);
+        const all = (await restRoutingProfiles(companyId)).filter(p => p && p.type === 'did' && p.active !== false);
+        const did = all.filter(p => p.id);
         const pin = ESPRESSO_DID_PROFILE.trim().toLowerCase();
         const pick = pin ? did.find(p => String(p.label || '').trim().toLowerCase() === pin)
             : (did.length === 1 ? did[0] : null);
+        // espresso can list a profile without its id (seen 2026-10-23): an
+        // order needs the id, so say exactly that
+        const idless = all.filter(p => !p.id).map(p => p.label);
+        if (!pick && idless.length) {
+            throw espressoRestError(`espresso lists DID routing profile(s) without an id: ${idless.join(', ')} — `
+                + 'ask espresso to expose the id, or set ESPRESSO_ROUTING_PROFILE_ID', { status: 503, apiCode: 'ESPRESSO_NOT_READY' });
+        }
         if (!pick) {
             throw espressoRestError(`Routing profile "${ESPRESSO_DID_PROFILE || '(not pinned)'}" not found among active DID profiles: `
                 + (did.map(p => p.label).join(', ') || 'none'), { status: 503, apiCode: 'ESPRESSO_NOT_READY' });
