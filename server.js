@@ -452,6 +452,9 @@ function getOrderProblems(orderNumber) {
 const ESPRESSO_REST_URL = (process.env.ESPRESSO_REST_URL
     || (ESPRESSO_MODE === 'production' ? 'https://api.espressodid.com' : 'https://api-sandbox.espressodid.com'))
     .replace(/\/$/, '');
+// Tokens always come from production, even for the sandbox (espresso,
+// 2026-10-23) — the sandbox refuses the client at its own /auth/token
+const ESPRESSO_REST_AUTH_URL = (process.env.ESPRESSO_REST_AUTH_URL || 'https://api.espressodid.com').replace(/\/$/, '');
 const ESPRESSO_CLIENT_ID = process.env.ESPRESSO_CLIENT_ID || '';
 const ESPRESSO_CLIENT_SECRET = process.env.ESPRESSO_CLIENT_SECRET || '';
 const ESPRESSO_REST_USER = process.env.ESPRESSO_REST_USER || ESPRESSO_USER;
@@ -489,7 +492,7 @@ async function requestRestToken(grant) {
     const form = new URLSearchParams({
         client_id: ESPRESSO_CLIENT_ID, client_secret: ESPRESSO_CLIENT_SECRET, ...grant
     }).toString();
-    const r = await httpsRequest(`${ESPRESSO_REST_URL}/ws/v1/auth/token`, {
+    const r = await httpsRequest(`${ESPRESSO_REST_AUTH_URL}/ws/v1/auth/token`, {
         method: 'POST', headers: {
             'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json',
             'Content-Length': Buffer.byteLength(form)
