@@ -303,6 +303,9 @@
                 const response = await fetch('/api/config');
                 const data = await response.json();
                 if (!response.ok) throw new Error('HTTP ' + response.status);
+                // 'reserve': espresso sets numbers aside for the customer to
+                // pick from (stands in until inventory search is available)
+                pickSource = data.pickSource || 'inventory';
                 setPickReady(data.pickReady !== false);
             } catch (err) {
                 // Can't tell — leave the picker on; it reports its own errors
@@ -311,6 +314,8 @@
             // The server re-checks espresso every minute while it is down
             if (!pickReady) setTimeout(loadPickerConfig, 60000);
         }
+
+        let pickSource = 'inventory';
 
         function setPickReady(ready) {
             pickReady = ready;
@@ -321,7 +326,8 @@
         function updatePickerButton() {
             const loading = !!picker && picker.status === 'loading';
             document.getElementById('showNumbersBtn').disabled = !pickReady || loading;
-            document.getElementById('showNumbersLabel').textContent = loading ? 'Checking numbers…' : 'Show available numbers';
+            document.getElementById('showNumbersLabel').textContent = !loading ? 'Show available numbers'
+                : pickSource === 'reserve' ? 'Reserving numbers…' : 'Checking numbers…';
         }
 
         // --- Live number picker ---
@@ -402,6 +408,7 @@
             picker.numbers = [...new Set((data.numbers || []).map(tenDigits))]
                 .filter(d => /^\d{10}$/.test(d) && !goneNumbers.has(d));
             picker.exhausted = !!data.exhausted;
+            picker.reservation = data.reservation || null;
             picker.status = 'ready';
             // Pre-tick as many as were asked for
             picker.numbers.filter(d => !trunkHoldingNumber(d)).slice(0, quantity).forEach(d => picker.checked.add(d));
@@ -433,8 +440,10 @@
 
             if (picker.status === 'loading') {
                 message.className = 'picker-message';
-                message.innerHTML = '<span class="picker-spinner"></span><span>Finding available numbers in ' + escapeHtml(where)
-                    + '… Each number is checked before it is offered, so this can take a few seconds.</span>';
+                message.innerHTML = '<span class="picker-spinner"></span><span>' + (pickSource === 'reserve'
+                    ? 'Setting aside numbers for you in ' + escapeHtml(where) + '… This takes about half a minute, and each number is checked before it is offered.'
+                    : 'Finding available numbers in ' + escapeHtml(where) + '… Each number is checked before it is offered, so this can take a few seconds.')
+                    + '</span>';
                 list.innerHTML = '';
                 actions.style.display = 'none';
                 document.getElementById('pickerSelectedCount').textContent = '';
@@ -469,6 +478,11 @@
             } else {
                 note = (picker.exhausted ? 'These are all the numbers available in ' + where + ' right now. ' : '')
                     + 'Tick the numbers you want, then add them to ' + (getActiveTrunk() ? getActiveTrunk().name : 'your trunk') + '.';
+            }
+            // Reserved numbers are held for this customer for about an hour
+            const until = picker.reservation && picker.reservation.expiresAt && new Date(picker.reservation.expiresAt);
+            if (found && until && !isNaN(until)) {
+                note += ' Reserved for you until ' + until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.';
             }
             message.className = noteClass;
             message.textContent = note;

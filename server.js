@@ -71,6 +71,13 @@ const UBOSS_RESELLER_NAME = process.env.UBOSS_RESELLER_NAME || 'Demo Reseller';
 const UBOSS_POOL_NPAS = (process.env.UBOSS_POOL_NPAS || '')
     .split(',').map(s => s.trim()).filter(Boolean);
 
+// Optional fixed rate-center list, 'RATECENTER:NPA' pairs, used instead of
+// espresso's catalog (see /api/did/catalog)
+const DID_CATALOG_OVERRIDE = (process.env.DID_CATALOG_OVERRIDE || '')
+    .split(',').map(s => s.trim()).filter(Boolean)
+    .map(x => { const [rc, npa] = x.split(':'); return { ratecenter: String(rc || '').trim().toUpperCase(), npa: String(npa || '').trim() }; })
+    .filter(x => x.ratecenter && /^\d{3}$/.test(x.npa));
+
 const ROOT = __dirname;
 
 // ============================================
@@ -461,6 +468,12 @@ const ESPRESSO_REST_USER = process.env.ESPRESSO_REST_USER || ESPRESSO_USER;
 const ESPRESSO_REST_PASS = process.env.ESPRESSO_REST_PASS || ESPRESSO_PASS;
 // Iristel's own numbers — the only OCN the order API accepts
 const ESPRESSO_OCN = process.env.ESPRESSO_OCN || '154E';
+// Where the number picker gets its numbers: 'inventory' (search espresso's
+// inventory) or 'reserve' (reserve a batch with a select-DIDs order and let
+// the customer pick from it). 'reserve' stands in while espresso hasn't
+// granted inventory search; it is never the default, so production can't
+// start making reservation orders by accident.
+const ESPRESSO_PICK_SOURCE = process.env.ESPRESSO_PICK_SOURCE === 'reserve' ? 'reserve' : 'inventory';
 // espresso's nginx answers the order collection, /ws/v1/dids/orders, with a
 // 301 to /ws/v1/dids/orders/ — a static Swagger docs folder (GET 200 HTML,
 // POST 405) — so creating and listing orders never reach the API. The app
@@ -608,7 +621,8 @@ async function espressoRestAccount(fresh) {
         companyId = active[0].id;
     }
     let routingProfileId = process.env.ESPRESSO_ROUTING_PROFILE_ID || '';
-    let profileLabel = null;
+    // Pinned by id: the label (if pinned too) is what records and logs show
+    let profileLabel = routingProfileId ? (ESPRESSO_DID_PROFILE || null) : null;
     if (!routingProfileId) {
         const all = (await restRoutingProfiles(companyId)).filter(p => p && p.type === 'did' && p.active !== false);
         const did = all.filter(p => p.id);
@@ -665,17 +679,30 @@ let readinessPending = null;
 function checkEspressoReadiness() {
     if (readinessPending) return readinessPending;
     readinessPending = (async () => {
-        const out = { didReady: false, pickReady: false, checkedAt: Date.now(), error: null };
+        const out = { didReady: false, pickReady: false, pickSource: ESPRESSO_PICK_SOURCE, checkedAt: Date.now(), error: null };
+        let ordersOk = false;
         try {
-            await inventorySearch([invFilter('status', 'available')], { limit: 1 });
-            out.pickReady = true;
             const { companyId } = await espressoRestAccount(true);
             // Orders are created and listed on the order collection, so it
             // must answer too (a misrouted collection blocks every order)
             await espressoRest('GET', `/ws/v1/dids/orders?${new URLSearchParams({ accountId: companyId, page: '1', size: '1' })}`);
-            out.didReady = true;
+            ordersOk = true;
         } catch (e) {
             out.error = e.message;
+        }
+        if (ESPRESSO_PICK_SOURCE === 'reserve') {
+            // Picks come from the customer's own reservation, re-checked on
+            // that order — inventory search isn't needed
+            out.pickReady = out.didReady = ordersOk;
+        } else {
+            try {
+                await inventorySearch([invFilter('status', 'available')], { limit: 1 });
+                out.pickReady = true;
+            } catch (e) {
+                out.error = out.error || e.message;
+            }
+            // An order re-checks its picks in the inventory, so it needs both
+            out.didReady = ordersOk && out.pickReady;
         }
         if (out.didReady !== espressoReadiness.didReady || out.pickReady !== espressoReadiness.pickReady) {
             console[out.didReady ? 'log' : 'warn']('[espresso] REST readiness — orders:', out.didReady ? 'ready' : 'NOT ready',
@@ -815,6 +842,157 @@ async function pickAvailableNumbers({ ratecenter, npa, want, exclude, email, fre
         exhausted: exhausted && picked.length < want,
         hidden, unverified: failed, checked
     };
+}
+
+// ---- Picking from a reservation (ESPRESSO_PICK_SOURCE=reserve) ----
+// espresso's select-DIDs order reserves numbers for an hour without buying
+// them. "Show available numbers" reserves a small batch for the customer,
+// MIND checks it, and the picker shows what is free; Submit completes that
+// same order with only the picked numbers (the rest are released when the
+// reservation runs out). One reservation per customer and rate center.
+const RESERVE_EXTRA = 2;                       // shown on top of what was asked
+const RESERVE_MIN_LEFT_MS = 10 * 60 * 1000;    // older than this: reserve afresh
+const RESERVE_WAIT_MS = 60 * 1000;             // reserving took ~25 s in the sandbox
+const reservingNow = new Map();                // key → promise, so double clicks share one
+
+const pickResKey = (email, ratecenter, npa) =>
+    `pickres:${normEmail(email)}::${String(ratecenter).toUpperCase()}|${npa}`;
+const reservedDids = order => (order.numbers || []).filter(n => n.status === 'RESERVED').map(n => mindDigits(n.did));
+const reservationUsable = (order, minLeftMs) => !!(order && String(order.status).toUpperCase() === 'PENDING'
+    && order.canComplete && order.reservationExpiresAt
+    && Date.parse(order.reservationExpiresAt) - Date.now() > minLeftMs);
+
+async function waitForReservation(id) {
+    const t0 = Date.now();
+    for (;;) {
+        const o = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(id)}`);
+        if (o.canComplete || /^(REJECTED|FAILED|EXPIRED|CANCELLED|COMPLETED)$/i.test(String(o.status))) return o;
+        if (Date.now() - t0 > RESERVE_WAIT_MS) {
+            throw busy(`espresso is still reserving numbers (order ${o.orderNumber}) — try again in a moment`);
+        }
+        await new Promise(r => setTimeout(r, 3000));
+    }
+}
+
+async function createReservation({ accountRef, ratecenter, npa, quantity }) {
+    const acct = await espressoRestAccount();
+    const info = NPA_MIND_CITY[String(npa)];
+    const filters = [{ categoryName: 'prefix', categoryValue: `1${npa}*` }];
+    if (info) filters.unshift({ categoryName: 'ratecenter', categoryValue: `${String(ratecenter).toUpperCase()},${info.provinces[0]}` });
+    const reference = `oo:${String(accountRef || 'na').replace(/[^\w-]/g, '').slice(0, 40)}:pick:${crypto.randomBytes(6).toString('hex')}`;
+    const created = await espressoRest('POST', '/ws/v1/dids/orders', {
+        accountId: acct.companyId, countryId: '1', ocn: ESPRESSO_OCN, vanity: false, selectDids: true,
+        acquisitionType: 'BUY', routingProfileId: acct.routingProfileId, reference,
+        numberRequests: [{ quantity, filters }]
+    });
+    if (!created || !created.id) throw busy('espresso accepted the reservation but sent back no order id');
+    console.log('[pick] reserving', quantity, 'in', ratecenter, npa, '→', created.orderNumber);
+    return { order: await waitForReservation(created.id), reference };
+}
+
+// → { numbers: [10-digit], exhausted, hidden, unverified, checked, reservation }
+async function reservePickBatch({ email, accountRef, ratecenter, npa, quantity, exclude }) {
+    const key = pickResKey(email, ratecenter, npa);
+    if (reservingNow.has(key)) return reservingNow.get(key);
+    const work = (async () => {
+        const skip = new Set((exclude || []).map(mindDigits));
+        const rec = stateGet(key, { activeOnly: true });
+        let order = null;
+        if (rec && rec.orderId) {
+            order = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(rec.orderId)}`).catch(() => null);
+            const left = order ? reservedDids(order).filter(d => !skip.has(d)).length : 0;
+            const holdsPicks = order ? reservedDids(order).some(d => skip.has(d)) : false;
+            // Keep a reservation the customer already picked from on another
+            // trunk — cancelling it would void those picks
+            if (!reservationUsable(order, holdsPicks ? 0 : RESERVE_MIN_LEFT_MS) || (!holdsPicks && left < quantity)) {
+                if (order && String(order.status).toUpperCase() === 'PENDING') {
+                    await espressoRest('POST', `/ws/v1/dids/orders/${encodeURIComponent(order.id)}/cancel`,
+                        { reason: 'Replaced by a new reservation for the same customer' }).catch(() => {});
+                }
+                order = null;
+            }
+        }
+        let reference = rec && rec.reference;
+        if (!order) {
+            let made = await createReservation({ accountRef, ratecenter, npa, quantity: quantity + RESERVE_EXTRA });
+            if (/^REJECTED$/i.test(made.order.status)) {
+                made = await createReservation({ accountRef, ratecenter, npa, quantity });
+            }
+            order = made.order;
+            reference = made.reference;
+            if (!reservationUsable(order, 0)) {
+                const why = order.rejectionReason || order.failureReason || {};
+                console.warn('[pick] reservation', order.orderNumber, 'ended', order.status, why.code || '');
+                if (/^REJECTED$/i.test(order.status)) {
+                    return { numbers: [], exhausted: true, hidden: 0, unverified: 0, checked: 0, reservation: null };
+                }
+                throw busy(`espresso couldn't reserve numbers (${order.status}${why.code ? ' ' + why.code : ''})`);
+            }
+            stateSet(key, {
+                email: normEmail(email), ratecenter: String(ratecenter).toUpperCase(), npa: String(npa),
+                orderId: order.id, orderNumber: order.orderNumber, reference, expiresAt: order.reservationExpiresAt
+            });
+        }
+        // Read-only MIND check of what was reserved, a few at a time
+        const candidates = reservedDids(order).filter(d => !skip.has(d));
+        const numbers = [];
+        let hidden = 0, failed = 0, lastError = null;
+        for (let i = 0; i < candidates.length; i += PICK_CONCURRENCY) {
+            const batch = candidates.slice(i, i + PICK_CONCURRENCY);
+            const verdicts = await Promise.all(batch.map(d => cachedPickVerdict(d).catch(e => ({ error: e }))));
+            batch.forEach((d, j) => {
+                const v = verdicts[j];
+                if (v.error) { failed++; lastError = v.error; } else if (!v.free) hidden++; else numbers.push(d);
+            });
+        }
+        if (!numbers.length && failed) {
+            throw Object.assign(new Error(`MIND could not be checked (${failed} lookup(s) failed): ${lastError && lastError.message}`),
+                { status: 503, apiCode: 'MIND_UNAVAILABLE' });
+        }
+        return {
+            numbers: numbers.map(tenDigits), exhausted: numbers.length < quantity,
+            hidden, unverified: failed, checked: candidates.length,
+            reservation: { orderNumber: order.orderNumber, expiresAt: order.reservationExpiresAt }
+        };
+    })().finally(() => reservingNow.delete(key));
+    reservingNow.set(key, work);
+    return work;
+}
+
+// The customer's reservation holding these picks, and which picks can no
+// longer be had: not on a live reservation ('expired'), no longer reserved
+// on it ('espresso') or held in MIND ('mind'). One reservation per order.
+async function reservedPicksCheck(picks, email) {
+    const e = normEmail(email);
+    const want = picks.map(mindDigits);
+    const recs = Object.entries(orderStore)
+        .filter(([k, v]) => k.startsWith('pickres:') && v && v.email === e && v.status !== 'done' && v.orderId);
+    const orders = [];
+    for (const [key, rec] of recs) {
+        const order = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(rec.orderId)}`).catch(() => null);
+        if (order) orders.push({ key, rec, order, held: new Set(reservedDids(order)) });
+    }
+    const owners = new Set();
+    const unavailable = [];
+    for (const d of want) {
+        const own = orders.find(o => o.held.has(d) && reservationUsable(o.order, 0));
+        if (!own) { unavailable.push({ number: tenDigits(d), reason: 'expired' }); continue; }
+        owners.add(own);
+    }
+    if (owners.size > 1) {
+        throw Object.assign(new Error('Picked numbers come from more than one reservation — pick them from one city'),
+            { status: 400, apiCode: 'MULTIPLE_RESERVATIONS' });
+    }
+    const owner = [...owners][0] || null;
+    for (const d of want) {
+        if (unavailable.some(u => mindDigits(u.number) === d)) continue;
+        const v = await mindPickVerdict(d).catch(err => {
+            throw Object.assign(new Error(`MIND could not be checked for ${d}: ${err.message}`), { status: 503, apiCode: 'MIND_UNAVAILABLE' });
+        });
+        pickVerdictCache.set(d, { at: Date.now(), verdict: v });
+        if (!v.free) unavailable.push({ number: tenDigits(d), reason: 'mind', via: v.via });
+    }
+    return { owner, unavailable };
 }
 
 // ---- MIND city for a rate center ----
@@ -1156,6 +1334,58 @@ function espressoApiCode(e) {
 
 const busy = (message, fields) => Object.assign(new Error(message), { status: 503, apiCode: 'ESPRESSO_BUSY' }, fields || {});
 
+// Submit when picks come from a reservation: re-check them on the
+// reservation and in MIND, then complete the reservation order with exactly
+// those numbers — no new order. Called from placeDidOrder, inside its lock.
+async function completeReservedOrder({ key, body, email, requests }) {
+    if (requests.some(r => !Array.isArray(r.dids) || !r.dids.length)) {
+        return { status: 400, payload: { error: 'Pick the numbers first — every request needs its picked numbers', code: 'PICK_REQUIRED' } };
+    }
+    const picks = requests.flatMap(r => r.dids);
+    const { owner, unavailable } = await reservedPicksCheck(picks, email);
+    if (unavailable.length) {
+        console.warn('[order]', email, '— picked numbers no longer available:', JSON.stringify(unavailable));
+        reportServerError(email, 'did-unavailable',
+            new Error(`${unavailable.length} picked number(s) no longer available — customer sent back to pick again`),
+            { unavailable }, 'warning');
+        return { status: 409, payload: { error: 'Some of the numbers you picked are no longer available', code: 'NUMBERS_UNAVAILABLE', unavailable } };
+    }
+    const acct = await espressoRestAccount();
+    const id = owner.order.id;
+    const base = {
+        email, accountRef: body.accountRef || null, requests, reference: owner.rec.reference, api: 'rest',
+        profile: acct.profileLabel, reservationOrderId: id,
+        trunks: Array.isArray(body.trunks) ? body.trunks : null,
+        businessName: body.businessName || null
+    };
+    stateSet(key, { ...base, status: 'placing' });
+    let order = null;
+    try {
+        order = await espressoRest('POST', `/ws/v1/dids/orders/${encodeURIComponent(id)}/complete`, { numbers: picks.map(mindDigits) });
+    } catch (e) {
+        if (e.espressoCode === 'RESERVATION_EXPIRED') {
+            stateSet(key, { ...base, status: 'rejected', error: e.message });
+            stateSet(owner.key, { ...owner.rec, status: 'done' });
+            return { status: 409, payload: {
+                error: 'The reservation for your numbers ran out', code: 'NUMBERS_UNAVAILABLE',
+                unavailable: picks.map(n => ({ number: tenDigits(n), reason: 'expired' }))
+            } };
+        }
+        // No answer, or espresso busy: the order itself says what happened
+        const o = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(id)}`).catch(() => null);
+        if (o && /^(PROCESSING|COMPLETED)$/i.test(String(o.status))) {
+            order = o;
+        } else {
+            reportServerError(email, 'did-order', e, { reservation: owner.rec.orderNumber, picks });
+            const err = busy(`espresso didn't complete the reservation ${owner.rec.orderNumber} — ${e.message}`);
+            err.reported = true;
+            throw err;
+        }
+    }
+    stateSet(owner.key, { ...owner.rec, status: 'done', completedAt: Date.now() });
+    return { status: 200, payload: adoptOrder(key, base, order) };
+}
+
 async function placeDidOrder(body) {
     if (!body.email) return { status: 400, payload: { error: 'email is required' } };
     const email = normEmail(body.email);
@@ -1181,7 +1411,12 @@ async function placeDidOrder(body) {
     }
     placingNow.add(email);
     try {
-        if (seen && seen.status === 'placing') {
+        if (seen && seen.status === 'placing' && seen.reservationOrderId) {
+            // A completion whose answer never arrived: adopt the order once
+            // espresso has moved it on; still waiting means complete it below
+            const o = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(seen.reservationOrderId)}`).catch(() => null);
+            if (o && !/^PENDING$/i.test(String(o.status))) return { status: 200, payload: adoptOrder(key, seen, o) };
+        } else if (seen && seen.status === 'placing') {
             // A create whose answer never arrived — adopt it if espresso has it
             const found = await recentRestOrders(o => o.reference === seen.reference).catch(() => null);
             if (found) {
@@ -1214,6 +1449,9 @@ async function placeDidOrder(body) {
             r.mindCityId = city.id;
             r.mindCity = city.city;
         }
+
+        // Picks from the customer's reservation: complete that order with them
+        if (ESPRESSO_PICK_SOURCE === 'reserve') return await completeReservedOrder({ key, body, email, requests });
 
         // Quantity-only requests are picked here, checked uncached
         const chosen = requests.flatMap(r => r.dids || []);
@@ -1499,20 +1737,21 @@ function getJson(url, headers) {
     });
 }
 
-function postJson(url, headers, body) {
+function postJson(url, headers, body, opts) {
+    const o = opts || {};
     return new Promise((resolve, reject) => {
         const payload = JSON.stringify(body);
         const req = https.request(url, {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
             agent: KEEPALIVE_AGENT,
-            timeout: 45000
+            timeout: o.timeout || 45000
         }, res => {
             let data = '';
             res.on('data', c => data += c);
             res.on('end', () => resolve({ status: res.statusCode, raw: data }));
         });
-        req.on('timeout', () => req.destroy(new Error('payment gateway timeout')));
+        req.on('timeout', () => req.destroy(Object.assign(new Error(o.timeoutMessage || 'payment gateway timeout'), { timedOut: true })));
         req.on('error', reject);
         req.end(payload);
     });
@@ -1732,6 +1971,22 @@ async function createAccount(email, contact, knownAccountId) {
 // It now happens exactly once, server-side, after payment settles on the
 // review page — guarded by the order store so retries and resumed sessions
 // reuse the same service.
+// A NEW service of this plan that MIND created on the account since `since`
+// (with a minute's slack for clock skew) and that no customer record holds
+async function findNewMindService(accountId, planCode, since) {
+    const r = await httpsRequest(`${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services`,
+        { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' }, timeout: 60000 });
+    const data = JSON.parse(r.raw);
+    const list = Array.isArray(data) ? data : (data.services || []);
+    const known = new Set(Object.entries(orderStore).filter(([k]) => k.startsWith('service:')).map(([, v]) => String(v && v.serviceId)));
+    const fresh = list.filter(sv => String(sv.status || '').toUpperCase() === 'NEW'
+        && (sv.planCode || (sv.provisioning && sv.provisioning.planCode)) === planCode
+        && Date.parse(sv.createdOn) >= since - 60000
+        && !known.has(String(sv.serviceId)))
+        .sort((a, b) => Date.parse(b.createdOn) - Date.parse(a.createdOn));
+    return fresh.length ? String(fresh[0].serviceId) : null;
+}
+
 async function createMindService(email, accountId, planCode, contact) {
     if (!accountId) throw new Error('accountId is required');
     const key = `service:${normEmail(email)}`;
@@ -1754,8 +2009,21 @@ async function createMindService(email, accountId, planCode, contact) {
             phone: contact.phone || ''
         }
     };
-    const r = await postJson(`${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services`,
-        { 'iristelx-api-key': MIND_API_KEY }, requestBody);
+    const startedAt = Date.now();
+    let r;
+    try {
+        r = await postJson(`${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}/services`,
+            { 'iristelx-api-key': MIND_API_KEY }, requestBody, { timeout: 90000, timeoutMessage: 'MIND service creation timed out' });
+    } catch (e) {
+        // MIND can time out yet still create the service (seen 2026-10-21):
+        // adopt the one it made instead of failing, so a retry can't add a
+        // second service to the account
+        const made = e.timedOut ? await findNewMindService(accountId, requestBody.planCode, startedAt).catch(() => null) : null;
+        if (!made) throw e;
+        stateSet(key, { email: normEmail(email), accountId: String(accountId), serviceId: made, adoptedAfterTimeout: true });
+        console.warn('[service] create timed out — adopted service', made, 'that MIND created on account', accountId);
+        return { serviceId: made, reused: false, adopted: true };
+    }
     let data = null;
     try { data = JSON.parse(r.raw); } catch (e) {}
     if (r.status < 200 || r.status >= 300 || !data) {
@@ -2952,13 +3220,16 @@ async function handleApi(req, res, pathname) {
                 checkEspressoReadiness().catch(() => {});
             }
             return sendJson(res, 200, {
-                didMode: ESPRESSO_MODE, lnpMode: ESPRESSO_LNP_MODE, didApi: 'rest',
+                didMode: ESPRESSO_MODE, lnpMode: ESPRESSO_LNP_MODE, didApi: 'rest', pickSource: ESPRESSO_PICK_SOURCE,
                 didReady: espressoReadiness.didReady, pickReady: espressoReadiness.pickReady
             });
         }
         // Rate centers stay on SOAP (REST has no catalog)
         if (pathname === '/api/did/catalog' && req.method === 'GET') {
-            let catalog = await getCatalog();
+            // A fixed list instead of espresso's (e.g. the sandbox demo: its
+            // test numbers are Toronto 416, which the SOAP test catalog
+            // doesn't list). DID_CATALOG_OVERRIDE='TORONTO:416,WINNIPEG:204'
+            let catalog = DID_CATALOG_OVERRIDE.length ? DID_CATALOG_OVERRIDE.slice() : await getCatalog();
             // UbossRobot can only provision NPAs whose "+1-<npa>" number pool
             // exists in UBoss with an exact-match link — a missing pool makes
             // every job for that NPA fail at Step 01 (confirmed for 647), and
@@ -3004,7 +3275,10 @@ async function handleApi(req, res, pathname) {
                         new Error(`No MIND city for ${ratecenter} (${npa}) — add a nearby city to MIND_CITY_ALIASES`), { ratecenter, npa });
                     return sendJson(res, 422, { error: `Numbers in ${ratecenter} can't be offered right now`, code: 'NO_MIND_CITY' });
                 }
-                const found = await pickAvailableNumbers({ ratecenter, npa, want: Math.max(quantity * 2, 10), exclude, email });
+                const found = ESPRESSO_PICK_SOURCE === 'reserve'
+                    ? await reservePickBatch({ email, accountRef: (stateGet(`account:${email}`) || {}).accountId,
+                        ratecenter, npa, quantity, exclude })
+                    : await pickAvailableNumbers({ ratecenter, npa, want: Math.max(quantity * 2, 10), exclude, email });
                 return sendJson(res, 200, { ratecenter, npa, ...found, mindCity });
             } catch (e) {
                 const code = espressoApiCode(e) || 'ESPRESSO_BUSY';
@@ -3050,7 +3324,9 @@ async function handleApi(req, res, pathname) {
                     }
                 }
                 const picks = norm.requests.flatMap(r => r.dids || []);
-                const unavailable = picks.length ? await unavailablePicks(picks, email) : [];
+                const unavailable = !picks.length ? []
+                    : ESPRESSO_PICK_SOURCE === 'reserve' ? (await reservedPicksCheck(picks, email)).unavailable
+                    : await unavailablePicks(picks, email);
                 return sendJson(res, 200, { ok: !unavailable.length, unavailable });
             } catch (e) {
                 const code = espressoApiCode(e) || 'ESPRESSO_BUSY';

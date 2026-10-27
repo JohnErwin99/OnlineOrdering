@@ -5,6 +5,7 @@ testAntigravity
 .env.local
 .env
 .env.sandbox
+.sandbox-state/
 
 # runtime order records (idempotency + support lookup)
 .order-store.json
