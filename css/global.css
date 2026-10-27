@@ -223,63 +223,23 @@ body {
     margin-top: 30px;
 }
 
-/* Laptop illustration (signUp, serviceAvailability) */
+/* Smart Connect Bundles image (signUp, serviceAvailability) */
 .laptop-image {
     width: 100%;
     max-width: 480px;
-    margin-bottom: 40px;
-    position: relative;
+    margin: 0 auto 40px;
 }
 
-.laptop-frame {
-    background: linear-gradient(135deg, #2A3A4A 0%, #1A2A3A 100%);
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-}
-
-.laptop-screen {
-    background: linear-gradient(180deg, #E8F0F8 0%, #D0E0F0 100%);
-    border-radius: 4px;
-    aspect-ratio: 16/10;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    overflow: hidden;
-    position: relative;
-}
-
-.video-call-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding: 20px;
+/* The Webflow asset has the bundle headline baked into its lower half;
+   show only the laptop scene above it (top 680 of 1350px). */
+.laptop-image img {
+    display: block;
     width: 100%;
-}
-
-.video-participant {
-    aspect-ratio: 4/3;
-    background: linear-gradient(135deg, #F0F4F8 0%, #E0E8F0 100%);
-    border-radius: 6px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    overflow: hidden;
-}
-
-.participant-avatar {
-    width: 60%;
-    height: 80%;
-    background: linear-gradient(180deg, #FFD5C8 0%, #F5C4B8 30%, #8BC4E0 30%, #7AB8D8 100%);
-    border-radius: 50% 50% 0 0;
-}
-
-.laptop-base {
-    height: 12px;
-    background: linear-gradient(180deg, #3A4A5A 0%, #2A3A4A 100%);
-    border-radius: 0 0 8px 8px;
-    margin-top: 4px;
+    aspect-ratio: 1080 / 680;
+    object-fit: cover;
+    object-position: top;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 /* Right panel logo (pickNumber, numberSelection) */

@@ -300,37 +300,9 @@ select.form-input {
     align-items: stretch;
 }
 
-/* Laptop illustration overrides */
-.laptop-frame {
-    max-width: 320px;
-    margin: 0 auto;
-}
-
-.laptop-screen {
-    background: linear-gradient(135deg, #1a3a5c 0%, #0d1f33 100%);
-    border-radius: 8px 8px 0 0;
-    padding: 20px;
-    border: 3px solid #333;
-}
-
-.video-call-grid {
-    height: 100%;
-}
-
-.video-participant {
-    background: linear-gradient(135deg, rgba(0, 74, 159, 0.3) 0%, rgba(1, 17, 30, 0.5) 100%);
-}
-
-.participant-avatar {
-    width: 40px;
-    height: 40px;
-    background: rgba(255, 255, 255, 0.2);
-}
-
-.laptop-base {
-    background: linear-gradient(to bottom, #444 0%, #222 100%);
-    border-radius: 0 0 4px 4px;
-    margin: 0 20px;
+/* Smart Connect image override */
+.laptop-image {
+    max-width: 360px;
 }
 
 /* Promo Text overrides */
