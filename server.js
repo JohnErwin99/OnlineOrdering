@@ -1913,7 +1913,7 @@ const MIND_API_KEY = process.env.MIND_API_KEY || 'HRT88y2qywc6fwX779zG2D8fJtJQJb
 // may have been created before this server existed or outside the flow
 // entirely. Without it, a customer whose order failed would sign up again and
 // end up with a second MIND account.
-async function findMindAccountByEmail(email) {
+async function findMindAccountByEmail(email, { strict = false } = {}) {
     const target = normEmail(email);
     if (!target) return null;
     try {
@@ -1934,9 +1934,41 @@ async function findMindAccountByEmail(email) {
     } catch (e) {
         // A lookup failure must not block signup; the store still guards the
         // common case, and creating one extra account beats a dead end.
+        // Sign-in is strict: a failed lookup is not "no account".
+        if (strict) throw e;
         console.warn('[account] MIND lookup failed (continuing):', e.message);
         return null;
     }
+}
+
+// Only what a prefill or sign-in needs — not the full billing record
+async function mindAccountSummary(accountId) {
+    const r = await httpsRequest(`${BILLING_API_URL}/accounts/${encodeURIComponent(accountId)}`,
+        { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
+    let data = null;
+    try { data = JSON.parse(r.raw); } catch (e) {}
+    if (r.status < 200 || r.status >= 300 || !data) {
+        const err = new Error((data && data.message) || `Account lookup failed (HTTP ${r.status})`);
+        err.status = (r.status >= 400 && r.status) || 502;
+        throw err;
+    }
+    return { contact: data.contact || null, language: data.language || null, name: data.name || null };
+}
+
+// MyIristel sign-in. There is no MyIristel sign-in API yet, so an email that
+// has an Iristel (MIND) account is a MyIristel account: the same lookup signup
+// uses (our records first, then MIND by email), except it never creates one.
+// The password is not checked. Null when no account uses the email.
+async function myIristelSignIn(email) {
+    const key = K.account(email);
+    let accountId = (stateGet(key) || {}).accountId;
+    if (!accountId) {
+        const found = await findMindAccountByEmail(email, { strict: true });
+        if (!found || !found.accountId) return null;
+        accountId = String(found.accountId);
+        stateSet(key, { accountId, email: normEmail(email), foundInMind: true });
+    }
+    return { accountId: String(accountId), ...(await mindAccountSummary(accountId)) };
 }
 
 async function createAccount(email, contact, knownAccountId) {
@@ -3394,15 +3426,7 @@ async function handleApi(req, res, pathname) {
         // the signup prefill silently fell back to "Test User".
         const mAcct = pathname.match(/^\/api\/mind\/account\/([\w-]+)$/);
         if (mAcct && req.method === 'GET') {
-            const r = await httpsRequest(`${BILLING_API_URL}/accounts/${encodeURIComponent(mAcct[1])}`,
-                { headers: { 'iristelx-api-key': MIND_API_KEY, 'Accept': 'application/json' } });
-            let data = null;
-            try { data = JSON.parse(r.raw); } catch (e) {}
-            if (r.status < 200 || r.status >= 300 || !data) {
-                return sendJson(res, r.status || 502, { error: (data && data.message) || `Account lookup failed (HTTP ${r.status})` });
-            }
-            // Only what the prefill needs — not the full billing record
-            return sendJson(res, 200, { contact: data.contact || null, language: data.language || null, name: data.name || null });
+            return sendJson(res, 200, await mindAccountSummary(mAcct[1]));
         }
         if (pathname === '/api/mind/service' && req.method === 'POST') {
             const body = JSON.parse(await readBody(req) || '{}');
@@ -3497,6 +3521,14 @@ async function handleApi(req, res, pathname) {
             if (!body.contact) return sendJson(res, 400, { error: 'contact is required' });
             return sendJson(res, 200, await createAccount(body.email, body.contact, body.accountId)
                 .catch(reportAndRethrow(body.email, 'mind-account', { accountId: body.accountId || null })));
+        }
+        if (pathname === '/api/myiristel/sign-in' && req.method === 'POST') {
+            const body = JSON.parse(await readBody(req) || '{}');
+            if (!body.email) return sendJson(res, 400, { error: 'email is required' });
+            const acct = await myIristelSignIn(body.email)
+                .catch(reportAndRethrow(body.email, 'mind-account-sign-in', {}));
+            if (!acct) return sendJson(res, 404, { error: 'No MyIristel account uses this email', code: 'NO_ACCOUNT' });
+            return sendJson(res, 200, acct);
         }
         if (pathname === '/api/business-doc' && req.method === 'POST') {
             // Base64 inflates ~4/3, so 15 MB of JSON covers a 10 MB file

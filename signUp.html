@@ -32,10 +32,42 @@
 
             <!-- Content -->
             <div class="content">
-                <h1 class="page-title">Let's start setting up your account ...</h1>
-                <p class="page-subtitle">Creating your service account takes less than 5 minutes.</p>
+                <h1 class="page-title" id="pageTitle">Sign in to MyIristel</h1>
+                <p class="page-subtitle" id="pageSubtitle">Already an Iristel customer? Sign in and we'll use the details on your account.</p>
 
-                <form id="signupForm">
+                <!-- MyIristel account: sign in, or create one -->
+                <div class="account-tabs" role="tablist" aria-label="MyIristel account">
+                    <button type="button" role="tab" id="tab-signin" aria-selected="true" aria-controls="signinForm">Sign in</button>
+                    <button type="button" role="tab" id="tab-create" aria-selected="false" aria-controls="signupForm" tabindex="-1">New to Iristel? Create your account</button>
+                </div>
+
+                <form id="signinForm" role="tabpanel" aria-labelledby="tab-signin" novalidate>
+                    <p class="signin-lede">Use the email and password of your MyIristel account.</p>
+                    <p class="signin-note" id="signinNote" hidden><strong>Demo:</strong> your email finds your Iristel account. The password isn't checked yet.</p>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label class="form-label" for="signinEmail">Email <span class="required">*</span></label>
+                            <input type="email" class="form-input" id="signinEmail" name="signinEmail" placeholder="e.g. john@company.com" autocomplete="username" required>
+                            <span class="form-error" id="signinEmailError">Please enter a valid email address</span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label class="form-label" for="signinPassword">Password <span class="required">*</span></label>
+                            <input type="password" class="form-input" id="signinPassword" name="signinPassword" autocomplete="current-password" required>
+                            <span class="form-error" id="signinPasswordError">Please enter your password</span>
+                        </div>
+                    </div>
+
+                    <div class="signin-links">
+                        <a href="https://my.iristel.com" target="_blank" rel="noopener">Forgot password?<span class="sr-only"> (opens in a new tab)</span></a>
+                        <button type="button" class="link-button" id="createInstead">Create an account instead</button>
+                    </div>
+                </form>
+
+                <form id="signupForm" role="tabpanel" aria-labelledby="tab-create" hidden>
                     <!-- Business Name & Contact Name -->
                     <div class="form-row">
                         <div class="form-group">
@@ -167,7 +199,7 @@
                 <div class="nav-buttons">
                     <button class="btn-back" type="button">Back</button>
                     <button class="btn-proceed" type="button" id="proceedBtn" onclick="submitForm()">
-                        <span id="btnText">Proceed</span>
+                        <span id="btnText">Sign in</span>
                         <div class="spinner" id="btnSpinner" style="display: none;"></div>
                     </button>
                 </div>
