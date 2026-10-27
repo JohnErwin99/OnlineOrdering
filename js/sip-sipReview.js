@@ -483,6 +483,19 @@
                 sendBackToPickNumbers(trunksList, data.unavailable, data.shortfalls, paid);
                 return true;
             }
+            // The server orders only picked numbers right now: a request
+            // saved without picks (an older page) is turned into one still
+            // to pick, and the customer goes back to the picker for it
+            if (code === 'PICK_REQUIRED') {
+                orderRequestSlots(trunksList).forEach(s => {
+                    if (!Array.isArray(s.source.dids)) s.source.dids = [];
+                });
+                setCookie('sip_trunks', JSON.stringify(trunksList));
+                if (!sendBackIfPicksIncomplete(trunksList, note)) {
+                    returnToNumberSelection('Please pick your numbers before ordering.' + note, 'Numbers still to pick');
+                }
+                return true;
+            }
             if (code === 'DUPLICATE_PICK') {
                 sendBackToPickNumbers(trunksList, [], [], paid, data.number);
                 return true;

@@ -31,6 +31,12 @@ const ESPRESSO_MODE = process.env.ESPRESSO_MODE === 'production' ? 'production' 
 const ESPRESSO_URL = `https://connect.espressodid.com/cloud/public/v3/${ESPRESSO_MODE}`;
 // rpc/encoded: the body namespace is the WSDL targetNamespace, which embeds the mode URL
 const ESPRESSO_NS = `urn:${ESPRESSO_URL}`;
+// Orders placed over SOAP before the REST switch are read back from the
+// environment they were placed in (the live site ordered in production)
+const ESPRESSO_LEGACY_MODE = ['production', 'test'].includes(process.env.ESPRESSO_LEGACY_DID_MODE)
+    ? process.env.ESPRESSO_LEGACY_DID_MODE : ESPRESSO_MODE;
+const ESPRESSO_LEGACY_URL = `https://connect.espressodid.com/cloud/public/v3/${ESPRESSO_LEGACY_MODE}`;
+const ESPRESSO_LEGACY_NS = `urn:${ESPRESSO_LEGACY_URL}`;
 const ESPRESSO_USER = process.env.ESPRESSO_USER || '';
 const ESPRESSO_PASS = process.env.ESPRESSO_PASS || '';
 
@@ -362,8 +368,8 @@ async function espressoCall(methodBodyXml, methodName, api = 'did') {
         err.status = 503;
         throw err;
     }
-    const raw = api === 'lnp'
-        ? await soapPost(methodBodyXml, ESPRESSO_LNP_URL, ESPRESSO_LNP_NS)
+    const raw = api === 'lnp' ? await soapPost(methodBodyXml, ESPRESSO_LNP_URL, ESPRESSO_LNP_NS)
+        : api === 'did-legacy' ? await soapPost(methodBodyXml, ESPRESSO_LEGACY_URL, ESPRESSO_LEGACY_NS)
         : await soapPost(methodBodyXml);
     const doc = parseXml(raw);
     const body = doc && (doc.Body || doc.body);
@@ -401,7 +407,7 @@ function getCatalog() {
 // still in flight finishes; they can go once no such order is open.
 function getOrderStatus(orderNumber) {
     const body = `<ns1:didGetOrderStatus><didOrderId xsi:type="xsd:string">${xmlEscape(orderNumber)}</didOrderId></ns1:didGetOrderStatus>`;
-    return espressoCall(body, 'didGetOrderStatus')
+    return espressoCall(body, 'didGetOrderStatus', 'did-legacy')
         .then(r => ({ orderNumber, status: (r && r.status) || String(r || '') }));
 }
 
@@ -420,7 +426,7 @@ function expandRange(start, end) {
 
 function getOrderDetails(orderNumber) {
     const body = `<ns1:didGetOrderDetails><didOrderId xsi:type="xsd:string">${xmlEscape(orderNumber)}</didOrderId></ns1:didGetOrderDetails>`;
-    return espressoCall(body, 'didGetOrderDetails').then(r => {
+    return espressoCall(body, 'didGetOrderDetails', 'did-legacy').then(r => {
         const ranges = soapArray(r).map(x => ({
             ratecenter: x.ratecenter, npa: x.npa, start: x.start, end: x.end
         }));
@@ -434,7 +440,7 @@ function getOrderDetails(orderNumber) {
 // reports so the provisioning team sees the cause without asking espresso.
 function getOrderProblems(orderNumber) {
     const body = `<ns1:didGetOrderProblems><didOrderId xsi:type="xsd:string">${xmlEscape(orderNumber)}</didOrderId></ns1:didGetOrderProblems>`;
-    return espressoCall(body, 'didGetOrderProblems')
+    return espressoCall(body, 'didGetOrderProblems', 'did-legacy')
         .then(r => soapArray(r).map(x => ({
             ratecenter: x.ratecenter, npa: x.npa, quantity: x.quantity,
             rejectReason: x.reject_reason || x.rejectReason || null
@@ -868,6 +874,9 @@ async function waitForReservation(id) {
         const o = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(id)}`);
         if (o.canComplete || /^(REJECTED|FAILED|EXPIRED|CANCELLED|COMPLETED)$/i.test(String(o.status))) return o;
         if (Date.now() - t0 > RESERVE_WAIT_MS) {
+            // Release it rather than leave numbers held for an hour
+            await espressoRest('POST', `/ws/v1/dids/orders/${encodeURIComponent(id)}/cancel`,
+                { reason: 'Reservation took too long; the customer will retry' }).catch(() => {});
             throw busy(`espresso is still reserving numbers (order ${o.orderNumber}) — try again in a moment`);
         }
         await new Promise(r => setTimeout(r, 3000));
@@ -969,7 +978,12 @@ async function reservedPicksCheck(picks, email) {
         .filter(([k, v]) => k.startsWith('pickres:') && v && v.email === e && v.status !== 'done' && v.orderId);
     const orders = [];
     for (const [key, rec] of recs) {
-        const order = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(rec.orderId)}`).catch(() => null);
+        // Gone (404) means expired; any other failure is espresso being busy,
+        // which must not strip the customer's picks
+        const order = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(rec.orderId)}`).catch(e => {
+            if (e.espressoStatus === 404) return null;
+            throw busy(`espresso couldn't read reservation ${rec.orderNumber} — ${e.message}`);
+        });
         if (order) orders.push({ key, rec, order, held: new Set(reservedDids(order)) });
     }
     const owners = new Set();
@@ -1307,7 +1321,9 @@ function otherOpenOrder(email, key) {
         if (k === key || !k.startsWith('order:') || !k.includes(`:${email}`) || !v) continue;
         if (v.status === 'done' || v.status === 'rejected') continue;
         const age = Date.now() - (v.updatedAt || v.createdAt || 0);
-        if (v.status === 'placing' ? age > PLACING_STALE_MS : !(v.orderId || v.orderNumber)) continue;
+        // Only REST orders count: an old SOAP record (orderNumber, no
+        // orderId) from before the switch must not block a new order
+        if (v.status === 'placing' ? age > PLACING_STALE_MS : !v.orderId) continue;
         if (age > OPEN_ORDER_WINDOW_MS) continue;
         return v;
     }
@@ -1338,8 +1354,9 @@ const busy = (message, fields) => Object.assign(new Error(message), { status: 50
 // reservation and in MIND, then complete the reservation order with exactly
 // those numbers — no new order. Called from placeDidOrder, inside its lock.
 async function completeReservedOrder({ key, body, email, requests }) {
-    if (requests.some(r => !Array.isArray(r.dids) || !r.dids.length)) {
-        return { status: 400, payload: { error: 'Pick the numbers first — every request needs its picked numbers', code: 'PICK_REQUIRED' } };
+    const unpicked = requests.map((r, i) => (Array.isArray(r.dids) && r.dids.length ? -1 : i)).filter(i => i >= 0);
+    if (unpicked.length) {
+        return { status: 409, payload: { error: 'Pick the numbers first — every request needs its picked numbers', code: 'PICK_REQUIRED', indexes: unpicked } };
     }
     const picks = requests.flatMap(r => r.dids);
     const { owner, unavailable } = await reservedPicksCheck(picks, email);
@@ -1415,6 +1432,14 @@ async function placeDidOrder(body) {
             // A completion whose answer never arrived: adopt the order once
             // espresso has moved it on; still waiting means complete it below
             const o = await espressoRest('GET', `/ws/v1/dids/orders/${encodeURIComponent(seen.reservationOrderId)}`).catch(() => null);
+            if (o && /^(EXPIRED|CANCELLED|REJECTED)$/i.test(String(o.status))) {
+                // Nothing was bought: the reservation lapsed — pick again
+                stateSet(key, { ...seen, status: 'rejected' });
+                return { status: 409, payload: {
+                    error: 'The reservation for your numbers ran out', code: 'NUMBERS_UNAVAILABLE',
+                    unavailable: (seen.requests || []).flatMap(r => r.dids || []).map(n => ({ number: tenDigits(n), reason: 'expired' }))
+                } };
+            }
             if (o && !/^PENDING$/i.test(String(o.status))) return { status: 200, payload: adoptOrder(key, seen, o) };
         } else if (seen && seen.status === 'placing') {
             // A create whose answer never arrived — adopt it if espresso has it
@@ -1766,6 +1791,15 @@ async function chargeBalance(body) {
     // record is closed out, so buying a second trunk at the same price later is
     // charged normally instead of being mistaken for a duplicate and given away.
     const key = body.idempotencyKey || `${accountCode}::${Number(amount).toFixed(2)}`;
+    // Charges recorded before the key carried the amount already paid
+    // (`acct::amount`, the old pages) still count for a customer's first
+    // charge — a success, or an attempt whose outcome is unknown, must not
+    // be charged again just because the key format changed
+    const legacy = key.match(/^(.+)::0\.00::(\d+\.\d{2})$/);
+    const legacyKey = legacy ? `${legacy[1]}::${legacy[2]}` : null;
+    if (legacyKey && chargeStore[legacyKey] && !chargeStore[key]) {
+        chargeStore[key] = { ...chargeStore[legacyKey], migratedFrom: legacyKey };
+    }
 
     if (body.email && chargeStore[key] && chargeStore[key].outcome === 'success'
         && await sessionAlreadyProvisioned(body.email)) {
@@ -3314,6 +3348,12 @@ async function handleApi(req, res, pathname) {
                     code: 'ORDER_IN_PROGRESS', orderNumber: other.orderNumber || null, orderId: other.orderId || null
                 });
             }
+            // Reserve mode orders only picked numbers: a request saved without
+            // picks (an older page) goes back to the picker before payment
+            const unpicked = norm.requests.map((r, i) => (r.dids ? -1 : i)).filter(i => i >= 0);
+            if (ESPRESSO_PICK_SOURCE === 'reserve' && unpicked.length) {
+                return sendJson(res, 409, { error: 'Pick the numbers first', code: 'PICK_REQUIRED', indexes: unpicked });
+            }
             try {
                 for (const [index, r] of norm.requests.entries()) {
                     if (!(await resolveMindCity({ ratecenter: r.ratecenter, npa: r.npa }))) {
@@ -3699,9 +3739,14 @@ const MIME = {
     '.woff': 'font/woff', '.woff2': 'font/woff2'
 };
 
+// Only the site's pages and assets are public — never the server source
+// (it carries API key defaults), dotfiles, uploads, docs or tooling
+const PRIVATE_PATH = /^\/(server\.js|package(-lock)?\.json|yarn\.lock|README\.md|docs\/|uploads\/|node_modules\/)|\/\./;
+
 function serveStatic(res, pathname) {
     let rel = decodeURIComponent(pathname);
     if (rel === '/') rel = '/signUp.html';
+    if (PRIVATE_PATH.test(rel)) { res.writeHead(404); return res.end('Not found'); }
     const file = path.normalize(path.join(ROOT, rel));
     if (!file.startsWith(ROOT + path.sep) && file !== ROOT) {
         res.writeHead(403); return res.end('Forbidden');
