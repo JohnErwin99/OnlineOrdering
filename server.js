@@ -2053,7 +2053,7 @@ async function findNewMindService(accountId, planCode, since) {
     return fresh.length ? String(fresh[0].serviceId) : null;
 }
 
-async function createMindService(email, accountId, planCode, contact) {
+async function createMindService(email, accountId, planCode, contact, businessName) {
     if (!accountId) throw new Error('accountId is required');
     const key = `service:${normEmail(email)}`;
     // activeOnly: a 'done' record belongs to a completed previous order —
@@ -2075,6 +2075,10 @@ async function createMindService(email, accountId, planCode, contact) {
             phone: contact.phone || ''
         }
     };
+    // Without a name MIND calls the service after the contact ("John Erwin"),
+    // so ops searching MIND for the business found nothing
+    const name = String(businessName || '').trim().slice(0, 100);
+    if (name) requestBody.name = name;
     const startedAt = Date.now();
     let r;
     try {
@@ -3433,7 +3437,7 @@ async function handleApi(req, res, pathname) {
             if (!body.email) return sendJson(res, 400, { error: 'email is required' });
             if (!body.accountId) return sendJson(res, 400, { error: 'accountId is required' });
             return sendJson(res, 200,
-                await createMindService(body.email, body.accountId, body.planCode, body.contact || {})
+                await createMindService(body.email, body.accountId, body.planCode, body.contact || {}, body.businessName)
                     .catch(reportAndRethrow(body.email, 'mind-service', { accountId: body.accountId, planCode: body.planCode || null })));
         }
         // Channel and DID quantities on the paid order's service. Never

@@ -1209,7 +1209,8 @@
                                 email: customerEmail(contactData),
                                 accountId: accountId || getCookie('iristel_account_id'),
                                 planCode: 'EXLNP_SBSIPTRNK',
-                                contact: contactData
+                                contact: contactData,
+                                businessName: getCookie('sip_businessName') || null
                             })
                         });
                         const svcData = await svcResponse.json().catch(() => null);
