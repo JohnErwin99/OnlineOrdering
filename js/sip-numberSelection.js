@@ -409,6 +409,8 @@
                 .filter(d => /^\d{10}$/.test(d) && !goneNumbers.has(d));
             picker.exhausted = !!data.exhausted;
             picker.reservation = data.reservation || null;
+            // The hold timer counts down the reservation holding the picks
+            if (picker.reservation && picker.reservation.expiresAt) setCookie('sip_holdExpiresAt', picker.reservation.expiresAt);
             picker.status = 'ready';
             // Pre-tick as many as were asked for
             picker.numbers.filter(d => !trunkHoldingNumber(d)).slice(0, quantity).forEach(d => picker.checked.add(d));
@@ -825,6 +827,7 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
+            startHoldTimer({ hasPicks: () => allPickedNumbers().length > 0, onPicker: true });
             isPorting = isPortingOrder();
 
             if (isPorting) {

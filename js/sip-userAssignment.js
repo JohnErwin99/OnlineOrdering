@@ -176,6 +176,7 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
+            startHoldTimer();
 
             // Load numbers — try multi-trunk format first.
             // The order hasn't completed yet, so trunk.numbers is empty; the

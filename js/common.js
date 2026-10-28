@@ -148,6 +148,106 @@ async function resumeSession(email) {
     return session;
 }
 
+// ============================================
+// NUMBER HOLD TIMER
+// ============================================
+// While espresso holds the picked numbers for the customer (reserve-then-pick),
+// the picker, user assignment and review pages count down the hold, like the
+// Buy phone numbers app on iristel.com. The picker stores the reservation's
+// expiry (sip_holdExpiresAt); nothing shows once the order is placed, because
+// the numbers are then bought, not held.
+const HOLD_WARN_MS = 2 * 60 * 1000;
+
+function savedTrunksHavePicks() {
+    try {
+        return JSON.parse(getCookie('sip_trunks') || '[]')
+            .some(t => (t.requests || []).some(r => Array.isArray(r.dids) && r.dids.length));
+    } catch (e) { return false; }
+}
+
+// opts.hasPicks: the page's own check (the picker keeps its picks in memory)
+// opts.onPicker: on the picker the expired note says to search again
+function startHoldTimer(opts = {}) {
+    const hasPicks = opts.hasPicks || savedTrunksHavePicks;
+    const anchor = document.querySelector('.progress-container');
+    if (!anchor) return;
+    if (!document.getElementById('holdTimerStyle')) {
+        const style = document.createElement('style');
+        style.id = 'holdTimerStyle';
+        style.textContent =
+            '.hold-timer { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; width: fit-content;' +
+            ' margin: -14px 0 22px; padding: 6px 14px;' +
+            ' border-radius: 999px; font: 500 13px/1.3 "Heebo", sans-serif; background: #FFF4E0; color: #8A5300; }' +
+            '.hold-timer[hidden] { display: none; }' +
+            '.hold-timer svg { flex: none; }' +
+            '.hold-timer.warning { background: #FFE2CC; color: #8A2F00; }' +
+            '.hold-timer.expired { background: #FDECEC; color: #B42318; }' +
+            '.hold-timer a { color: inherit; font-weight: 600; text-decoration: underline; }' +
+            '.hold-timer-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }';
+        document.head.appendChild(style);
+    }
+    let chip = document.getElementById('holdTimer');
+    if (!chip) {
+        chip = document.createElement('div');
+        chip.id = 'holdTimer';
+        chip.hidden = true;
+        chip.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">'
+            + '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="txt"></span>';
+        anchor.insertAdjacentElement('afterend', chip);
+        // The chip changes every second, so announcements go through their own region
+        const live = document.createElement('span');
+        live.id = 'holdTimerLive';
+        live.className = 'hold-timer-live';
+        live.setAttribute('aria-live', 'polite');
+        chip.insertAdjacentElement('afterend', live);
+    }
+    const txt = chip.querySelector('.txt');
+    const live = document.getElementById('holdTimerLive');
+    let warnedFor = null;
+    clearInterval(startHoldTimer.timer);
+
+    function tick() {
+        const until = Date.parse(getCookie('sip_holdExpiresAt') || '');
+        if (isNaN(until) || !hasPicks() || getCookie('sip_didOrderNumber') || getCookie('sip_didOrderId')) {
+            chip.hidden = true;
+            return;
+        }
+        chip.hidden = false;
+        const left = Math.max(0, until - Date.now());
+        if (!left) {
+            // Built once, so a focused link isn't replaced every second
+            if (chip.dataset.expiredFor === String(until)) return;
+            chip.dataset.expiredFor = String(until);
+            chip.className = 'hold-timer expired';
+            chip.removeAttribute('title');
+            txt.textContent = 'Your number hold expired. ';
+            if (opts.onPicker) {
+                txt.append('Search again to reserve numbers.');
+            } else {
+                const a = document.createElement('a');
+                a.href = 'numberSelection.html';
+                a.textContent = 'Pick numbers again';
+                txt.append(a);
+            }
+            if (live.textContent !== 'Your number hold expired.') live.textContent = 'Your number hold expired.';
+            return;
+        }
+        delete chip.dataset.expiredFor;
+        const m = Math.floor(left / 60000), s = Math.floor(left % 60000 / 1000);
+        chip.className = 'hold-timer' + (left < HOLD_WARN_MS ? ' warning' : '');
+        txt.textContent = `Numbers held · ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} left`;
+        chip.title = 'Your numbers are reserved until '
+            + new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '. Finish your order before then.';
+        // One announcement at two minutes
+        if (left < HOLD_WARN_MS && warnedFor !== until) {
+            warnedFor = until;
+            live.textContent = '2 minutes left on your number hold.';
+        }
+    }
+    tick();
+    startHoldTimer.timer = setInterval(tick, 1000);
+}
+
 // Pushes the trunk layout (now carrying assigned numbers) back to the order
 // record, so a customer resuming elsewhere sees their number immediately.
 async function saveTrunksToServer(trunks, email) {

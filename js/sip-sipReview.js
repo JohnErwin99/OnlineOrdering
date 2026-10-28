@@ -1348,6 +1348,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             loadUserInfoBar();
             loadReviewData();
+            startHoldTimer();
 
             // Show a promo already applied — e.g. after stepping back into an edit
             const savedPromo = getAppliedPromo();
