@@ -33,11 +33,6 @@
     flex: 1;
 }
 
-/* Gradient circle position override */
-.gradient-circle.cyan {
-    top: 20%;
-}
-
 /* Promo Content */
 .promo-content {
     padding: 40px 60px;

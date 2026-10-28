@@ -372,18 +372,9 @@ select.form-input {
     max-width: 600px;
 }
 
-.gradient-circle.cyan {
-    top: 30%;
-}
-
 /* Promo Content */
 .promo-content {
     align-items: stretch;
-}
-
-/* Smart Connect image override */
-.laptop-image {
-    max-width: 360px;
 }
 
 /* Promo Text overrides */

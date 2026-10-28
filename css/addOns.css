@@ -157,11 +157,6 @@
     padding-top: 30px;
 }
 
-/* Gradient circle position override */
-.gradient-circle.cyan {
-    top: 30%;
-}
-
 /* Keypad Illustration */
 .keypad-illustration {
     width: 100%;

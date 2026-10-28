@@ -87,11 +87,6 @@
     justify-content: flex-start;
 }
 
-/* Gradient circle position override */
-.gradient-circle.cyan {
-    top: 20%;
-}
-
 /* Promo Content */
 .promo-content {
     align-items: flex-start;

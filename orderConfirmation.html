@@ -152,7 +152,12 @@
         /* ===== RIGHT PANEL ===== */
         .right-panel {
             flex: 1;
-            background: var(--rich-black);
+            /* Smart Connect scene from the Iristel Webflow site, darkened so the
+               panel text stays readable */
+            background:
+                linear-gradient(180deg, rgba(1, 17, 30, 0.15) 0%, rgba(1, 17, 30, 0.4) 22%,
+                    rgba(1, 17, 30, 0.85) 38%, rgba(1, 17, 30, 0.85) 75%, rgba(1, 17, 30, 0.92) 100%),
+                url('Images/smart-connect-bg.jpg') center / cover no-repeat var(--rich-black);
             display: flex;
             flex-direction: column;
             align-items: center;

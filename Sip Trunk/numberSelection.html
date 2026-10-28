@@ -715,16 +715,17 @@
         .right-panel {
             width: 45%;
             max-width: 600px;
-            background: var(--rich-black);
+            /* Smart Connect scene from the Iristel Webflow site, darkened so the
+               panel text stays readable */
+            background:
+                linear-gradient(180deg, rgba(1, 17, 30, 0.15) 0%, rgba(1, 17, 30, 0.4) 22%,
+                    rgba(1, 17, 30, 0.85) 38%, rgba(1, 17, 30, 0.85) 75%, rgba(1, 17, 30, 0.92) 100%),
+                url('../Images/smart-connect-bg.jpg') center / cover no-repeat var(--rich-black);
             position: relative;
             overflow: hidden;
             display: flex;
             flex-direction: column;
         }
-
-        .gradient-circle { position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.6; }
-        .gradient-circle.magenta { width: 400px; height: 400px; background: var(--magenta-glow); bottom: -100px; right: -100px; }
-        .gradient-circle.cyan { width: 350px; height: 350px; background: var(--cyan-glow); top: 30%; left: -100px; opacity: 0.4; }
 
         .promo-content { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 60px; position: relative; z-index: 2; }
         .promo-text { color: var(--white); }
@@ -902,8 +903,6 @@
         </div>
 
         <div class="right-panel">
-            <div class="gradient-circle magenta"></div>
-            <div class="gradient-circle cyan"></div>
             <div class="promo-content">
                 <div class="promo-text">
                     <h2 class="promo-headline">Choose Your <span>Numbers</span></h2>

@@ -19,9 +19,8 @@
     .left-panel { padding: 20px !important; }
 
     /* The decorative promo panel stacks below the form as 400-500px of
-       dead scroll on phones, and its 400px gradient circles overflow the
-       viewport when common.js forces overflow:visible in the Webflow
-       embed. It carries no functionality — drop it on phones. */
+       dead scroll on phones. It carries no functionality — drop it on
+       phones. */
     .right-panel { display: none !important; }
 
     .promo-content { padding: 24px; }

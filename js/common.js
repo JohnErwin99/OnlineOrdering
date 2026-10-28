@@ -585,6 +585,13 @@ function formatExpiry(input) {
 // the iframe's current height for the same reason 100vh does. Standalone
 // that is the intended two-column design, so the override applies only when
 // embedded.
+//
+// The reported height must also be able to SHRINK, or a short page loaded
+// after a long one keeps the long page's blank space below it. Two things
+// floor it at the iframe's current height: `body { min-height: 100vh }` on
+// every page, and documentElement.scrollHeight, which for the root element
+// is never less than the viewport — the iframe itself. So the min-height is
+// reset too, and only body.scrollHeight is measured.
 (function irisIframeResize() {
     if (typeof window === 'undefined' || window.self === window.top) return;
 
@@ -597,19 +604,19 @@ function formatExpiry(input) {
         // Let content flow into the document so scrollHeight reflects it.
         // Deliberately does NOT touch bounded lists (.numbers-grid,
         // .terms-text) — those are meant to scroll and do not pin the page.
+        // .right-panel keeps its overflow:hidden: it already grows with the
+        // row, and clipping stops its background art from padding the height.
         style.textContent =
             'html[data-embedded] , html[data-embedded] body { height: auto !important; overflow: visible !important; }' +
-            'html[data-embedded] .container { min-height: 0 !important; }' +
-            'html[data-embedded] .left-panel, html[data-embedded] .right-panel { overflow: visible !important; }';
+            'html[data-embedded] body, html[data-embedded] .container { min-height: 0 !important; }' +
+            'html[data-embedded] .left-panel { overflow: visible !important; }';
         document.head.appendChild(style);
     }
 
     let last = 0;
     function send() {
-        const h = Math.max(
-            document.documentElement.scrollHeight,
-            document.body ? document.body.scrollHeight : 0
-        );
+        if (!document.body) return;
+        const h = document.body.scrollHeight;
         if (Math.abs(h - last) > 2) {
             last = h;
             parent.postMessage({ type: 'resize-iframe', height: h }, '*');

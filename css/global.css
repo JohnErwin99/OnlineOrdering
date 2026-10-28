@@ -110,38 +110,16 @@ body {
 .right-panel {
     width: 50%;
     max-width: 720px;
-    background: var(--rich-black);
+    /* Smart Connect scene from the Iristel Webflow site, darkened so the
+       panel text stays readable */
+    background:
+        linear-gradient(180deg, rgba(1, 17, 30, 0.15) 0%, rgba(1, 17, 30, 0.4) 22%,
+            rgba(1, 17, 30, 0.85) 38%, rgba(1, 17, 30, 0.85) 75%, rgba(1, 17, 30, 0.92) 100%),
+        url('../Images/smart-connect-bg.jpg') center / cover no-repeat var(--rich-black);
     position: relative;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-}
-
-/* ============================================
-   GRADIENT CIRCLES (Right Panel Background)
-   ============================================ */
-.gradient-circle {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(100px);
-    opacity: 0.6;
-}
-
-.gradient-circle.magenta {
-    width: 400px;
-    height: 400px;
-    background: var(--magenta-glow);
-    bottom: -100px;
-    right: -100px;
-}
-
-.gradient-circle.cyan {
-    width: 350px;
-    height: 350px;
-    background: var(--cyan-glow);
-    top: 50%;
-    left: -100px;
-    opacity: 0.4;
 }
 
 /* ============================================
@@ -221,25 +199,6 @@ body {
     align-items: center;
     gap: 24px;
     margin-top: 30px;
-}
-
-/* Smart Connect Bundles image (signUp, serviceAvailability) */
-.laptop-image {
-    width: 100%;
-    max-width: 480px;
-    margin: 0 auto 40px;
-}
-
-/* The Webflow asset has the bundle headline baked into its lower half;
-   show only the laptop scene above it (top 680 of 1350px). */
-.laptop-image img {
-    display: block;
-    width: 100%;
-    aspect-ratio: 1080 / 680;
-    object-fit: cover;
-    object-position: top;
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 /* Right panel logo (pickNumber, numberSelection) */
