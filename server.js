@@ -891,7 +891,7 @@ async function createReservation({ accountRef, ratecenter, npa, quantity }) {
     const reference = `oo:${String(accountRef || 'na').replace(/[^\w-]/g, '').slice(0, 40)}:pick:${crypto.randomBytes(6).toString('hex')}`;
     const created = await espressoRest('POST', '/ws/v1/dids/orders', {
         accountId: acct.companyId, countryId: '1', ocn: ESPRESSO_OCN, vanity: false, selectDids: true,
-        acquisitionType: 'BUY', routingProfileId: acct.routingProfileId, reference,
+        acquisitionType: 'PURCHASE', routingProfileId: acct.routingProfileId, reference,
         numberRequests: [{ quantity, filters }]
     });
     if (!created || !created.id) throw busy('espresso accepted the reservation but sent back no order id');
@@ -1522,7 +1522,7 @@ async function placeDidOrder(body) {
         stateSet(key, { ...base, status: 'placing' });
         const createBody = {
             accountId: acct.companyId, countryId: '1', ocn: ESPRESSO_OCN, vanity: false, selectDids: false,
-            acquisitionType: 'BUY', routingProfileId: acct.routingProfileId, reference,
+            acquisitionType: 'PURCHASE', routingProfileId: acct.routingProfileId, reference,
             numberRequests: requests.map(r => ({
                 quantity: r.dids.length,
                 filters: [{ categoryName: 'did', categoryValue: r.dids.map(mindDigits) }]
