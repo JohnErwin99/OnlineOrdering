@@ -2019,6 +2019,9 @@ async function createAccount(email, contact, knownAccountId) {
             phone: { mobile: contact.phone }
         },
         language: contact.language || 'en',
+        // Without a product MIND gives the account its default Essentials
+        // bundle; this flow only sells the SIP trunk
+        product: { planCode: 'EXLNP_SBSIPTRNK' },
         businessUnit: '1'
     };
 
