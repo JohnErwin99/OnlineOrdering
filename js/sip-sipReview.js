@@ -849,11 +849,19 @@
             // One charge at a time, however many buttons were clicked
             if (chargeInFlight) return;
             const token = getCookie('iristel_payment_token');
-            const accountCode = getCookie('iristel_account_id') || '1204506';
+            const accountCode = getCookie('iristel_account_id');
 
             if (!token) {
                 showAlert('No saved card found. Please go back to the payment step.', 'error', 'No card on file');
                 if (window.IrisBridge) window.IrisBridge.error('No saved card found. Please go back to the payment step.');
+                return;
+            }
+            // The payment step resolves the account before saving the card,
+            // so a missing id means that step didn't run. Never charge a
+            // stand-in account.
+            if (!accountCode) {
+                showAlert('No account found. Please go back to the payment step.', 'error', 'No account on file');
+                if (window.IrisBridge) window.IrisBridge.error('No account found. Please go back to the payment step.');
                 return;
             }
 

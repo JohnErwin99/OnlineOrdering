@@ -93,6 +93,32 @@ function payWithWallet(walletName) {
 }
 
 // ============================================
+// ACCOUNT — the card must land on THIS customer's account
+// ============================================
+// Resolved through our server like the Review page does: it answers by email,
+// so an id left in the browser by someone else (or none at all, when signup's
+// account call failed) can't send the card to the wrong account.
+async function resolveAccountCode() {
+    const contact = getProvisioningContactData();
+    if (!contact.emailAddress) throw new Error('We could not find your account. Please go back to sign-up.');
+    const response = await fetch('/api/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            email: contact.emailAddress,
+            contact: { ...contact, language: getCookie('iristel_user_language') || 'en' },
+            accountId: getCookie('iristel_account_id') || undefined
+        })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || !data.accountId) {
+        throw new Error((data && data.error) || 'We could not find your account. Please try again.');
+    }
+    setCookie('iristel_account_id', String(data.accountId));
+    return String(data.accountId);
+}
+
+// ============================================
 // SAVE CARD — Tokenize only, charge happens on Review page
 // ============================================
 async function processPayment() {
@@ -104,7 +130,8 @@ async function processPayment() {
     document.getElementById('loadingOverlay').classList.add('active');
 
     try {
-        const accountCode = getCookie('iristel_account_id') || '1204506';
+        document.getElementById('loadingText').textContent = 'Checking your account...';
+        const accountCode = await resolveAccountCode();
 
         // Extract card data from form
         const cardNumber = document.getElementById('cardNumber').value.replace(/\s/g, '');

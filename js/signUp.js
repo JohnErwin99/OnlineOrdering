@@ -310,7 +310,10 @@ function storeContact(email, c, accountId) {
     setCookie('iristel_user_country', c.country);
     setCookie('iristel_user_postalCode', c.postalCode);
     setCookie('iristel_user_language', c.language);
+    // No id means the account call failed. Drop any id left by someone else
+    // on this browser, so review resolves the account by email instead.
     if (accountId) setCookie('iristel_account_id', accountId);
+    else deleteCookie('iristel_account_id');
 }
 
 // A MIND account's contact in the shape the signup form and cookies use.

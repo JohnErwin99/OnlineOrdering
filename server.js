@@ -1984,10 +1984,20 @@ async function createAccount(email, contact, knownAccountId) {
     // it so a later resume on another device knows the account exists. Without
     // this the mapping only ever got written when WE created the account, so a
     // returning customer's account step looked like it had never happened.
+    //
+    // Only when MIND says the account is this customer's: the id can be left
+    // over from someone else who used the same browser, and adopting it put
+    // the new customer's service on their account.
     if (knownAccountId) {
-        console.log('[account] adopting existing', knownAccountId, 'for', normEmail(email));
-        stateSet(key, { accountId: String(knownAccountId), email: normEmail(email), adopted: true });
-        return { accountId: String(knownAccountId), reused: true, adopted: true };
+        const owner = await mindAccountSummary(knownAccountId)
+            .then(s => normEmail(s.contact && s.contact.emailAddress), () => null);
+        if (owner === normEmail(email)) {
+            console.log('[account] adopting existing', knownAccountId, 'for', normEmail(email));
+            stateSet(key, { accountId: String(knownAccountId), email: normEmail(email), adopted: true });
+            return { accountId: String(knownAccountId), reused: true, adopted: true };
+        }
+        console.warn('[account] ignoring browser account', knownAccountId, 'for', normEmail(email),
+            '— it belongs to', owner || '(lookup failed)');
     }
 
     // Nothing local — ask MIND before creating. This is what stops a customer
